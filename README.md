@@ -13,13 +13,14 @@ This CLI can be used to bake default flags into your application as part of CI/C
 The steps to using this to provide default flags are as follows.
 
 - Install the cli ``npm i flagsmith-cli --save-dev``
-- Call the cli as part of postinstall to create a flagsmith.json file:
+- Call the cli as part of postinstall to create a ``flagsmith.json`` file:
 ```
 "postinstall":"flagsmith get <ENV_API_KEY>"
  ```
-- Call ``flagsmith.setState(json)`` prior to initialising the client and set defaultFlags to ``json.flags`` in ``flagsmith.init``
+See [here](./example/package.json#L23)
+- In your application, import the outputted JSON and call ``flagsmith.setState(json)`` prior to initialising the client and set defaultFlags when initialising in ``flagsmith.init({defaultFlags:json.flags})``
 
-Example:
+Example: 
 
 
 ```typescript
@@ -30,6 +31,7 @@ flagsmith.setState(state);
 flagsmith.init({defaultFlags: state.flags})
 ```
 
+The React equivalent of this can be found [here](./example/src/index.tsx).
 
 <!-- tocstop -->
 # Usage - Global
