@@ -10,18 +10,19 @@ This CLI can be used to bake default flags into your application as part of CI/C
 
 # Populating defaultFlags in your Project
 
-The steps to using this to provide default flags are as follows.
+The steps to using this to provide default flags are as follows. An example of this can be found [here](./example). The main steps to achieving this are as follows:
 
-- Install the cli ``npm i flagsmith-cli --save-dev``
-- Call the cli as part of postinstall to create a ``flagsmith.json`` file:
+
+1. Install the cli ``npm i flagsmith-cli --save-dev``
+2. Call the cli as part of postinstall to create a ``flagsmith.json`` file:
 ```
 "postinstall":"flagsmith get <ENV_API_KEY>"
  ```
-See [here](./example/package.json#L23)
-- In your application, import the outputted JSON and call ``flagsmith.setState(json)`` prior to initialising the client and set defaultFlags when initialising in ``flagsmith.init({defaultFlags:json.flags})``
+An example of this can be seen [here](./example/src/index.tsx). Note: you can also use the environment variable ``FLAGSMITH_ENVIRONMENT`` instead of hard-coding it.
 
-Example: 
+3. In your application, import the outputted JSON and call ``flagsmith.setState(json)`` prior to initialising the client and set defaultFlags when initialising in ``flagsmith.init({defaultFlags:json.flags})``
 
+Example:
 
 ```typescript
 import flagsmith from 'flagsmith'
@@ -56,7 +57,7 @@ $ npx flagsmith COMMAND
 
 ## `flagsmith get [ENVIRONMENT]`
 
-Retrieve flagsmith features from the Flagsmith API and output them to a file.
+Retrieve Flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
@@ -81,8 +82,6 @@ EXAMPLES
 
   $ flagsmith get --a https://flagsmith.example.com/api/v1/
 ```
-
-_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.0/dist/commands/get/index.ts)_
 
 ## `flagsmith help [COMMAND]`
 
