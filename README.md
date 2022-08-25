@@ -18,8 +18,13 @@ The steps to using this to provide default flags are as follows. An example of t
 ```
 "postinstall":"flagsmith get <ENV_API_KEY>"
  ```
-An example of this can be seen [here](./example/src/index.tsx). Note: you can also use the environment variable ``FLAGSMITH_ENVIRONMENT`` instead of hard-coding it.
+or 
+```export FLAGSMITH_ENVIRONMENT=API_KEY```
 
+```
+"postinstall": "flagsmith get"
+```
+An example of this can be seen [here](./example/src/index.tsx). 
 3. In your application, import the outputted JSON and call ``flagsmith.setState(json)`` prior to initialising the client and set defaultFlags when initialising in ``flagsmith.init({defaultFlags:json.flags})``
 
 Example:
