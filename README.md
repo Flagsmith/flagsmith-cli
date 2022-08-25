@@ -33,8 +33,7 @@ Example:
 import flagsmith from 'flagsmith'
 import state from './flagsmith.json'
 
-flagsmith.setState(state);
-flagsmith.init({defaultFlags: state.flags})
+flagsmith.init({state})
 ```
 
 The React equivalent of this can be found [here](./example/src/index.tsx).
