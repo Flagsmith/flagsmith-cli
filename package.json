@@ -19,7 +19,7 @@
   "dependencies": {
     "@oclif/core": "^1.16.0",
     "@oclif/plugin-help": "^5",
-    "@oclif/plugin-plugins": "^2.0.1",
+    "@oclif/plugin-plugins": "^2.1.0",
     "flagsmith": "3.9.1",
     "node-fetch": "^2.6.6"
   },
