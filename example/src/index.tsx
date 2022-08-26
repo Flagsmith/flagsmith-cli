@@ -6,7 +6,7 @@ import {FlagsmithProvider} from 'flagsmith/react'
 import App from './App';
 import state from './flagsmith.json'
 ReactDOM.render(
-  <FlagsmithProvider options={{state}} flagsmith={flagsmith}>
+  <FlagsmithProvider options={{environmentID: state.environmentID, state}} flagsmith={flagsmith}>
     <App />
   </FlagsmithProvider>,
   document.getElementById('root')

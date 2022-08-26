@@ -1,5 +1,5 @@
 import React  from 'react';
-import { useFlags, useFlagsmith } from 'flagsmith/react/index.js';
+import { useFlags, useFlagsmith } from 'flagsmith/react';
 
 function App() {
     const flags = useFlags(['font_size'], ['example_trait']); // only causes re-render if specified flag values / traits change
