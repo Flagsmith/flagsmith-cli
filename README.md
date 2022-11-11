@@ -25,18 +25,28 @@ or
 "postinstall": "flagsmith get"
 ```
 An example of this can be seen [here](./example/src/index.tsx). 
-3. In your application, import the outputted JSON and initialise the client with the json ``flagsmith.init({state:state:json})``
+3. In your application, import the outputted JSON and initialise the client with the json ``flagsmith.init({state:json})``
 
-Example:
+**Example:**
 
 ```typescript
 import flagsmith from 'flagsmith'
 import state from './flagsmith.json'
 
-flagsmith.init({state})
+flagsmith.init({state, environmentID: state.environmentID})
 ```
 
-The React equivalent of this can be found [here](./example/src/index.tsx).
+**Example with React:**
+
+```typescript
+import state from './flagsmith.json'
+ReactDOM.render(
+  <FlagsmithProvider options={{environmentID: state.environmentID, state}} flagsmith={flagsmith}>
+    <App />
+  </FlagsmithProvider>,
+  document.getElementById('root')
+);
+```
 
 <!-- tocstop -->
 # Usage - Global
