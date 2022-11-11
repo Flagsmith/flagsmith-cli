@@ -25,7 +25,7 @@ or
 "postinstall": "flagsmith get"
 ```
 An example of this can be seen [here](./example/src/index.tsx). 
-3. In your application, import the outputted JSON and initialise the client with the json ``flagsmith.init({state:json})``
+3. In your application, import the outputted JSON and initialise the client with the json ``flagsmith.init({state:json, environmentID: json.environmentID})``
 
 **Example:**
 
