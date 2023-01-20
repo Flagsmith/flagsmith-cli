@@ -1,6 +1,6 @@
 {
   "name": "flagsmith-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A CLI allowing you to fetch Flagsmith flags and output them to a file",
   "author": "kyle-ssg @kyle-ssg",
   "bin": {
