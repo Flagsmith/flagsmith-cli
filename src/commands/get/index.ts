@@ -30,7 +30,7 @@ export default class FlagsmithGet extends Command {
   async run(): Promise<void> {
     const {args, flags} = await this.parse(FlagsmithGet)
     const environment = args.environment || process.env.FLAGSMITH_ENVIRONMENT
-    const api = args.api || process.env.FLAGSMITH_ENVIRONMENT
+    const api = flags.api || process.env.FLAGSMITH_ENVIRONMENT
     if (environment) {
       this.log('A flagsmith environment was not specified, run flagsmith get --help for more usage.')
     }
