@@ -103,6 +103,8 @@ EXAMPLES
   $ flagsmith get --o ./my-file.json
 
   $ flagsmith get --a https://flagsmith.example.com/api/v1/
+
+  $ flagsmith get --i Bob
 ```
 
 _See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.0/dist/commands/get/index.ts)_
@@ -366,14 +368,15 @@ Retrieve Flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>]
 
 ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
-  -a, --api=<value>     The API URL to fetch the feature flags from
-  -o, --output=<value>  [default: ./flagsmith.json] The file path output
+  -a, --api=<value>       The API URL to fetch the feature flags from
+  -i, --identity=<value>  The identity for which to fetch feature flags
+  -o, --output=<value>    [default: ./flagsmith.json] The file path output
 
 DESCRIPTION
   Retrieve flagsmith features from the Flagsmith API and output them to a file.
