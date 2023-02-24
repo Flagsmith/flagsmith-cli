@@ -10,7 +10,7 @@ export default class FlagsmithGet extends Command {
     '$ flagsmith get <ENVIRONMENT_ID>',
     '$ flagsmith get --o ./my-file.json',
     '$ flagsmith get --a https://flagsmith.example.com/api/v1/',
-    '$ flagsmith get --i Bob',
+    '$ flagsmith get --i flagsmith_identity',
   ]
 
   static flags = {

@@ -104,7 +104,7 @@ EXAMPLES
 
   $ flagsmith get --a https://flagsmith.example.com/api/v1/
 
-  $ flagsmith get --i Bob
+  $ flagsmith get --i flagsmith_identity
 ```
 
 _See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.0/dist/commands/get/index.ts)_
