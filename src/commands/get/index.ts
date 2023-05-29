@@ -1,4 +1,4 @@
-import { Command, Flags } from '@oclif/core'
+import {Command, Flags} from '@oclif/core'
 import fetch from 'node-fetch'
 import flagsmith from 'flagsmith/isomorphic'
 const fs = require('fs')
@@ -7,10 +7,10 @@ export default class FlagsmithGet extends Command {
 
   static examples = [
     '$ FLAGSMITH_ENVIRONMENT=x flagsmith get',
-    '$ flagsmith get <ENVIRONMENT_ID>',
     '$ flagsmith get --o ./my-file.json',
     '$ flagsmith get --a https://flagsmith.example.com/api/v1/',
     '$ flagsmith get --i flagsmith_identity',
+    '$ flagsmith get -p',
   ]
 
   static flags = {
@@ -23,6 +23,9 @@ export default class FlagsmithGet extends Command {
     identity: Flags.string({
       char: 'i', description: 'The identity for which to fetch feature flags', required: false,
     }),
+    pretty: Flags.boolean({
+      char: 'p', description: 'Prettify the output JSON', required: false, default: true,
+    }),
   }
 
   static args = [
@@ -32,17 +35,19 @@ export default class FlagsmithGet extends Command {
   ]
 
   async run(): Promise<void> {
-    const { args, flags } = await this.parse(FlagsmithGet)
+    const {args, flags} = await this.parse(FlagsmithGet)
     const environment = args.environment || process.env.FLAGSMITH_ENVIRONMENT
     const api = flags.api || process.env.FLAGSMITH_ENVIRONMENT
     if (!environment) {
       this.log('A flagsmith environment was not specified, run flagsmith get --help for more usage.')
     }
-    const identity = flags.identity;
+
+    const identity = flags.identity
     let outputString = `Flagsmith: Retrieving flags from ${environment}`
     if (identity) {
       outputString += ` for identity ${identity}`
     }
+
     const output = flags.output
     outputString += `, outputing to ${output}.`
     this.log(outputString)
@@ -53,6 +58,10 @@ export default class FlagsmithGet extends Command {
       api: api,
       identity: identity,
     })
-    fs.writeFileSync(output, JSON.stringify(flagsmith.getState()))
+    if (flags.pretty) {
+      fs.writeFileSync(output, JSON.stringify(flagsmith.getState(), null, 2))
+    } else {
+      fs.writeFileSync(output, JSON.stringify(flagsmith.getState()))
+    }
   }
 }

@@ -15,10 +15,7 @@ The steps to using this to provide default flags are as follows. An example of t
 
 1. Install the cli ``npm i flagsmith-cli --save-dev``
 2. Call the cli as part of postinstall to create a ``flagsmith.json`` file:
-```
-"postinstall":"flagsmith get <ENV_API_KEY>"
- ```
-or 
+
 ```export FLAGSMITH_ENVIRONMENT=API_KEY```
 
 ```
@@ -56,7 +53,7 @@ $ npm install -g flagsmith-cli
 $ flagsmith COMMAND
 running command...
 $ flagsmith (--version)
-flagsmith-cli/0.1.0 darwin-x64 node-v16.15.1
+flagsmith-cli/0.1.2 darwin-arm64 node-v18.13.0
 $ flagsmith --help [COMMAND]
 USAGE
   $ flagsmith COMMAND
@@ -66,7 +63,7 @@ USAGE
 # Commands
 <!-- commands -->
 * [`flagsmith get [ENVIRONMENT]`](#flagsmith-get-environment)
-* [`flagsmith help [COMMAND]`](#flagsmith-help-command)
+* [`flagsmith help [COMMANDS]`](#flagsmith-help-commands)
 * [`flagsmith plugins`](#flagsmith-plugins)
 * [`flagsmith plugins:install PLUGIN...`](#flagsmith-pluginsinstall-plugin)
 * [`flagsmith plugins:inspect PLUGIN...`](#flagsmith-pluginsinspect-plugin)
@@ -83,14 +80,15 @@ Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>]
 
 ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
-  -a, --api=<value>     The API URL to fetch the feature flags from
-  -o, --output=<value>  [default: ./flagsmith.json] The file path output
+  -a, --api=<value>       The API URL to fetch the feature flags from
+  -i, --identity=<value>  The identity for which to fetch feature flags
+  -o, --output=<value>    [default: ./flagsmith.json] The file path output
 
 DESCRIPTION
   Retrieve flagsmith features from the Flagsmith API and output them to a file.
@@ -107,18 +105,18 @@ EXAMPLES
   $ flagsmith get --i flagsmith_identity
 ```
 
-_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.0/dist/commands/get/index.ts)_
+_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.2/dist/commands/get/index.ts)_
 
-## `flagsmith help [COMMAND]`
+## `flagsmith help [COMMANDS]`
 
 Display help for flagsmith.
 
 ```
 USAGE
-  $ flagsmith help [COMMAND] [-n]
+  $ flagsmith help [COMMANDS] [-n]
 
 ARGUMENTS
-  COMMAND  Command to show help for.
+  COMMANDS  Command to show help for.
 
 FLAGS
   -n, --nested-commands  Include all nested commands in the output.
@@ -127,7 +125,7 @@ DESCRIPTION
   Display help for flagsmith.
 ```
 
-_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v5.1.12/src/commands/help.ts)_
+_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v5.2.5/src/commands/help.ts)_
 
 ## `flagsmith plugins`
 
@@ -147,7 +145,7 @@ EXAMPLES
   $ flagsmith plugins
 ```
 
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v2.1.0/src/commands/plugins/index.ts)_
+_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v2.3.2/src/commands/plugins/index.ts)_
 
 ## `flagsmith plugins:install PLUGIN...`
 
@@ -167,7 +165,6 @@ FLAGS
 
 DESCRIPTION
   Installs a plugin into the CLI.
-
   Can be installed from npm or a git url.
 
   Installation of a user-installed plugin will override a core plugin.
@@ -175,6 +172,7 @@ DESCRIPTION
   e.g. If you have a core plugin that has a 'hello' command, installing a user-installed plugin with a 'hello' command
   will override the core plugin implementation. This is useful if a user needs to update core plugin functionality in
   the CLI without the need to patch and update the whole CLI.
+
 
 ALIASES
   $ flagsmith plugins add
@@ -202,6 +200,9 @@ FLAGS
   -h, --help     Show CLI help.
   -v, --verbose
 
+GLOBAL FLAGS
+  --json  Format output as json.
+
 DESCRIPTION
   Displays installation properties of a plugin.
 
@@ -227,7 +228,6 @@ FLAGS
 
 DESCRIPTION
   Installs a plugin into the CLI.
-
   Can be installed from npm or a git url.
 
   Installation of a user-installed plugin will override a core plugin.
@@ -235,6 +235,7 @@ DESCRIPTION
   e.g. If you have a core plugin that has a 'hello' command, installing a user-installed plugin with a 'hello' command
   will override the core plugin implementation. This is useful if a user needs to update core plugin functionality in
   the CLI without the need to patch and update the whole CLI.
+
 
 ALIASES
   $ flagsmith plugins add
@@ -264,11 +265,11 @@ FLAGS
 
 DESCRIPTION
   Links a plugin into the CLI for development.
-
   Installation of a linked plugin will override a user-installed or core plugin.
 
   e.g. If you have a user-installed or core plugin that has a 'hello' command, installing a linked plugin with a 'hello'
   command will override the user-installed or core plugin implementation. This is useful for development work.
+
 
 EXAMPLES
   $ flagsmith plugins:link myplugin
