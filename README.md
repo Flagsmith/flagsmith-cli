@@ -77,7 +77,7 @@ ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
-  -a, --api=<value>       The API URL to fetch the feature flags from
+  -a, --api=<value>       The API URL to fetch the feature flags from, providing a server-side key will fetch the environment document.
   -i, --identity=<value>  The identity for which to fetch feature flags
   -o, --output=<value>    [default: ./flagsmith.json] The file path output
 
@@ -87,7 +87,7 @@ DESCRIPTION
 EXAMPLES
   $ FLAGSMITH_ENVIRONMENT=x flagsmith get
 
-  $ flagsmith get <ENVIRONMENT_ID>
+  $ flagsmith get <ENVIRONMENT_API_KEY>
 
   $ flagsmith get --o ./my-file.json
 

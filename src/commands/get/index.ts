@@ -52,16 +52,30 @@ export default class FlagsmithGet extends Command {
     outputString += `, outputing to ${output}.`
     this.log(outputString)
 
-    await flagsmith.init({
-      environmentID: environment,
-      fetch: fetch,
-      api: api,
-      identity: identity,
-    })
-    if (flags.pretty) {
-      fs.writeFileSync(output, JSON.stringify(flagsmith.getState(), null, 2))
+    if (environment?.startsWith('ser.')) {
+      fetch(`${api || 'https://edge.api.flagsmith.com/api/v1/'}environment-document/flags/`, {
+        headers: {
+          'x-environment-key': environment,
+        },
+      }).then(res => res.json()).then(res => {
+        if (flags.pretty) {
+          fs.writeFileSync(output, JSON.stringify(res, null, 2))
+        } else {
+          fs.writeFileSync(output, JSON.stringify(res))
+        }
+      })
     } else {
-      fs.writeFileSync(output, JSON.stringify(flagsmith.getState()))
+      await flagsmith.init({
+        environmentID: environment,
+        fetch: fetch,
+        api: api,
+        identity: identity,
+      })
+      if (flags.pretty) {
+        fs.writeFileSync(output, JSON.stringify(flagsmith.getState(), null, 2))
+      } else {
+        fs.writeFileSync(output, JSON.stringify(flagsmith.getState()))
+      }
     }
   }
 }
