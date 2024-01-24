@@ -74,7 +74,7 @@ USAGE
   $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>]
 
 ARGUMENTS
-  ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT, providing a server-side key will fetch the environment document
+  ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT, providing a server-side key will fetch the environment document.
 
 FLAGS
   -a, --api=<value>       The API URL to fetch the feature flags from.
