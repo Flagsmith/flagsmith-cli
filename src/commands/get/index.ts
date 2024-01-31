@@ -6,10 +6,12 @@ export default class FlagsmithGet extends Command {
   static description = 'Retrieve flagsmith features from the Flagsmith API and output them to a file.'
 
   static examples = [
+    '$ flagsmith get <ENVIRONMENT_API_KEY>',
     '$ FLAGSMITH_ENVIRONMENT=x flagsmith get',
-    '$ flagsmith get --o ./my-file.json',
-    '$ flagsmith get --a https://flagsmith.example.com/api/v1/',
-    '$ flagsmith get --i flagsmith_identity',
+    '$ flagsmith get -e document',
+    '$ flagsmith get -o ./my-file.json',
+    '$ flagsmith get -a https://flagsmith.example.com/api/v1/',
+    '$ flagsmith get -i flagsmith_identity',
     '$ flagsmith get -p',
   ]
 
@@ -26,6 +28,11 @@ export default class FlagsmithGet extends Command {
     pretty: Flags.boolean({
       char: 'p', description: 'Prettify the output JSON', required: false, default: true,
     }),
+    entity: Flags.string({
+      options: ['flags', 'document'],
+      char: 'e',
+      description: 'The entity to fetch, this will either be the flags or an environment document used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mode-network-behaviour).', required: false, default: 'flags',
+    }),
   }
 
   static args = [
@@ -37,7 +44,7 @@ export default class FlagsmithGet extends Command {
   async run(): Promise<void> {
     const {args, flags} = await this.parse(FlagsmithGet)
     const environment = args.environment || process.env.FLAGSMITH_ENVIRONMENT
-    const api = flags.api || process.env.FLAGSMITH_ENVIRONMENT
+    const api = flags.api
     if (!environment) {
       this.log('A flagsmith environment was not specified, run flagsmith get --help for more usage.')
     }
@@ -49,6 +56,14 @@ export default class FlagsmithGet extends Command {
     }
 
     const output = flags.output
+    const entity = flags.entity
+    const isDocument = entity === 'document'
+
+    if (isDocument && !environment?.startsWith('ser.')) {
+      this.error('In order to fetch the environment document you need to provide a server-side SDK token.')
+      return
+    }
+
     outputString += `, outputing to ${output}.`
     this.log(outputString)
 

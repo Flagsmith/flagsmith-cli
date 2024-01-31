@@ -53,7 +53,7 @@ $ npm install -g flagsmith-cli
 $ flagsmith COMMAND
 running command...
 $ flagsmith (--version)
-flagsmith-cli/0.1.2 darwin-arm64 node-v18.13.0
+flagsmith-cli/0.1.4 darwin-arm64 node-v18.16.0
 $ flagsmith --help [COMMAND]
 USAGE
   $ flagsmith COMMAND
@@ -64,39 +64,57 @@ USAGE
 <!-- commands -->
 * [`flagsmith get [ENVIRONMENT]`](#flagsmith-get-environment)
 * [`flagsmith help [COMMANDS]`](#flagsmith-help-commands)
-  
+* [`flagsmith plugins`](#flagsmith-plugins)
+* [`flagsmith plugins:install PLUGIN...`](#flagsmith-pluginsinstall-plugin)
+* [`flagsmith plugins:inspect PLUGIN...`](#flagsmith-pluginsinspect-plugin)
+* [`flagsmith plugins:install PLUGIN...`](#flagsmith-pluginsinstall-plugin-1)
+* [`flagsmith plugins:link PLUGIN`](#flagsmith-pluginslink-plugin)
+* [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin)
+* [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin-1)
+* [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin-2)
+* [`flagsmith plugins update`](#flagsmith-plugins-update)
+
 ## `flagsmith get [ENVIRONMENT]`
 
 Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>] [-p] [-e flags|document]
 
 ARGUMENTS
-  ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT, providing a server-side key will fetch the environment document.
+  ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
   -a, --api=<value>       The API URL to fetch the feature flags from
+  -e, --entity=<option>   [default: flags] The entity to fetch, this will either be the flags or an environment document
+                          used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mo
+                          de-network-behaviour).
+                          <options: flags|document>
   -i, --identity=<value>  The identity for which to fetch feature flags
   -o, --output=<value>    [default: ./flagsmith.json] The file path output
+  -p, --pretty            Prettify the output JSON
 
 DESCRIPTION
   Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 EXAMPLES
-  $ FLAGSMITH_ENVIRONMENT=x flagsmith get
-
   $ flagsmith get <ENVIRONMENT_API_KEY>
 
-  $ flagsmith get --o ./my-file.json
+  $ FLAGSMITH_ENVIRONMENT=x flagsmith get
 
-  $ flagsmith get --a https://flagsmith.example.com/api/v1/
+  $ flagsmith get -e document
 
-  $ flagsmith get --i flagsmith_identity
+  $ flagsmith get -o ./my-file.json
+
+  $ flagsmith get -a https://flagsmith.example.com/api/v1/
+
+  $ flagsmith get -i flagsmith_identity
+
+  $ flagsmith get -p
 ```
 
-_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.2/dist/commands/get/index.ts)_
+_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.4/dist/commands/get/index.ts)_
 
 ## `flagsmith help [COMMANDS]`
 
