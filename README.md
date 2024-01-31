@@ -53,7 +53,7 @@ $ npm install -g flagsmith-cli
 $ flagsmith COMMAND
 running command...
 $ flagsmith (--version)
-flagsmith-cli/0.1.4 darwin-arm64 node-v18.16.0
+flagsmith-cli/0.1.2 darwin-arm64 node-v18.13.0
 $ flagsmith --help [COMMAND]
 USAGE
   $ flagsmith COMMAND
@@ -64,15 +64,6 @@ USAGE
 <!-- commands -->
 * [`flagsmith get [ENVIRONMENT]`](#flagsmith-get-environment)
 * [`flagsmith help [COMMANDS]`](#flagsmith-help-commands)
-* [`flagsmith plugins`](#flagsmith-plugins)
-* [`flagsmith plugins:install PLUGIN...`](#flagsmith-pluginsinstall-plugin)
-* [`flagsmith plugins:inspect PLUGIN...`](#flagsmith-pluginsinspect-plugin)
-* [`flagsmith plugins:install PLUGIN...`](#flagsmith-pluginsinstall-plugin-1)
-* [`flagsmith plugins:link PLUGIN`](#flagsmith-pluginslink-plugin)
-* [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin)
-* [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin-1)
-* [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin-2)
-* [`flagsmith plugins update`](#flagsmith-plugins-update)
 
 ## `flagsmith get [ENVIRONMENT]`
 
