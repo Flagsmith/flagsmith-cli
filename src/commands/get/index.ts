@@ -8,7 +8,7 @@ export default class FlagsmithGet extends Command {
   static examples = [
     '$ flagsmith get <ENVIRONMENT_API_KEY>',
     '$ FLAGSMITH_ENVIRONMENT=x flagsmith get',
-    '$ flagsmith get -e document',
+    '$ flagsmith get -e environment',
     '$ flagsmith get -o ./my-file.json',
     '$ flagsmith get -a https://flagsmith.example.com/api/v1/',
     '$ flagsmith get -i flagsmith_identity',
@@ -29,7 +29,7 @@ export default class FlagsmithGet extends Command {
       char: 'p', description: 'Prettify the output JSON', required: false, default: true,
     }),
     entity: Flags.string({
-      options: ['flags', 'document'],
+      options: ['flags', 'environment'],
       char: 'e',
       description: 'The entity to fetch, this will either be the flags or an environment document used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mode-network-behaviour).', required: false, default: 'flags',
     }),
@@ -57,7 +57,7 @@ export default class FlagsmithGet extends Command {
 
     const output = flags.output
     const entity = flags.entity
-    const isDocument = entity === 'document'
+    const isDocument = entity === 'environment'
 
     if (isDocument && !environment?.startsWith('ser.')) {
       this.error('In order to fetch the environment document you need to provide a server-side SDK token.')

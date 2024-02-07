@@ -71,7 +71,7 @@ Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>] [-p] [-e flags|document]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>] [-p] [-e flags|environment]
 
 ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
@@ -81,7 +81,7 @@ FLAGS
   -e, --entity=<option>   [default: flags] The entity to fetch, this will either be the flags or an environment document
                           used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mo
                           de-network-behaviour).
-                          <options: flags|document>
+                          <options: flags|environment>
   -i, --identity=<value>  The identity for which to fetch feature flags
   -o, --output=<value>    [default: ./flagsmith.json] The file path output
   -p, --pretty            Prettify the output JSON
@@ -94,7 +94,7 @@ EXAMPLES
 
   $ FLAGSMITH_ENVIRONMENT=x flagsmith get
 
-  $ flagsmith get -e document
+  $ flagsmith get -e environment
 
   $ flagsmith get -o ./my-file.json
 
