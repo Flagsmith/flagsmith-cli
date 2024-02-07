@@ -68,7 +68,7 @@ export default class FlagsmithGet extends Command {
     this.log(outputString)
 
     if (isDocument) {
-      fetch(`${api || 'https://edge.api.flagsmith.com/api/v1/'}environment-document/flags/`, {
+      fetch(`${api || 'https://edge.api.flagsmith.com/api/v1/'}environment-document/`, {
         headers: {
           'x-environment-key': environment,
         },
