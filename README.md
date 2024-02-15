@@ -64,39 +64,48 @@ USAGE
 <!-- commands -->
 * [`flagsmith get [ENVIRONMENT]`](#flagsmith-get-environment)
 * [`flagsmith help [COMMANDS]`](#flagsmith-help-commands)
-  
+
 ## `flagsmith get [ENVIRONMENT]`
 
 Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>] [-p] [-e flags|environment]
 
 ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
   -a, --api=<value>       The API URL to fetch the feature flags from
+  -e, --entity=<option>   [default: flags] The entity to fetch, this will either be the flags or an environment document
+                          used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mo
+                          de-network-behaviour).
+                          <options: flags|environment>
   -i, --identity=<value>  The identity for which to fetch feature flags
   -o, --output=<value>    [default: ./flagsmith.json] The file path output
+  -p, --pretty            Prettify the output JSON
 
 DESCRIPTION
   Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 EXAMPLES
+  $ flagsmith get <ENVIRONMENT_API_KEY>
+
   $ FLAGSMITH_ENVIRONMENT=x flagsmith get
 
-  $ flagsmith get <ENVIRONMENT_ID>
+  $ flagsmith get -e environment
 
-  $ flagsmith get --o ./my-file.json
+  $ flagsmith get -o ./my-file.json
 
-  $ flagsmith get --a https://flagsmith.example.com/api/v1/
+  $ flagsmith get -a https://flagsmith.example.com/api/v1/
 
-  $ flagsmith get --i flagsmith_identity
+  $ flagsmith get -i flagsmith_identity
+
+  $ flagsmith get -p
 ```
 
-_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.2/dist/commands/get/index.ts)_
+_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.4/dist/commands/get/index.ts)_
 
 ## `flagsmith help [COMMANDS]`
 
