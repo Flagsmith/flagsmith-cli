@@ -1,6 +1,7 @@
-import {Command, Flags} from '@oclif/core'
+import {Args, Command, Flags} from '@oclif/core'
 import fetch from 'node-fetch'
 import flagsmith from 'flagsmith/isomorphic'
+
 const fs = require('fs')
 export default class FlagsmithGet extends Command {
   static description = 'Retrieve flagsmith features from the Flagsmith API and output them to a file.'
@@ -31,15 +32,18 @@ export default class FlagsmithGet extends Command {
     entity: Flags.string({
       options: ['flags', 'environment'],
       char: 'e',
-      description: 'The entity to fetch, this will either be the flags or an environment document used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mode-network-behaviour).', required: false, default: 'flags',
+      description: 'The entity to fetch, this will either be the flags or an environment document used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mode-network-behaviour).',
+      required: false,
+      default: 'flags',
     }),
   }
 
-  static args = [
-    {
-      name: 'environment', description: 'The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT', required: false,
-    },
-  ]
+  static args = {
+    environment: Args.string({
+      description:
+        'The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT',
+    }),
+  }
 
   async run(): Promise<void> {
     const {args, flags} = await this.parse(FlagsmithGet)
@@ -71,7 +75,7 @@ export default class FlagsmithGet extends Command {
       fetch(`${api || 'https://edge.api.flagsmith.com/api/v1/'}environment-document/`, {
         headers: {
           'x-environment-key': environment,
-        },
+        } as any,
       }).then(res => res.json()).then(res => {
         if (flags.pretty) {
           fs.writeFileSync(output, JSON.stringify(res, null, 2))
@@ -81,7 +85,7 @@ export default class FlagsmithGet extends Command {
       })
     } else {
       await flagsmith.init({
-        environmentID: environment,
+        environmentID: environment!,
         fetch: fetch,
         api: api,
         identity: identity,
