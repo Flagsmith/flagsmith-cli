@@ -1,8 +1,5 @@
 import {Args, Command, Flags} from '@oclif/core'
-import fetch from 'node-fetch'
 import jsonToTypescript from "../../util/json-to-typescript";
-import {createFlagsmithInstance} from "flagsmith/isomorphic";
-import {IFlagsmithFeature} from "flagsmith/types";
 import getAllFeatures from "../../util/get-all-features";
 
 let api = `https://api.flagsmith.com`
@@ -45,7 +42,7 @@ export default class FlagsmithGenerateTypes extends Command {
     console.log(apiKey)
 
     //Step 1: get all of the feature flags and environments for the project
-    const features = getAllFeatures({project:args.project, apiKey, api})
+    const allFeatures = await getAllFeatures({project:`${args.project}`, apiKey, api})
     // Example JSON string
     const jsonString = JSON.stringify(allFeatures)
     await jsonToTypescript(jsonString).then(ts => {
