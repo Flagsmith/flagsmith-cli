@@ -12,6 +12,7 @@ export default class FlagsmithGet extends Command {
     '$ flagsmith get -o ./my-file.json',
     '$ flagsmith get -a https://flagsmith.example.com/api/v1/',
     '$ flagsmith get -i flagsmith_identity',
+    '$ flagsmith get -i flagsmith_identity -t my_trait_key=bar -t other_trait=value',
     '$ flagsmith get -p',
   ]
 
@@ -22,8 +23,17 @@ export default class FlagsmithGet extends Command {
     api: Flags.string({
       char: 'a', description: 'The API URL to fetch the feature flags from', required: false,
     }),
+    trait: Flags.string({
+      char: 't',
+      helpGroup: 'Identity',
+      multiple: true,
+      dependsOn: ['identity'],
+      helpValue: '<trait_key>=<trait_value>',
+      description: 'Trait key-value pair, separated by an equals sign (=)',
+    }),
     identity: Flags.string({
       char: 'i', description: 'The identity for which to fetch feature flags', required: false,
+      helpGroup: 'Identity',
     }),
     pretty: Flags.boolean({
       char: 'p', description: 'Prettify the output JSON', required: false, default: true,
@@ -53,6 +63,12 @@ export default class FlagsmithGet extends Command {
     let outputString = `Flagsmith: Retrieving flags from ${environment}`
     if (identity) {
       outputString += ` for identity ${identity}`
+    }
+
+    const traits : Record<string, string> = {}
+    for (const t of flags.trait || []) {
+      const [k, v] = t.split(/=(.*)/s)
+      traits[k] = v
     }
 
     const output = flags.output
@@ -85,6 +101,7 @@ export default class FlagsmithGet extends Command {
         fetch: fetch,
         api: api,
         identity: identity,
+        traits: traits,
       })
       if (flags.pretty) {
         fs.writeFileSync(output, JSON.stringify(flagsmith.getState(), null, 2))
