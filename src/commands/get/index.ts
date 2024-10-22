@@ -14,12 +14,12 @@ export default class FlagsmithGet extends Command {
 
   static examples = [
     '$ flagsmith get <ENVIRONMENT_API_KEY>',
-    '$ FLAGSMITH_ENVIRONMENT=x flagsmith get',
-    '$ flagsmith get -e environment',
+    '$ FLAGSMITH_ENVIRONMENT=abc123... flagsmith get',
+    '$ FLAGSMITH_ENVIRONMENT=ser.abc123... flagsmith get -e environment',
     '$ flagsmith get -o ./my-file.json',
     '$ flagsmith get -a https://flagsmith.example.com/api/v1/',
     '$ flagsmith get -i flagsmith_identity',
-    '$ flagsmith get -i flagsmith_identity -t my_trait_key=bar -t other_trait=value',
+    '$ flagsmith get -i flagsmith_identity -t my_trait_key=some_trait_value -t other_trait=other_value',
     '$ flagsmith get -p',
   ]
 
@@ -28,7 +28,7 @@ export default class FlagsmithGet extends Command {
       char: 'o', description: 'The file path output', required: false, default: './flagsmith.json',
     }),
     api: Flags.string({
-      char: 'a', description: 'The API URL to fetch the feature flags from', required: false, default: 'https://edge.api.flagsmith.com/api/v1/'
+      char: 'a', description: 'The API URL to fetch the feature flags from', required: false, default: 'https://edge.api.flagsmith.com/api/v1/',
     }),
     trait: Flags.string({
       char: 't',
