@@ -35,7 +35,7 @@ flagsmith.init({state, environmentID: state.environmentID})
 
 **Example with React:**
 
-```typescript
+```jsx
 import state from './flagsmith.json'
 ReactDOM.render(
   <FlagsmithProvider options={{environmentID: state.environmentID, state}} flagsmith={flagsmith}>
