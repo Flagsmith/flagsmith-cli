@@ -35,7 +35,7 @@ flagsmith.init({state, environmentID: state.environmentID})
 
 **Example with React:**
 
-```typescript
+```jsx
 import state from './flagsmith.json'
 ReactDOM.render(
   <FlagsmithProvider options={{environmentID: state.environmentID, state}} flagsmith={flagsmith}>
@@ -71,28 +71,29 @@ Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-t <value>
-    -i <value>] [-p] [-e flags|environment]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-t
+    <value> -i <value>] [-p] [-e flags|environment]
 
 ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment
                variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
-  -a, --api=<value>      The API URL to fetch the feature flags from
-  -e, --entity=<option>  [default: flags] The entity to fetch, this will either be
-                         the flags or an environment document used for [local
-                         evaluation](https://docs.flagsmith.com/clients/server-side#
-                         local-evaluation-mode-network-behaviour).
+  -a, --api=<value>      [default: https://edge.api.flagsmith.com/api/v1/] The
+                         API URL to fetch the feature flags from
+  -e, --entity=<option>  [default: flags] The entity to fetch, this will either
+                         be the flags or an environment document used for [local
+                         evaluation](https://docs.flagsmith.com/clients/server-s
+                         ide#local-evaluation-mode-network-behaviour).
                          <options: flags|environment>
   -o, --output=<value>   [default: ./flagsmith.json] The file path output
   -p, --pretty           Prettify the output JSON
 
 IDENTITY FLAGS
-  -i, --identity=<value>                    The identity for which to fetch feature
-                                            flags
-  -t, --trait=<trait_key>=<trait_value>...  Trait key-value pair, separated by an
-                                            equals sign (=)
+  -i, --identity=<value>                    The identity for which to fetch
+                                            feature flags
+  -t, --trait=<trait_key>=<trait_value>...  Trait key-value pair, separated by
+                                            an equals sign (=)
 
 DESCRIPTION
   Retrieve flagsmith features from the Flagsmith API and output them to a file.
@@ -100,9 +101,9 @@ DESCRIPTION
 EXAMPLES
   $ flagsmith get <ENVIRONMENT_API_KEY>
 
-  $ FLAGSMITH_ENVIRONMENT=x flagsmith get
+  $ FLAGSMITH_ENVIRONMENT=abc123... flagsmith get
 
-  $ flagsmith get -e environment
+  $ FLAGSMITH_ENVIRONMENT=ser.abc123... flagsmith get -e environment
 
   $ flagsmith get -o ./my-file.json
 
@@ -110,7 +111,7 @@ EXAMPLES
 
   $ flagsmith get -i flagsmith_identity
 
-  $ flagsmith get -i flagsmith_identity -t my_trait_key=foo -t other_trait=bar
+  $ flagsmith get -i flagsmith_identity -t my_trait_key=some_trait_value -t other_trait=other_value
 
   $ flagsmith get -p
 ```

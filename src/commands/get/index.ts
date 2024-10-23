@@ -2,17 +2,24 @@ import {Command, Flags} from '@oclif/core'
 import fetch from 'node-fetch'
 import flagsmith from 'flagsmith/isomorphic'
 const fs = require('fs')
+
+const withTrailingSlash = (url: string): string => {
+  const parsed = new URL(url)
+  parsed.pathname += parsed.pathname.endsWith('/') ? '' : '/'
+  return parsed.toString()
+}
+
 export default class FlagsmithGet extends Command {
   static description = 'Retrieve flagsmith features from the Flagsmith API and output them to a file.'
 
   static examples = [
     '$ flagsmith get <ENVIRONMENT_API_KEY>',
-    '$ FLAGSMITH_ENVIRONMENT=x flagsmith get',
-    '$ flagsmith get -e environment',
+    '$ FLAGSMITH_ENVIRONMENT=abc123... flagsmith get',
+    '$ FLAGSMITH_ENVIRONMENT=ser.abc123... flagsmith get -e environment',
     '$ flagsmith get -o ./my-file.json',
     '$ flagsmith get -a https://flagsmith.example.com/api/v1/',
     '$ flagsmith get -i flagsmith_identity',
-    '$ flagsmith get -i flagsmith_identity -t my_trait_key=bar -t other_trait=value',
+    '$ flagsmith get -i flagsmith_identity -t my_trait_key=some_trait_value -t other_trait=other_value',
     '$ flagsmith get -p',
   ]
 
@@ -21,7 +28,7 @@ export default class FlagsmithGet extends Command {
       char: 'o', description: 'The file path output', required: false, default: './flagsmith.json',
     }),
     api: Flags.string({
-      char: 'a', description: 'The API URL to fetch the feature flags from', required: false,
+      char: 'a', description: 'The API URL to fetch the feature flags from', required: false, default: 'https://edge.api.flagsmith.com/api/v1/',
     }),
     trait: Flags.string({
       char: 't',
@@ -54,7 +61,7 @@ export default class FlagsmithGet extends Command {
   async run(): Promise<void> {
     const {args, flags} = await this.parse(FlagsmithGet)
     const environment = args.environment || process.env.FLAGSMITH_ENVIRONMENT
-    const api = flags.api
+    const api = withTrailingSlash(flags.api)
     if (!environment) {
       this.log('A flagsmith environment was not specified, run flagsmith get --help for more usage.')
     }
@@ -84,7 +91,7 @@ export default class FlagsmithGet extends Command {
     this.log(outputString)
 
     if (isDocument) {
-      fetch(`${api || 'https://edge.api.flagsmith.com/api/v1/'}environment-document/`, {
+      fetch(new URL('environment-document/', api), {
         headers: {
           'x-environment-key': environment,
         },
