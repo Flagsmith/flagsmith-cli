@@ -1,6 +1,6 @@
 {
   "name": "flagsmith-cli",
-  "version": "0.2.1",
+  "version": "0.2.2-beta.1",
   "description": "A CLI allowing you to fetch Flagsmith flags and output them to a file",
   "author": "kyle-ssg @kyle-ssg",
   "bin": {
@@ -67,7 +67,7 @@
     "prepack": "yarn build && oclif manifest && oclif readme",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
     "deploy": "npm run build && npm publish",
-    "deploy:beta": "npm run build && npm publish",
+    "deploy:beta": "npm run build && npm publish --tag beta",
     "version": "oclif readme && git add README.md"
   },
   "engines": {
