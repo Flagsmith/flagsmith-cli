@@ -1,27 +1,13 @@
 import React  from 'react';
 import { useFlags, useFlagsmith } from 'flagsmith/react';
+import {FlagsmithTypes} from "../flagsmith";
 
 function App() {
-    const flags = useFlags(['font_size'], ['example_trait']); // only causes re-render if specified flag values / traits change
-    const flagsmith = useFlagsmith();
-    const identify = () => {
-        flagsmith.identify('flagsmith_sample_user');
-    };
+    const {json_flag, new_flag} = useFlags<FlagsmithTypes>(['json_flag']); // only causes re-render if specified flag values / traits change
     return (
         <div className='App'>
-            font_size: {flags.font_size?.value}
-            example_trait: {flags.example_trait}
-            {
-                flagsmith.identity ? (
-                    <button onClick={() => flagsmith.logout()}>
-                        Logout
-                    </button>
-                ) : (
-                    <button onClick={identify}>
-                        Identify
-                    </button>
-                )
-            }
+          Address 1: {json_flag?.value?.address?.line_1}
+          Address 2: {json_flag?.value?.address?.line_2}
         </div>
     );
 }

@@ -53,7 +53,7 @@ $ npm install -g flagsmith-cli
 $ flagsmith COMMAND
 running command...
 $ flagsmith (--version)
-flagsmith-cli/0.2.0 darwin-arm64 node-v21.6.1
+flagsmith-cli/0.2.2-beta.2 darwin-arm64 node-v18.20.4
 $ flagsmith --help [COMMAND]
 USAGE
   $ flagsmith COMMAND
@@ -62,6 +62,7 @@ USAGE
 <!-- usagestop -->
 # Commands
 <!-- commands -->
+* [`flagsmith generate-types PROJECT [OUTPUT]`](#flagsmith-generate-types-project-output)
 * [`flagsmith get [ENVIRONMENT]`](#flagsmith-get-environment)
 * [`flagsmith help [COMMANDS]`](#flagsmith-help-commands)
 * [`flagsmith plugins`](#flagsmith-plugins)
@@ -74,26 +75,62 @@ USAGE
 * [`flagsmith plugins:uninstall PLUGIN...`](#flagsmith-pluginsuninstall-plugin-2)
 * [`flagsmith plugins update`](#flagsmith-plugins-update)
 
+## `flagsmith generate-types PROJECT [OUTPUT]`
+
+Generate TypeScript types from a Flagsmith Project
+
+```
+USAGE
+  $ flagsmith generate-types PROJECT [OUTPUT] [-a <value>] [-o <value>] [-e <value>]
+
+ARGUMENTS
+  PROJECT  The flagsmith project id to retrieve the features from
+  OUTPUT   The flagsmith project id to retrieve the features from
+
+FLAGS
+  -a, --api=<value>      [default: https://api.flagsmith.com] The API to use if you are self hosted
+  -e, --exclude=<value>  Comma separated list of feature names to exclude from type generation to test feature removal
+  -o, --output=<value>   [default: ./flagsmith.d.ts] The file path output
+
+DESCRIPTION
+  Generate TypeScript types from a Flagsmith Project
+
+EXAMPLES
+  export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID
+
+  export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID -a https://selfhosted-flagsmith.example.com
+
+  export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID -o ./my-file.d.ts
+
+  export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID -e feature_to_exclude
+```
+
+_See code: [dist/commands/generate-types/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.2.2-beta.2/dist/commands/generate-types/index.ts)_
+
 ## `flagsmith get [ENVIRONMENT]`
 
 Retrieve flagsmith features from the Flagsmith API and output them to a file.
 
 ```
 USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-i <value>] [-p] [-e flags|environment]
+  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-t <value> -i <value>] [-p] [-e
+    flags|environment]
 
 ARGUMENTS
   ENVIRONMENT  The flagsmith environment key to use, defaults to the environment variable FLAGSMITH_ENVIRONMENT
 
 FLAGS
-  -a, --api=<value>       The API URL to fetch the feature flags from
-  -e, --entity=<option>   [default: flags] The entity to fetch, this will either be the flags or an environment document
-                          used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mo
-                          de-network-behaviour).
-                          <options: flags|environment>
-  -i, --identity=<value>  The identity for which to fetch feature flags
-  -o, --output=<value>    [default: ./flagsmith.json] The file path output
-  -p, --pretty            Prettify the output JSON
+  -a, --api=<value>      [default: https://edge.api.flagsmith.com/api/v1/] The API URL to fetch the feature flags from
+  -e, --entity=<option>  [default: flags] The entity to fetch, this will either be the flags or an environment document
+                         used for [local evaluation](https://docs.flagsmith.com/clients/server-side#local-evaluation-mod
+                         e-network-behaviour).
+                         <options: flags|environment>
+  -o, --output=<value>   [default: ./flagsmith.json] The file path output
+  -p, --pretty           Prettify the output JSON
+
+IDENTITY FLAGS
+  -i, --identity=<value>                    The identity for which to fetch feature flags
+  -t, --trait=<trait_key>=<trait_value>...  Trait key-value pair, separated by an equals sign (=)
 
 DESCRIPTION
   Retrieve flagsmith features from the Flagsmith API and output them to a file.
@@ -101,9 +138,9 @@ DESCRIPTION
 EXAMPLES
   $ flagsmith get <ENVIRONMENT_API_KEY>
 
-  $ FLAGSMITH_ENVIRONMENT=x flagsmith get
+  $ FLAGSMITH_ENVIRONMENT=abc123... flagsmith get
 
-  $ flagsmith get -e environment
+  $ FLAGSMITH_ENVIRONMENT=ser.abc123... flagsmith get -e environment
 
   $ flagsmith get -o ./my-file.json
 
@@ -111,10 +148,12 @@ EXAMPLES
 
   $ flagsmith get -i flagsmith_identity
 
+  $ flagsmith get -i flagsmith_identity -t my_trait_key=some_trait_value -t other_trait=other_value
+
   $ flagsmith get -p
 ```
 
-_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.2.0/dist/commands/get/index.ts)_
+_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.2.2-beta.2/dist/commands/get/index.ts)_
 
 ## `flagsmith help [COMMANDS]`
 
