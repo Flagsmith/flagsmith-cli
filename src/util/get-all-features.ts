@@ -1,12 +1,14 @@
 import {createFlagsmithInstance} from "flagsmith/isomorphic";
 import {IFlagsmithFeature} from "flagsmith/types";
+import doGet from "./doGet";
 
-export default async function ({apiKey:string, api: string, }) {
+export default async function (data:{apiKey:string, api: string, projectId: string }) {
+
+  const get = doGet(data.api, data.apiKey)
 
 
-
-  const environments: {api_key:string, id:number}[] = await doGet(`projects/${args.project}/environments/`)
-  return  await Promise.all(environments.map((v)=>{
+  const environments: {results:{api_key:string, id:number}[]} = await get(`environments/?project=${data.projectId}`)
+  return  await Promise.all(environments.results.map((v)=>{
     const instance = createFlagsmithInstance()
     return (
       // get a key value pair of each feature per environment
