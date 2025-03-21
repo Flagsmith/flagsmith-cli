@@ -10,7 +10,7 @@
     "@types/node": "^16.11.56",
     "@types/react": "^18.0.17",
     "@types/react-dom": "^18.0.6",
-    "flagsmith": "^3.9.2",
+    "flagsmith": "^9.0.3-beta.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
@@ -18,7 +18,9 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "react-scripts start",
+    "flagsmith:types": "flagsmith generate-types 18041",
+    "flagsmith:exclude": "flagsmith generate-types 18041 -e",
+    "start": "flagsmith:types && react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "postinstall": "flagsmith get QjgYur4LQTwe5HpvbvhpzK -o ./src/flagsmith.json",
@@ -43,6 +45,6 @@
     ]
   },
   "devDependencies": {
-    "flagsmith-cli": "^0.1.2"
+    "flagsmith-cli": "^0.2.2-beta.2"
   }
 }
