@@ -163,3 +163,11 @@ FLAGS
 DESCRIPTION
   Display help for flagsmith.
 ```
+
+### Type generation examples
+
+[1 - Adding a remote config.mov](1%20-%20Adding%20a%20remote%20config.mov)
+
+[2 - Creating a new flag.mov](2%20-%20Creating%20a%20new%20flag.mov)
+
+[3 - Dry run removing flag.mov](3%20-%20Dry%20run%20removing%20flag.mov)
