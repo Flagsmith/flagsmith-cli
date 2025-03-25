@@ -4,6 +4,7 @@
     "oclif-typescript"
   ],
   "rules": {
-    "no-prototype-builtins": 0
+    "no-prototype-builtins": 0,
+    "camelcase": 0
   }
 }
