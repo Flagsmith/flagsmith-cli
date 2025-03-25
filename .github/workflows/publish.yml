@@ -11,15 +11,9 @@ jobs:
     name: Publish NPM Package
 
     steps:
-      - name: Cloning repo
-        uses: actions/checkout@v4
+      - name: Clone and Install
+        uses: ./.github/actions/clone-install
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18.x'
-          registry-url: 'https://registry.npmjs.org'
-
-      - run: npm i
       - run: npm run deploy
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

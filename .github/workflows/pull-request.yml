@@ -15,16 +15,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Cloning repo
-        uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18.x'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: npm install
+      - name: Clone and Install
+        uses: ./.github/actions/clone-install
 
       - name: Build
         run: npm run build
