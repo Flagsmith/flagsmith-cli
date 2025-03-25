@@ -118,6 +118,34 @@ EXAMPLES
 
 _See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.4/dist/commands/get/index.ts)_
 
+## `flagsmith generate-types [ENVIRONMENT]`
+
+Generate a fully typed set of your project's current features. 
+
+Note: This requires an API Key that is either generated for organisation settings or found in your account.
+
+```
+USAGE
+  $ FLAGSMITH_API_KEY=<KEY> flagsmith generate-types [PROJECT_ID]
+
+ARGUMENTS
+  PROJECT_ID  The flagsmith project id you are fetching the types for.
+
+FLAGS
+  -a, --api=<value>      [default: https://edge.api.flagsmith.com/api/v1/] The
+                         API URL to fetch the feature flags from
+  -e, --exclude          [default: null] Exclude any feature you intend to remove, can be a csv e.g feature_a,feature_b.
+  -o, --output=<value>   [default: ./flagsmith.d.ts] The file path output
+  -p, --pretty           Prettify the output JSON
+
+DESCRIPTION
+  Retrieve type definitions for the features and their possible remote configuration values.
+```
+
+
+
+_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.4/dist/commands/get/index.ts)_
+
 ## `flagsmith help [COMMANDS]`
 
 Display help for flagsmith.
@@ -135,3 +163,11 @@ FLAGS
 DESCRIPTION
   Display help for flagsmith.
 ```
+
+### Type generation examples
+
+[1 - Adding a remote config.mov](1%20-%20Adding%20a%20remote%20config.mov)
+
+[2 - Creating a new flag.mov](2%20-%20Creating%20a%20new%20flag.mov)
+
+[3 - Dry run removing flag.mov](3%20-%20Dry%20run%20removing%20flag.mov)
