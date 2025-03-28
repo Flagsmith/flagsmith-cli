@@ -108,13 +108,6 @@ export default class FlagsmithGet extends Command {
         }
       })
     } else {
-      console.log("INIT", {
-        environmentID: environment,
-        fetch: fetch,
-        api: api,
-        identity: identity,
-        traits: traits,
-      })
       await flagsmith.init({
         environmentID: environment,
         fetch: fetch,
