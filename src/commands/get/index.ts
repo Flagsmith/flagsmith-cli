@@ -82,7 +82,6 @@ export default class FlagsmithGet extends Command {
       }
     }
 
-
     const output = flags.output
     const entity = flags.entity
     const isDocument = entity === 'environment'
