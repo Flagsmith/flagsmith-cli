@@ -1,6 +1,6 @@
 {
   "name": "flagsmith-cli",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A CLI allowing you to fetch Flagsmith flags and output them to a file",
   "author": "kyle-ssg @kyle-ssg",
   "bin": {
@@ -17,11 +17,12 @@
     "/oclif.manifest.json"
   ],
   "dependencies": {
-    "@oclif/core": "^1.26.2",
-    "@oclif/plugin-help": "^6.2.27",
-    "@oclif/plugin-plugins": "^5.4.36",
+    "@oclif/core": "^4.0.1",
+    "@oclif/plugin-help": "^5",
+    "@oclif/plugin-plugins": "^2.0.1",
     "flagsmith": "^9.0.5",
-    "node-fetch": "^2.6.6"
+    "node-fetch": "^2.6.6",
+    "quicktype": "^23.0.170"
   },
   "devDependencies": {
     "@oclif/test": "^2.1.1",
@@ -35,6 +36,7 @@
     "eslint-config-oclif-typescript": "^1.0.2",
     "globby": "^11",
     "mocha": "^11.1.0",
+    "nodemon": "^3.1.0",
     "oclif": "^4.17.41",
     "shx": "^0.3.3",
     "ts-node": "^10.2.1",
@@ -57,6 +59,7 @@
     }
   },
   "scripts": {
+    "dev": "nodemon --ignore dist/ --ext ts --exec npm run build",
     "build": "shx rm -rf dist && tsc -b",
     "lint": "eslint . --ext .ts --config .eslintrc",
     "postpack": "shx rm -f oclif.manifest.json",
@@ -64,7 +67,7 @@
     "prepack": "yarn build && oclif manifest && oclif readme",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
     "deploy": "npm run build && npm publish",
-    "deploy:beta": "npm run build && npm publish",
+    "deploy:beta": "npm run build && npm publish --tag beta",
     "version": "oclif readme && git add README.md"
   },
   "engines": {
