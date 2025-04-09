@@ -72,10 +72,14 @@ export default class FlagsmithGet extends Command {
       outputString += ` for identity ${identity}`
     }
 
-    const traits : Record<string, string> = {}
-    for (const t of flags.trait || []) {
-      const [k, v] = t.split(/=(.*)/s)
-      traits[k] = v
+    let traits : Record<string, string> | undefined = undefined
+
+    if(flags.trait) {
+      traits = {}
+      for (const t of flags.trait || []) {
+        const [k, v] = t.split(/=(.*)/s)
+        traits[k] = v
+      }
     }
 
     const output = flags.output
