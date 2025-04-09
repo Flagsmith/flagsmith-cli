@@ -1,0 +1,22 @@
+name: Publish NPM Package
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    name: Publish NPM Package
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Clone and Install
+        uses: ./.github/actions/install
+
+      - run: npm run deploy
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

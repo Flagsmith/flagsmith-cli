@@ -1,6 +1,6 @@
 {
   "name": "flagsmith-cli",
-  "version": "0.2.2-beta.2",
+  "version": "0.3.0",
   "description": "A CLI allowing you to fetch Flagsmith flags and output them to a file",
   "author": "kyle-ssg @kyle-ssg",
   "bin": {
@@ -28,20 +28,20 @@
     "@oclif/test": "^2.1.1",
     "@types/chai": "^4",
     "@types/mocha": "^9.0.0",
-    "@types/node": "^16.9.4",
-    "@types/node-fetch": "^2.6.2",
+    "@types/node": "^18.19.83",
+    "@types/node-fetch": "^2.6.6",
     "chai": "^4",
     "eslint": "^7.32.0",
     "eslint-config-oclif": "^4",
     "eslint-config-oclif-typescript": "^1.0.2",
     "globby": "^11",
-    "mocha": "^9",
+    "mocha": "^11.1.0",
     "nodemon": "^3.1.0",
-    "oclif": "^3",
+    "oclif": "^4.17.41",
     "shx": "^0.3.3",
     "ts-node": "^10.2.1",
     "tslib": "^2.3.1",
-    "typescript": "5.4.5"
+    "typescript": "5.8.2"
   },
   "oclif": {
     "bin": "flagsmith",
