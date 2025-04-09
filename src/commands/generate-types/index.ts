@@ -69,9 +69,8 @@ export default class FlagsmithGenerateTypes extends Command {
     const jsonString = JSON.stringify(features)
     const output = flags.output
 
-    await jsonToTypescript(jsonString).then(ts => {
-      console.log('Outputting types to', output)
-      fs.writeFileSync(output, ts)
-    })
+    const ts = await jsonToTypescript(jsonString)
+    console.log('Outputting types to', output)
+    fs.writeFileSync(output, ts)
   }
 }
