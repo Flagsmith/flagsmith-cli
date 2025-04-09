@@ -13,9 +13,11 @@ export default async function (data: { apiKey: string, api: string, project: str
       const features: Record<string, IFlagsmithFeature['value']> = {}
       for (const key of Object.keys(instance.getAllFlags())) {
         let value = instance.getValue(key)
-        try {
-          value = JSON.parse(instance.getValue(key))
-        } catch {}
+        if (typeof value === 'string') {
+          try {
+            value = JSON.parse(value)
+          } catch {}
+        }
 
         features[key] = value
       }
