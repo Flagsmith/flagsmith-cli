@@ -2,5 +2,10 @@
   "extends": [
     "oclif",
     "oclif-typescript"
-  ]
+  ],
+  "rules": {
+    "no-prototype-builtins": 0,
+    "camelcase": 0,
+    "unicorn/filename-case": 0
+  }
 }
