@@ -1,48 +1,54 @@
 import {Args, Command, Flags} from '@oclif/core'
-import jsonToTypescript from '../../util/json-to-typescript'
 import getAllFeatures from '../../util/get-all-features'
 import * as fs from 'node:fs'
 
-const api = 'https://api.flagsmith.com'
+const DEFAULT_API = 'https://api.flagsmith.com'
 let apiKey = ''
 
 export default class FlagsmithGenerateTypes extends Command {
-  static description = 'Generate TypeScript types from a Flagsmith Project'
+  static description = 'Fetch Flagsmith feature flags as JSON. By default pipes to stdout, allowing use with other tools; or write to a file with -o.'
+
   static examples = [
-    'export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID',
-    'export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID -a https://selfhosted-flagsmith.example.com',
-    'export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID -o ./my-file.d.ts',
-    'export FLAGSMITH_API_KEY=API_KEY flagsmith generate-types PROJECT_ID -e feature_to_exclude',
+    `export FLAGSMITH_API_KEY=YOUR_KEY flagsmith generate-types PROJECT_ID | npx quicktype \\
+      --src-lang json \\
+      --lang typescript \\
+      --just-types \\
+      --explicit-unions \\
+      --acronym-style camel \\
+      --top-level FlagsmithTypes \\
+      -o FlagsmithTypes.ts`,
+    'export FLAGSMITH_API_KEY=YOUR_KEY flagsmith generate-types PROJECT_ID -o features.json',
   ]
 
   static flags = {
     api: Flags.string({
       char: 'a',
-      description: 'The API to use if you are self hosted',
+      description: 'The API endpoint (if self-hosted)',
       required: false,
-      default: 'https://api.flagsmith.com',
+      default: DEFAULT_API,
     }),
     output: Flags.string({
       char: 'o',
-      description: 'The file path output',
+      description: 'Write the fetched JSON to a file instead of stdout',
       required: false,
-      default: './flagsmith.d.ts',
     }),
     exclude: Flags.string({
       char: 'e',
-      description: 'Comma separated list of feature names to exclude from type generation to test feature removal',
+      description: 'Comma-separated list of feature names to exclude',
       required: false,
+    }),
+    parseObjects: Flags.boolean({
+      char: 'p',
+      description: '(experimental) Include full object values when fetching features',
+      required: false,
+      default: false,
     }),
   }
 
   static args = {
     project: Args.string({
-      description: 'The flagsmith project id to retrieve the features from',
+      description: 'Flagsmith project ID',
       required: true,
-    }),
-    output: Args.string({
-      description: 'The flagsmith project id to retrieve the features from',
-      required: false,
     }),
   }
 
@@ -55,22 +61,43 @@ export default class FlagsmithGenerateTypes extends Command {
 
     apiKey = process.env.FLAGSMITH_API_KEY
 
-    const features = await getAllFeatures({project: `${args.project}`, apiKey, api})
+    const options: {
+      project: string
+      apiKey: string
+      api: string
+      parseObjects: boolean
+    } = {
+      project: args.project,
+      apiKey,
+      api: flags.api,
+      parseObjects: Boolean(flags.parseObjects),
+    }
+
+    if (flags.parseObjects) {
+      this.warn('⚠️ Experimental: parsing full flag objects')
+    }
+
+    const features = await getAllFeatures(options)
+
+    // Exclude specified flags
     const excludeList = flags.exclude?.split(',').map(name => name.trim())
     if (excludeList?.length) {
-      excludeList.map((feature: any) => {
-        console.log('Excluding flag', feature)
-        features.map(environmentFeature => {
-          delete environmentFeature[feature]
-        })
-      })
+      for (const featureName of excludeList) {
+        this.warn(`Excluding flag ${featureName}`)
+        for (const envFeat of features) {
+          delete envFeat[featureName]
+        }
+      }
     }
 
     const jsonString = JSON.stringify(features)
-    const output = flags.output
 
-    const ts = await jsonToTypescript(jsonString)
-    console.log('Outputting types to', output)
-    fs.writeFileSync(output, ts)
+    if (flags.output) {
+      this.warn(`Writing JSON to ${flags.output}`)
+      fs.writeFileSync(flags.output, jsonString)
+    } else {
+      // Pipe JSON to stdout for further processing
+      process.stdout.write(jsonString)
+    }
   }
 }
