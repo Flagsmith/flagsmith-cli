@@ -5,18 +5,23 @@ on:
     tags:
       - '*'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   package:
     runs-on: ubuntu-latest
     name: Publish NPM Package
 
     steps:
-      - name: Check out repository
+      - name: Cloning repo
         uses: actions/checkout@v4
 
-      - name: Clone and Install
-        uses: ./.github/actions/install
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: 'https://registry.npmjs.org'  # required for trusted publishing
 
+      - run: npm i
       - run: npm run deploy
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
