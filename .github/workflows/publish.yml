@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - '*'
-    branches:
-      - ci/fix-npm-trusted-publishing
 
 permissions:
   id-token: write
