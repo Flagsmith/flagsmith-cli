@@ -25,6 +25,6 @@ jobs:
           node-version-file: .nvmrc
           registry-url: 'https://registry.npmjs.org'  # required for trusted publishing
 
-      - run: npm install -g npm@latest
+      - run: npm install -g npm@latest --loglevel verbose
       - run: npm i
       - run: npm run deploy
