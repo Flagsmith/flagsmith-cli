@@ -25,5 +25,8 @@ jobs:
           node-version-file: .nvmrc
           registry-url: 'https://registry.npmjs.org'  # required for trusted publishing
 
+      - run: |
+          npm i -g npm@latest
+          npm --version
       - run: npm i
       - run: npm run deploy
