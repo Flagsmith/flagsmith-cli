@@ -63,8 +63,8 @@
     "posttest": "yarn lint",
     "prepack": "yarn build && oclif manifest && oclif readme",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
-    "deploy": "npm run build && npx -y npm@latest publish",
-    "deploy:beta": "npm run build && npx -y npm@latest publish",
+    "deploy": "npm run build && npm publish",
+    "deploy:beta": "npm run build && npm publish",
     "version": "oclif readme && git add README.md"
   },
   "engines": {
