@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/Flagsmith/flagsmith-cli/compare/v0.2.2...v0.2.3) (2025-11-24)
+
+
+### CI
+
+* fix npm trusted publishing ([#36](https://github.com/Flagsmith/flagsmith-cli/issues/36)) ([f76d21c](https://github.com/Flagsmith/flagsmith-cli/commit/f76d21c4e6d9f036237de92a1621fd9994c41346))
+
 ## [0.2.2](https://github.com/Flagsmith/flagsmith-cli/compare/0.2.1...v0.2.2) (2025-11-06)
 
 
