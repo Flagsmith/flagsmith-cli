@@ -68,7 +68,8 @@
     "version": "oclif readme && git add README.md"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=12.0.0",
+    "npm": ">=11.5.1"
   },
   "bugs": "https://github.com/Flagsmith/flagsmith-cli/issues",
   "keywords": [
