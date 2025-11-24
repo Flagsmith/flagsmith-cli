@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - '*'
-    branches:
-      - ci/fix-npm-trusted-publishing
 
 permissions:
   id-token: write
@@ -18,7 +16,7 @@ jobs:
 
     steps:
       - name: Cloning repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -26,9 +24,4 @@ jobs:
           registry-url: 'https://registry.npmjs.org'  # required for trusted publishing
 
       - run: npm i
-      - name: Build
-        run: npm run build
-
-      # 🔑 Use npm@latest directly for publish
-      - name: Publish (trusted publishing)
-        run: npx -y npm@latest publish --provenance --access public --loglevel verbose
+      - run: npm run deploy
