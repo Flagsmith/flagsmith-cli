@@ -1,5 +1,19 @@
+# Changelog
+
+## [0.2.2](https://github.com/Flagsmith/flagsmith-cli/compare/0.2.1...v0.2.2) (2025-11-06)
+
+
+### CI
+
+* add NPM trusted publishing and release please ([#33](https://github.com/Flagsmith/flagsmith-cli/issues/33)) ([d6fe2bc](https://github.com/Flagsmith/flagsmith-cli/commit/d6fe2bc84accaae327d7afe6ac71f86b82337d7c))
+
+
+### Other
+
+* Add build and test workflow, fix npm audit issues ([fa5d5da](https://github.com/Flagsmith/flagsmith-cli/commit/fa5d5da19e1ae552ca2c93a9f2473f9287ec9630))
+
 <a id="0.2.1"></a>
-# [0.2.1 - Update Flagsmith sdk](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.2.1) - 2025-03-20
+## [0.2.1 - Update Flagsmith sdk](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.2.1) - 2025-03-20
 
 Merges [#25](https://github.com/Flagsmith/flagsmith-cli/pull/25)
 
@@ -7,7 +21,7 @@ Merges [#25](https://github.com/Flagsmith/flagsmith-cli/pull/25)
 
 
 <a id="0.1.3"></a>
-# [0.1.3 - Adds prettify flag -p](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.1.3) - 2023-05-29
+## [0.1.3 - Adds prettify flag -p](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.1.3) - 2023-05-29
 
 [#12](https://github.com/Flagsmith/flagsmith-cli/pull/12)
 
@@ -15,7 +29,7 @@ Merges [#25](https://github.com/Flagsmith/flagsmith-cli/pull/25)
 
 
 <a id="0.1.2"></a>
-# [0.1.2 - Add Identity flag -i](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.1.2) - 2023-05-29
+## [0.1.2 - Add Identity flag -i](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.1.2) - 2023-05-29
 
 [#11](https://github.com/Flagsmith/flagsmith-cli/pull/11)
 
@@ -23,7 +37,7 @@ Merges [#25](https://github.com/Flagsmith/flagsmith-cli/pull/25)
 
 
 <a id="0.1.1"></a>
-# [0.1.1 - Fix api-input in a wrong const](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.1.1) - 2023-01-20
+## [0.1.1 - Fix api-input in a wrong const](https://github.com/Flagsmith/flagsmith-cli/releases/tag/0.1.1) - 2023-01-20
 
 Merges [#10](https://github.com/Flagsmith/flagsmith-cli/pull/10), thank you very much [@vladaCizek](https://github.com/vladaCizek)! 🚀 
 
