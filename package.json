@@ -63,13 +63,12 @@
     "posttest": "yarn lint",
     "prepack": "yarn build && oclif manifest && oclif readme",
     "test": "mocha --forbid-only \"test/**/*.test.ts\"",
-    "deploy": "npm run build && npm publish --loglevel verbose",
+    "deploy": "npm run build && npm publish",
     "deploy:beta": "npm run build && npm publish",
     "version": "oclif readme && git add README.md"
   },
   "engines": {
-    "node": ">=12.0.0",
-    "npm": ">=11.5.1"
+    "node": ">=12.0.0"
   },
   "bugs": "https://github.com/Flagsmith/flagsmith-cli/issues",
   "keywords": [
