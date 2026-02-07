@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/Flagsmith/flagsmith-cli/compare/v0.2.3...v0.2.4) (2026-02-07)
+
+
+### Other
+
+* Remove amannn/action-semantic-pull-request workflow ([#38](https://github.com/Flagsmith/flagsmith-cli/issues/38)) ([a069831](https://github.com/Flagsmith/flagsmith-cli/commit/a0698319d3def4461ac3344a89f30a092b30e48c))
+
 ## [0.2.3](https://github.com/Flagsmith/flagsmith-cli/compare/v0.2.2...v0.2.3) (2025-11-24)
 
 
