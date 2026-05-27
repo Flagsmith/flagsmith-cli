@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import './index.css';
-import flagsmith from 'flagsmith'
-import {FlagsmithProvider} from 'flagsmith/react'
+import flagsmith from '@flagsmith/flagsmith'
+import {FlagsmithProvider} from '@flagsmith/flagsmith/react'
 import App from './App';
 import state from './flagsmith.json'
 ReactDOM.render(

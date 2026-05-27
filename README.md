@@ -1,6 +1,6 @@
 <img width="100%" src="https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png"/>
 
-flagsmith-cli
+@flagsmith/cli
 =================
 
 Retrieve Flagsmith state from an API and store it in a file.
@@ -13,7 +13,7 @@ This CLI can be used to bake default flags into your application as part of CI/C
 The steps to using this to provide default flags are as follows. An example of this can be found [here](./example). The main steps to achieving this are as follows:
 
 
-1. Install the cli ``npm i flagsmith-cli --save-dev``
+1. Install the cli ``npm i @flagsmith/cli --save-dev``
 2. Call the cli as part of postinstall to create a ``flagsmith.json`` file:
 
 ```export FLAGSMITH_ENVIRONMENT=API_KEY```
@@ -27,7 +27,7 @@ An example of this can be seen [here](./example/src/index.tsx).
 **Example:**
 
 ```typescript
-import flagsmith from 'flagsmith'
+import flagsmith from '@flagsmith/flagsmith'
 import state from './flagsmith.json'
 
 flagsmith.init({state, environmentID: state.environmentID})
@@ -49,7 +49,7 @@ ReactDOM.render(
 # Usage - Global
 <!-- usage -->
 ```sh-session
-$ npm install -g flagsmith-cli
+$ npm install -g @flagsmith/cli
 $ flagsmith COMMAND
 running command...
 $ flagsmith (--version)

@@ -1,6 +1,6 @@
 import {Command, Flags} from '@oclif/core'
 import fetch from 'node-fetch'
-import flagsmith from 'flagsmith/isomorphic'
+import flagsmith from '@flagsmith/flagsmith/isomorphic'
 const fs = require('fs')
 
 const withTrailingSlash = (url: string): string => {
