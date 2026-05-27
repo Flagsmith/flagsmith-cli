@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.0](https://github.com/Flagsmith/flagsmith-cli/compare/v1.0.0...v1.1.0) (2026-05-27)
+
+
+### Features
+
+* migrate npm package to [@flagsmith](https://github.com/flagsmith) organization scope ([#40](https://github.com/Flagsmith/flagsmith-cli/issues/40)) ([3b96bf3](https://github.com/Flagsmith/flagsmith-cli/commit/3b96bf33ed5d4397430381c65e9417b216b2e0e8))
+
+
+### CI
+
+* add NPM trusted publishing and release please ([#33](https://github.com/Flagsmith/flagsmith-cli/issues/33)) ([d6fe2bc](https://github.com/Flagsmith/flagsmith-cli/commit/d6fe2bc84accaae327d7afe6ac71f86b82337d7c))
+* fix npm trusted publishing ([#36](https://github.com/Flagsmith/flagsmith-cli/issues/36)) ([f76d21c](https://github.com/Flagsmith/flagsmith-cli/commit/f76d21c4e6d9f036237de92a1621fd9994c41346))
+
+
+### Other
+
+* Add build and test workflow, fix npm audit issues ([fa5d5da](https://github.com/Flagsmith/flagsmith-cli/commit/fa5d5da19e1ae552ca2c93a9f2473f9287ec9630))
+* **main:** release 0.2.2 ([#34](https://github.com/Flagsmith/flagsmith-cli/issues/34)) ([7759431](https://github.com/Flagsmith/flagsmith-cli/commit/775943112431f5ad40a9b196023c2f466d17a44d))
+* **main:** release 0.2.3 ([#37](https://github.com/Flagsmith/flagsmith-cli/issues/37)) ([80a5064](https://github.com/Flagsmith/flagsmith-cli/commit/80a50645d20af1924ca8f55b1c017bb655e834a3))
+* Remove amannn/action-semantic-pull-request workflow ([#38](https://github.com/Flagsmith/flagsmith-cli/issues/38)) ([a069831](https://github.com/Flagsmith/flagsmith-cli/commit/a0698319d3def4461ac3344a89f30a092b30e48c))
+
 ## [0.2.3](https://github.com/Flagsmith/flagsmith-cli/compare/v0.2.2...v0.2.3) (2025-11-24)
 
 
