@@ -22,7 +22,7 @@ const (
 	ClientID = "flagsmith-cli"
 
 	// Always request scope explicitly.
-	Scope = "management-api"
+	Scope = "admin-api"
 
 	loginTimeout = 5 * time.Minute
 )
