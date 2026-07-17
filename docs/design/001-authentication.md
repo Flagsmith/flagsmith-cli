@@ -1,7 +1,7 @@
-# Flagsmith CLI v2 — Installation & Initial Auth
+# Flagsmith CLI v2 — Authentication
 
 Status: draft for discussion
-Scope: the "install → authenticate → first successful API call" flow only.
+Scope: the "authenticate → first successful API call" flow. Installation is covered in [002-installation.md](002-installation.md).
 Stack: Go + cobra, single static binary named `flagsmith`.
 
 ## 1. Context
@@ -104,7 +104,7 @@ flagsmith auth token         # print a current access token for curl/scripts
 
 **Phase 0 — interactive login: SHIPPED as [Flagsmith/flagsmith#8029](https://github.com/Flagsmith/flagsmith/pull/8029)** (docker image `ghcr.io/flagsmith/flagsmith:pr-8029`). Validated end-to-end against that image: signup → authorize (GET app info, POST consent) → code with state → PKCE token exchange (public client, no secret) → 15-min `admin-api` bearer token accepted on management endpoints → refresh rotation with 120 s grace. Scope policy cross-denies correctly (`flagsmith-cli`↛`mcp`, DCR clients↛`admin-api`).
 - Data migration: first-party `flagsmith-cli` public client, loopback redirect URIs `http://127.0.0.1/callback http://[::1]/callback` (port-agnostic per RFC 8252), `skip_authorization=True` — repurposed as the `is_verified` consent badge, consent itself is always shown. OAuth clients are instance-global (DOT's stock `Application` model — no org FK; tenancy comes from the authenticating user's org memberships, not the client), so one well-known client works for every org. The migration must pin a fixed `client_id` (DOT auto-generates one by default) so the binary can hardcode it and work against SaaS and any self-hosted instance.
-- Add a `admin-api` scope to `OAUTH2_PROVIDER["SCOPES"]`. Precise meaning: *the token may call the Management API surface, acting as the authenticating user* — a ceiling, not a grant; RBAC/org membership still decides what succeeds. Scopes name surfaces (`mcp` = MCP surface, `admin-api` = management surface), never clients — client identity already travels in `client_id`. Cosmetic today (scopes aren't enforced) but it future-proofs consent text, enforcement, and granular subdivision (`admin-api:read`, …).
+- Add an `admin-api` scope to `OAUTH2_PROVIDER["SCOPES"]`. Precise meaning: *the token may call the Management API surface, acting as the authenticating user* — a ceiling, not a grant; RBAC/org membership still decides what succeeds. Scopes name surfaces (`mcp` = MCP surface, `admin-api` = management surface), never clients — client identity already travels in `client_id`. Cosmetic today (scopes aren't enforced) but it future-proofs consent text, enforcement, and granular subdivision (`admin-api:read`, …).
 - Issuance policy via a custom `SCOPES_BACKEND_CLASS` (`get_available_scopes(application=…)` is per-client): DCR-registered third-party clients may only request `mcp`; the first-party `flagsmith-cli` client may request `admin-api`. Client identity controls what scopes can be issued; scopes control what surface a token reaches; RBAC controls what the user can do there.
 - Set `REFRESH_TOKEN_GRACE_PERIOD_SECONDS`.
 
@@ -117,31 +117,9 @@ flagsmith auth token         # print a current access token for curl/scripts
 - Device-authorization grant (DOT/oauthlib upgrade or hand-rolled).
 - Personal access tokens (user-scoped, listable, expiring) to retire the legacy single non-expiring authtoken — nice-to-have; OAuth + master keys already cover the CLI matrix.
 
-## 10. Installation
-
-Single static binary via goreleaser, from GitHub Releases:
-
-- `brew install flagsmith/tap/flagsmith` (primary mac/linux path)
-- `curl -fsSL https://get.flagsmith.com | sh` (CI-friendly, pinnable version)
-- GitHub Action (`flagsmith/setup-cli@v1`) that installs + performs the OIDC exchange — makes the CI story one workflow line
-- winget / scoop, deb/rpm, Docker image, `go install` for free
-- Optional: publish a thin npm wrapper under the existing `@flagsmith` scope that downloads the binary — migration bridge for current npm installers
-
-Target first-run experience:
-
-```
-$ brew install flagsmith/tap/flagsmith
-$ flagsmith login
-✓ Opened browser… authenticated as kim@flagsmith.com (org: Flagsmith)
-$ flagsmith flags list --project my-app --environment production
-```
-
-and in GitHub Actions, with org trust configured, the same commands with **no secrets at all**.
-
-## 11. Open questions
+## 10. Open questions
 
 1. **Scope enforcement timing** — any valid OAuth token (including `mcp`-scoped MCP tokens) currently authenticates on all management endpoints. Fine to ship phase 0 on, but worth a deliberate decision + roadmap slot.
 2. **OIDC principal binding** — bind trust rules to RBAC roles directly (cleaner, but non-admin requires the enterprise `rbac` package) vs. an admin/non-admin toggle mirroring Master API keys (simpler, coarser).
 3. ~~**Consent screen**~~ — resolved by #8029: consent is always shown; first-party clients get an `is_verified` badge instead of a skip.
-5. **Default scopes for first-party clients** — with no `scope` param, `flagsmith-cli` gets an *empty* scope set (global default `mcp` is policy-filtered, nothing substitutes `admin-api`). CLI works around it by always requesting explicitly; consider making `get_default_scopes` return `FIRST_PARTY_SCOPES` for first-party clients (feedback for #8029 or follow-up).
-4. **`get.flagsmith.com`** — does the install-script domain exist / who owns provisioning it?
+4. **Default scopes for first-party clients** — with no `scope` param, `flagsmith-cli` gets an *empty* scope set (global default `mcp` is policy-filtered, nothing substitutes `admin-api`). CLI works around it by always requesting explicitly; consider making `get_default_scopes` return `FIRST_PARTY_SCOPES` for first-party clients (feedback for #8029 or follow-up).
