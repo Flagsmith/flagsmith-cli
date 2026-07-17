@@ -417,6 +417,19 @@ func TestEnsureFresh(t *testing.T) {
 		}
 	})
 
+	t.Run("master credentials are never refreshed", func(t *testing.T) {
+		// Given
+		c := &Credentials{Kind: KindMaster, APIURL: "http://unreachable.invalid", MasterKey: "AbCd1234.secret"}
+
+		// When
+		got, refreshed, err := EnsureFresh(context.Background(), c)
+
+		// Then
+		if err != nil || refreshed || got != c {
+			t.Errorf("got (%v, %v, %v), want the same credentials untouched with no network call", got, refreshed, err)
+		}
+	})
+
 	t.Run("expired token is refreshed", func(t *testing.T) {
 		// Given
 		f := newFakeAuthServer(t)

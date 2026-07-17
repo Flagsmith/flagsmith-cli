@@ -211,6 +211,9 @@ func credentialsFromToken(apiURL string, tok *tokenResponse) *Credentials {
 // The server rotates refresh tokens (120s grace), so refreshed credentials
 // must be saved by the caller.
 func EnsureFresh(ctx context.Context, c *Credentials) (creds *Credentials, refreshed bool, err error) {
+	if c.EffectiveKind() != KindOAuth {
+		return c, false, nil
+	}
 	if time.Until(c.ExpiresAt) > 30*time.Second {
 		return c, false, nil
 	}

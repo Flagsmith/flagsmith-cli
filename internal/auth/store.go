@@ -6,22 +6,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/zalando/go-keyring"
 )
 
-// Credentials is the stored OAuth session for one Flagsmith instance.
+// Credentials is a stored credential for one Flagsmith instance.
 type Credentials struct {
+	Kind         Kind      `json:"kind,omitempty"` // empty means KindOAuth (back-compat)
 	APIURL       string    `json:"api_url"`
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	AccessToken  string    `json:"access_token,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at,omitzero"`
+	MasterKey    string    `json:"master_key,omitempty"`
+}
+
+// EffectiveKind returns the credential kind, defaulting to KindOAuth for
+// entries stored before kinds existed.
+func (c *Credentials) EffectiveKind() Kind {
+	if c.Kind == "" {
+		return KindOAuth
+	}
+	return c.Kind
+}
+
+// Token returns the secret used to authenticate requests.
+func (c *Credentials) Token() string {
+	if c.EffectiveKind() == KindMaster {
+		return c.MasterKey
+	}
+	return c.AccessToken
 }
 
 const (
 	keyringService = "flagsmith-cli"
-	keyringUser    = "default"
 
 	SourceKeychain = "keychain"
 	SourceFile     = "file"
@@ -29,7 +48,14 @@ const (
 
 var ErrNotLoggedIn = errors.New("not logged in — run `flagsmith login`")
 
-func credentialsPath() (string, error) {
+// instanceKey normalizes an API URL into the per-instance storage key.
+func instanceKey(apiURL string) string {
+	return strings.TrimRight(apiURL, "/")
+}
+
+// CredentialsFilePath is the plaintext fallback store used when the OS
+// keychain is unavailable. It holds a JSON object keyed by instance URL.
+func CredentialsFilePath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -37,67 +63,97 @@ func credentialsPath() (string, error) {
 	return filepath.Join(dir, "flagsmith", "credentials.json"), nil
 }
 
-// Save stores credentials in the OS keychain, falling back to a 0600 file.
-// It returns where they were stored (SourceKeychain or SourceFile).
+func readFileStore() (map[string]*Credentials, error) {
+	path, err := CredentialsFilePath()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]*Credentials{}, nil
+		}
+		return nil, err
+	}
+	store := map[string]*Credentials{}
+	if err := json.Unmarshal(raw, &store); err != nil {
+		return nil, fmt.Errorf("corrupt credentials file %s: %w", path, err)
+	}
+	return store, nil
+}
+
+func writeFileStore(store map[string]*Credentials) error {
+	path, err := CredentialsFilePath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	b, err := json.Marshal(store)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// Save stores credentials for their instance in the OS keychain, falling
+// back to the plaintext file. It returns where they were stored.
 func Save(c *Credentials) (string, error) {
+	key := instanceKey(c.APIURL)
 	b, err := json.Marshal(c)
 	if err != nil {
 		return "", err
 	}
-	if err := keyring.Set(keyringService, keyringUser, string(b)); err == nil {
+	if err := keyring.Set(keyringService, key, string(b)); err == nil {
 		return SourceKeychain, nil
 	}
-	path, err := credentialsPath()
+	store, err := readFileStore()
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, b, 0o600); err != nil {
+	store[key] = c
+	if err := writeFileStore(store); err != nil {
 		return "", err
 	}
 	return SourceFile, nil
 }
 
-// Load returns stored credentials and their source, or ErrNotLoggedIn.
-func Load() (*Credentials, string, error) {
-	if raw, err := keyring.Get(keyringService, keyringUser); err == nil {
+// Load returns the stored credentials for an instance and their source,
+// or ErrNotLoggedIn.
+func Load(apiURL string) (*Credentials, string, error) {
+	key := instanceKey(apiURL)
+	if raw, err := keyring.Get(keyringService, key); err == nil {
 		c := &Credentials{}
 		if err := json.Unmarshal([]byte(raw), c); err != nil {
 			return nil, "", fmt.Errorf("corrupt credentials in keychain: %w", err)
 		}
 		return c, SourceKeychain, nil
 	}
-	path, err := credentialsPath()
+	store, err := readFileStore()
 	if err != nil {
 		return nil, "", err
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, "", ErrNotLoggedIn
-		}
-		return nil, "", err
+	if c, ok := store[key]; ok {
+		return c, SourceFile, nil
 	}
-	c := &Credentials{}
-	if err := json.Unmarshal(raw, c); err != nil {
-		return nil, "", fmt.Errorf("corrupt credentials file %s: %w", path, err)
-	}
-	return c, SourceFile, nil
+	return nil, "", ErrNotLoggedIn
 }
 
-// Delete removes stored credentials from all storage locations. The keychain
-// removal is best-effort: a broken keychain shouldn't fail logout, and the
-// session is revoked server-side before local deletion anyway.
-func Delete() error {
-	_ = keyring.Delete(keyringService, keyringUser)
-	path, err := credentialsPath()
+// Delete removes stored credentials for an instance from all storage
+// locations. The keychain removal is best-effort: a broken keychain
+// shouldn't fail logout, and OAuth sessions are revoked server-side before
+// local deletion anyway.
+func Delete(apiURL string) error {
+	key := instanceKey(apiURL)
+	_ = keyring.Delete(keyringService, key)
+	store, err := readFileStore()
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
+	if _, ok := store[key]; !ok {
+		return nil
 	}
-	return nil
+	delete(store, key)
+	return writeFileStore(store)
 }

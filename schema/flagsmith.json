@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/schema/flagsmith.json",
+  "title": "Flagsmith CLI config",
+  "description": "Configuration for the Flagsmith CLI.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema reference enabling editor autocomplete and validation."
+    },
+    "project": {
+      "type": "integer",
+      "minimum": 1,
+      "title": "Project ID",
+      "description": "Flagsmith project ID. Find it via `flagsmith projects list` or JSON data in the dashboard. `flagsmith config` shows the resolved project name."
+    },
+    "organisation": {
+      "type": "integer",
+      "minimum": 1,
+      "title": "Organisation ID",
+      "description": "Optional. Used by organisation-scoped commands that have no project context (e.g. creating a project) and to preselect the organisation in `flagsmith init`. Otherwise the organisation is derived from the project."
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Default environment",
+      "description": "Optional. Environment name used when `-e`/`--environment` is omitted, e.g. \"Development\". Matched case-insensitively."
+    },
+    "apiUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "title": "API base URL",
+      "description": "Optional. Base URL of a self-hosted Flagsmith instance (scheme + host, without /api/v1). Omit when using Flagsmith SaaS.",
+      "default": "https://api.flagsmith.com"
+    },
+    "sdkApiUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "title": "SDK API base URL",
+      "description": "Optional. Base URL of the SDK API used for flag evaluation. Only needed when the SDK API lives on a different host than apiUrl (e.g. when using Edge Proxy). When omitted, falls back to apiUrl, otherwise to Flagsmith Edge API (https://edge.api.flagsmith.com)."
+    },
+    "environmentKey": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "^ser\\."
+      },
+      "title": "Client-side SDK key",
+      "description": "Optional. A client-side environment key, enabling flag evaluation without Admin API credentials. Client-side keys are public by design and safe to commit. Server-side keys (ser.*) are secrets and are rejected here: provide those via `FLAGSMITH_ENVIRONMENT_KEY` environment variable instead."
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "additionalProperties": false
+}
