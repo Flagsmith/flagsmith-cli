@@ -1,7 +1,7 @@
 # Flagsmith CLI v2 — Installation
 
 Status: draft for discussion
-Scope: how the `flagsmith` binary gets onto machines — local dev and CI. Authentication is covered in [001-authentication.md](001-authentication.md).
+Scope: how the `flagsmith` binary gets onto machines — local dev and CI. Authentication is covered in [002-authentication.md](002-authentication.md).
 Stack: Go + cobra, single static binary named `flagsmith`, cross-compiled and released with goreleaser.
 
 ## 1. Distribution channels

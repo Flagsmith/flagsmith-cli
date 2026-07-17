@@ -1,7 +1,7 @@
 # Flagsmith CLI v2 — Authentication
 
 Status: draft for discussion
-Scope: the "authenticate → first successful API call" flow. Installation is covered in [002-installation.md](002-installation.md).
+Scope: the "authenticate → first successful API call" flow. Installation is covered in [001-installation.md](001-installation.md).
 Stack: Go + cobra, single static binary named `flagsmith`.
 
 ## 1. Context
