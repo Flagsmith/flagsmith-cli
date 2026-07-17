@@ -87,22 +87,17 @@ func Load() (*Credentials, string, error) {
 	return c, SourceFile, nil
 }
 
-// Delete removes stored credentials from all storage locations.
+// Delete removes stored credentials from all storage locations. The keychain
+// removal is best-effort: a broken keychain shouldn't fail logout, and the
+// session is revoked server-side before local deletion anyway.
 func Delete() error {
-	kerr := keyring.Delete(keyringService, keyringUser)
-	if errors.Is(kerr, keyring.ErrNotFound) {
-		kerr = nil
+	_ = keyring.Delete(keyringService, keyringUser)
+	path, err := credentialsPath()
+	if err != nil {
+		return err
 	}
-	path, perr := credentialsPath()
-	if perr == nil {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			perr = err
-		} else {
-			perr = nil
-		}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	if kerr != nil {
-		return kerr
-	}
-	return perr
+	return nil
 }
