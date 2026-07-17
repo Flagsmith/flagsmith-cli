@@ -21,15 +21,24 @@ var (
 	loginTokenStdin bool
 )
 
-var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Log in to Flagsmith in your browser, or store a Master API key",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if loginToken || loginTokenStdin {
-			return masterKeyLogin(cmd)
-		}
-		return browserLogin(cmd)
-	},
+func newLoginCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "login",
+		Short: "Log in to Flagsmith in your browser, or store a Master API key",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if loginToken || loginTokenStdin {
+				return masterKeyLogin(cmd)
+			}
+			return browserLogin(cmd)
+		},
+	}
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false,
+		"print the login URL instead of opening a browser")
+	cmd.Flags().BoolVar(&loginToken, "token", false,
+		"paste a Master API key instead of using the browser")
+	cmd.Flags().BoolVar(&loginTokenStdin, "token-stdin", false,
+		"read a Master API key from stdin")
+	return cmd
 }
 
 func browserLogin(cmd *cobra.Command) error {
@@ -110,11 +119,6 @@ func readMasterKey(cmd *cobra.Command) (string, error) {
 }
 
 func init() {
-	loginCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
-		"print the login URL instead of opening a browser")
-	loginCmd.Flags().BoolVar(&loginToken, "token", false,
-		"paste a Master API key instead of using the browser")
-	loginCmd.Flags().BoolVar(&loginTokenStdin, "token-stdin", false,
-		"read a Master API key from stdin")
-	rootCmd.AddCommand(loginCmd)
+	rootCmd.AddCommand(newLoginCmd())
+	authCmd.AddCommand(newLoginCmd())
 }

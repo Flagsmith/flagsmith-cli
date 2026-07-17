@@ -136,7 +136,30 @@ func (f *fakeInstance) revokeCount() int {
 	return len(f.revoked)
 }
 
+// commandShapes are the two supported spellings of login/logout:
+// top-level and under `auth`.
+var commandShapes = []struct {
+	name   string
+	prefix []string
+}{
+	{"top-level", nil},
+	{"auth alias", []string{"auth"}},
+}
+
+// shapeArgs prepends a shape prefix to a command line.
+func shapeArgs(prefix []string, args ...string) []string {
+	return append(append([]string{}, prefix...), args...)
+}
+
 func TestBrowserLoginFlow(t *testing.T) {
+	for _, shape := range commandShapes {
+		t.Run(shape.name, func(t *testing.T) {
+			testBrowserLoginFlow(t, shape.prefix)
+		})
+	}
+}
+
+func testBrowserLoginFlow(t *testing.T, prefix []string) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
@@ -147,7 +170,7 @@ func TestBrowserLoginFlow(t *testing.T) {
 	rootCmd.SetOut(out)
 	rootCmd.SetErr(out)
 	rootCmd.SetIn(strings.NewReader(""))
-	rootCmd.SetArgs([]string{"login", "--api", f.srv.URL, "--no-browser"})
+	rootCmd.SetArgs(shapeArgs(prefix, "login", "--api", f.srv.URL, "--no-browser"))
 	done := make(chan error, 1)
 	go func() { done <- rootCmd.Execute() }()
 
@@ -211,7 +234,7 @@ func TestBrowserLoginFlow(t *testing.T) {
 	}
 
 	// When
-	logoutOut, err := run("", "logout", "--api", f.srv.URL)
+	logoutOut, err := run("", shapeArgs(prefix, "logout", "--api", f.srv.URL)...)
 
 	// Then
 	if err != nil {
@@ -230,7 +253,7 @@ func TestBrowserLoginFlow(t *testing.T) {
 	}
 
 	// When / Then
-	logoutOut, err = run("", "logout", "--api", f.srv.URL)
+	logoutOut, err = run("", shapeArgs(prefix, "logout", "--api", f.srv.URL)...)
 	if err != nil || !strings.Contains(logoutOut, "Not logged in") {
 		t.Errorf("second logout = (%q, %v), want a friendly no-op", logoutOut, err)
 	}
@@ -355,12 +378,20 @@ func TestEnvBeatsKeychain(t *testing.T) {
 }
 
 func TestLoginTokenStdin(t *testing.T) {
+	for _, shape := range commandShapes {
+		t.Run(shape.name, func(t *testing.T) {
+			testLoginTokenStdin(t, shape.prefix)
+		})
+	}
+}
+
+func testLoginTokenStdin(t *testing.T, prefix []string) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 
 	// When
-	loginOut, err := run(masterKey+"\n", "login", "--api", f.srv.URL, "--token-stdin")
+	loginOut, err := run(masterKey+"\n", shapeArgs(prefix, "login", "--api", f.srv.URL, "--token-stdin")...)
 
 	// Then
 	if err != nil {
@@ -386,7 +417,7 @@ func TestLoginTokenStdin(t *testing.T) {
 	}
 
 	// When
-	logoutOut, err := run("", "logout", "--api", f.srv.URL)
+	logoutOut, err := run("", shapeArgs(prefix, "logout", "--api", f.srv.URL)...)
 
 	// Then
 	if err != nil {
