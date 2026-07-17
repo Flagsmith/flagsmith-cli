@@ -11,6 +11,7 @@ import (
 
 func TestUsersMe(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
+		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/api/v1/auth/users/me/" {
 				t.Errorf("path = %q", r.URL.Path)
@@ -22,7 +23,10 @@ func TestUsersMe(t *testing.T) {
 		}))
 		defer srv.Close()
 
+		// When
 		user, err := UsersMe(context.Background(), srv.URL+"/", "access-1")
+
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -32,12 +36,16 @@ func TestUsersMe(t *testing.T) {
 	})
 
 	t.Run("unauthorized", func(t *testing.T) {
+		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
 		defer srv.Close()
 
+		// When
 		_, err := UsersMe(context.Background(), srv.URL, "expired")
+
+		// Then
 		if err == nil || !strings.Contains(err.Error(), "401") {
 			t.Errorf("err = %v, want a 401 error", err)
 		}

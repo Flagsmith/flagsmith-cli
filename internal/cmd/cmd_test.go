@@ -48,6 +48,7 @@ func run(args ...string) (string, error) {
 // TestLoginStatusTokenLogoutFlow drives the full command surface against a
 // fake Flagsmith instance, with the test playing the browser.
 func TestLoginStatusTokenLogoutFlow(t *testing.T) {
+	// Given
 	keyring.MockInit()
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -92,7 +93,7 @@ func TestLoginStatusTokenLogoutFlow(t *testing.T) {
 	srv = httptest.NewServer(mux)
 	defer srv.Close()
 
-	// flagsmith login --no-browser, with the test delivering the callback.
+	// When
 	out := &syncBuffer{}
 	rootCmd.SetOut(out)
 	rootCmd.SetErr(out)
@@ -120,6 +121,8 @@ func TestLoginStatusTokenLogoutFlow(t *testing.T) {
 	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
 		t.Fatal(err)
 	}
+
+	// Then
 	select {
 	case err := <-done:
 		if err != nil {
@@ -133,8 +136,10 @@ func TestLoginStatusTokenLogoutFlow(t *testing.T) {
 		t.Errorf("login output = %q", got)
 	}
 
-	// flagsmith auth status
+	// When
 	statusOut, err := run("auth", "status")
+
+	// Then
 	if err != nil {
 		t.Fatalf("auth status: %v", err)
 	}
@@ -142,8 +147,10 @@ func TestLoginStatusTokenLogoutFlow(t *testing.T) {
 		t.Errorf("auth status output = %q", statusOut)
 	}
 
-	// flagsmith auth token
+	// When
 	tokenOut, err := run("auth", "token")
+
+	// Then
 	if err != nil {
 		t.Fatalf("auth token: %v", err)
 	}
@@ -151,8 +158,10 @@ func TestLoginStatusTokenLogoutFlow(t *testing.T) {
 		t.Errorf("auth token output = %q, want the access token", tokenOut)
 	}
 
-	// flagsmith logout
+	// When
 	logoutOut, err := run("logout")
+
+	// Then
 	if err != nil {
 		t.Fatalf("logout: %v", err)
 	}
@@ -165,12 +174,12 @@ func TestLoginStatusTokenLogoutFlow(t *testing.T) {
 	}
 	mu.Unlock()
 
-	// flagsmith auth status after logout
+	// When / Then
 	if _, err := run("auth", "status"); !errors.Is(err, auth.ErrNotLoggedIn) {
 		t.Errorf("auth status after logout = %v, want ErrNotLoggedIn", err)
 	}
 
-	// flagsmith logout when already logged out is a friendly no-op
+	// When / Then
 	logoutOut, err = run("logout")
 	if err != nil || !strings.Contains(logoutOut, "Not logged in") {
 		t.Errorf("second logout = (%q, %v), want a friendly no-op", logoutOut, err)

@@ -160,12 +160,14 @@ func awaitLogin(t *testing.T, results <-chan loginResult) loginResult {
 }
 
 func TestLoginHappyPath(t *testing.T) {
+	// Given
 	f := newFakeAuthServer(t)
+
+	// When
 	out, results := startLogin(t, context.Background(), f.srv.URL, nil)
 
+	// Then
 	q, redirectURI := waitForAuthURL(t, out)
-
-	// The authorization request must be exactly what the server contract needs.
 	for param, want := range map[string]string{
 		"client_id":             ClientID,
 		"response_type":         "code",
@@ -183,17 +185,18 @@ func TestLoginHappyPath(t *testing.T) {
 		t.Errorf("redirect_uri %q must use literal 127.0.0.1 (RFC 8252 loopback)", redirectURI)
 	}
 
-	// Play the browser: deliver the code to the loopback listener.
+	// When
 	resp, err := http.Get(redirectURI + "?code=test-code&state=" + url.QueryEscape(q.Get("state")))
 	if err != nil {
 		t.Fatalf("delivering callback: %v", err)
 	}
 	page, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+
+	// Then
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "Login complete") {
 		t.Errorf("callback response = %d %q, want 200 with success page", resp.StatusCode, page)
 	}
-
 	r := awaitLogin(t, results)
 	if r.err != nil {
 		t.Fatalf("Login: %v", r.err)
@@ -207,8 +210,6 @@ func TestLoginHappyPath(t *testing.T) {
 	if until := time.Until(r.creds.ExpiresAt); until < 13*time.Minute || until > 15*time.Minute {
 		t.Errorf("ExpiresAt %v not ~15m out", until)
 	}
-
-	// The token exchange must round-trip the code, redirect URI and PKCE verifier.
 	form := f.lastTokenForm(t)
 	for param, want := range map[string]string{
 		"grant_type":   "authorization_code",
@@ -227,15 +228,19 @@ func TestLoginHappyPath(t *testing.T) {
 }
 
 func TestLoginOpensBrowserAndSurvivesBrowserError(t *testing.T) {
+	// Given
 	f := newFakeAuthServer(t)
 	opened := make(chan string, 1)
 	openBrowser := func(u string) error {
 		opened <- u
 		return errors.New("no browser installed")
 	}
-	out, results := startLogin(t, context.Background(), f.srv.URL, openBrowser)
 
+	// When
+	out, results := startLogin(t, context.Background(), f.srv.URL, openBrowser)
 	q, redirectURI := waitForAuthURL(t, out)
+
+	// Then
 	select {
 	case u := <-opened:
 		if !strings.Contains(u, "oauth/authorize/") {
@@ -245,7 +250,10 @@ func TestLoginOpensBrowserAndSurvivesBrowserError(t *testing.T) {
 		t.Fatal("openBrowser was never called")
 	}
 
+	// When
 	http.Get(redirectURI + "?code=c&state=" + url.QueryEscape(q.Get("state")))
+
+	// Then
 	if r := awaitLogin(t, results); r.err != nil {
 		t.Fatalf("Login should survive a browser-open failure, got: %v", r.err)
 	}
@@ -255,19 +263,22 @@ func TestLoginOpensBrowserAndSurvivesBrowserError(t *testing.T) {
 }
 
 func TestLoginRejectsStateMismatch(t *testing.T) {
+	// Given
 	f := newFakeAuthServer(t)
 	out, results := startLogin(t, context.Background(), f.srv.URL, nil)
-
 	_, redirectURI := waitForAuthURL(t, out)
+
+	// When
 	resp, err := http.Get(redirectURI + "?code=stolen&state=attacker-guess")
 	if err != nil {
 		t.Fatalf("delivering callback: %v", err)
 	}
 	resp.Body.Close()
+
+	// Then
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("callback with bad state = %d, want 400", resp.StatusCode)
 	}
-
 	r := awaitLogin(t, results)
 	if r.err == nil || !strings.Contains(r.err.Error(), "state mismatch") {
 		t.Errorf("Login error = %v, want state mismatch", r.err)
@@ -280,12 +291,15 @@ func TestLoginRejectsStateMismatch(t *testing.T) {
 }
 
 func TestLoginDenied(t *testing.T) {
+	// Given
 	f := newFakeAuthServer(t)
 	out, results := startLogin(t, context.Background(), f.srv.URL, nil)
-
 	q, redirectURI := waitForAuthURL(t, out)
+
+	// When
 	http.Get(redirectURI + "?error=access_denied&state=" + url.QueryEscape(q.Get("state")))
 
+	// Then
 	r := awaitLogin(t, results)
 	if r.err == nil || !strings.Contains(r.err.Error(), "access_denied") {
 		t.Errorf("Login error = %v, want access_denied", r.err)
@@ -293,13 +307,16 @@ func TestLoginDenied(t *testing.T) {
 }
 
 func TestLoginContextCanceled(t *testing.T) {
+	// Given
 	f := newFakeAuthServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	out, results := startLogin(t, ctx, f.srv.URL, nil)
+	waitForAuthURL(t, out)
 
-	waitForAuthURL(t, out) // ensure the flow is blocked on the callback
+	// When
 	cancel()
 
+	// Then
 	r := awaitLogin(t, results)
 	if !errors.Is(r.err, context.Canceled) {
 		t.Errorf("Login error = %v, want context.Canceled", r.err)
@@ -307,6 +324,7 @@ func TestLoginContextCanceled(t *testing.T) {
 }
 
 func TestLoginExchangeFailure(t *testing.T) {
+	// Given
 	f := newFakeAuthServer(t)
 	f.tokenHandler = func(url.Values) (int, any) {
 		return http.StatusBadRequest, map[string]string{
@@ -315,10 +333,12 @@ func TestLoginExchangeFailure(t *testing.T) {
 		}
 	}
 	out, results := startLogin(t, context.Background(), f.srv.URL, nil)
-
 	q, redirectURI := waitForAuthURL(t, out)
+
+	// When
 	http.Get(redirectURI + "?code=late&state=" + url.QueryEscape(q.Get("state")))
 
+	// Then
 	r := awaitLogin(t, results)
 	if r.err == nil || !strings.Contains(r.err.Error(), "invalid_grant: Code has expired.") {
 		t.Errorf("Login error = %v, want invalid_grant with description", r.err)
@@ -327,8 +347,13 @@ func TestLoginExchangeFailure(t *testing.T) {
 
 func TestDiscover(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
+		// Given
 		f := newFakeAuthServer(t)
-		md, err := Discover(context.Background(), f.srv.URL+"/") // trailing slash must not break the path
+
+		// When
+		md, err := Discover(context.Background(), f.srv.URL+"/")
+
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -338,29 +363,40 @@ func TestDiscover(t *testing.T) {
 	})
 
 	t.Run("not a flagsmith API", func(t *testing.T) {
+		// Given
 		srv := httptest.NewServer(http.NotFoundHandler())
 		defer srv.Close()
+
+		// When
 		_, err := Discover(context.Background(), srv.URL)
+
+		// Then
 		if err == nil || !strings.Contains(err.Error(), "is this a Flagsmith API URL?") {
 			t.Errorf("err = %v, want a helpful not-Flagsmith hint", err)
 		}
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
+		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "<html>nope</html>")
 		}))
 		defer srv.Close()
+
+		// When / Then
 		if _, err := Discover(context.Background(), srv.URL); err == nil {
 			t.Error("expected an error for non-JSON metadata")
 		}
 	})
 
 	t.Run("missing endpoints", func(t *testing.T) {
+		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "{}")
 		}))
 		defer srv.Close()
+
+		// When / Then
 		if _, err := Discover(context.Background(), srv.URL); err == nil {
 			t.Error("expected an error for metadata without endpoints")
 		}
@@ -369,17 +405,27 @@ func TestDiscover(t *testing.T) {
 
 func TestEnsureFresh(t *testing.T) {
 	t.Run("valid token is untouched", func(t *testing.T) {
+		// Given
 		c := &Credentials{APIURL: "http://unreachable.invalid", ExpiresAt: time.Now().Add(10 * time.Minute)}
+
+		// When
 		got, refreshed, err := EnsureFresh(context.Background(), c)
+
+		// Then
 		if err != nil || refreshed || got != c {
 			t.Errorf("got (%v, %v, %v), want the same credentials untouched", got, refreshed, err)
 		}
 	})
 
 	t.Run("expired token is refreshed", func(t *testing.T) {
+		// Given
 		f := newFakeAuthServer(t)
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "old-refresh", ExpiresAt: time.Now().Add(-time.Minute)}
+
+		// When
 		got, refreshed, err := EnsureFresh(context.Background(), c)
+
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -399,12 +445,17 @@ func TestEnsureFresh(t *testing.T) {
 	})
 
 	t.Run("revoked refresh token points at re-login", func(t *testing.T) {
+		// Given
 		f := newFakeAuthServer(t)
 		f.tokenHandler = func(url.Values) (int, any) {
 			return http.StatusBadRequest, map[string]string{"error": "invalid_grant"}
 		}
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "revoked", ExpiresAt: time.Now().Add(-time.Minute)}
+
+		// When
 		_, _, err := EnsureFresh(context.Background(), c)
+
+		// Then
 		if err == nil || !strings.Contains(err.Error(), "flagsmith login") {
 			t.Errorf("err = %v, want a hint to run `flagsmith login`", err)
 		}
@@ -413,11 +464,16 @@ func TestEnsureFresh(t *testing.T) {
 
 func TestRevoke(t *testing.T) {
 	t.Run("revokes the refresh token", func(t *testing.T) {
+		// Given
 		f := newFakeAuthServer(t)
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "refresh-1"}
+
+		// When
 		if err := Revoke(context.Background(), c); err != nil {
 			t.Fatal(err)
 		}
+
+		// Then
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		if len(f.revokeForms) != 1 {
@@ -436,9 +492,12 @@ func TestRevoke(t *testing.T) {
 	})
 
 	t.Run("no revocation endpoint is a no-op", func(t *testing.T) {
+		// Given
 		f := newFakeAuthServer(t)
 		f.noRevocation = true
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "refresh-1"}
+
+		// When / Then
 		if err := Revoke(context.Background(), c); err != nil {
 			t.Errorf("Revoke without a revocation endpoint should succeed, got %v", err)
 		}

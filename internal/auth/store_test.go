@@ -43,10 +43,14 @@ func assertCredentialsEqual(t *testing.T, got, want *Credentials) {
 }
 
 func TestStoreKeychainRoundTrip(t *testing.T) {
+	// Given
 	isolateStorage(t)
 	want := testCredentials()
 
+	// When
 	source, err := Save(want)
+
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +58,10 @@ func TestStoreKeychainRoundTrip(t *testing.T) {
 		t.Errorf("Save source = %q, want %q", source, SourceKeychain)
 	}
 
+	// When
 	got, source, err := Load()
+
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,27 +70,33 @@ func TestStoreKeychainRoundTrip(t *testing.T) {
 	}
 	assertCredentialsEqual(t, got, want)
 
+	// When
 	if err := Delete(); err != nil {
 		t.Fatal(err)
 	}
+
+	// Then
 	if _, _, err := Load(); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load after Delete = %v, want ErrNotLoggedIn", err)
 	}
 }
 
 func TestStoreFileFallback(t *testing.T) {
+	// Given
 	isolateStorage(t)
 	keyring.MockInitWithError(errors.New("keychain locked"))
 	want := testCredentials()
 
+	// When
 	source, err := Save(want)
+
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}
 	if source != SourceFile {
 		t.Errorf("Save source = %q, want %q", source, SourceFile)
 	}
-
 	path, err := credentialsPath()
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +111,10 @@ func TestStoreFileFallback(t *testing.T) {
 		}
 	}
 
+	// When
 	got, source, err := Load()
+
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,23 +123,29 @@ func TestStoreFileFallback(t *testing.T) {
 	}
 	assertCredentialsEqual(t, got, want)
 
-	// Delete must succeed even with the keychain broken (best-effort).
+	// When
 	if err := Delete(); err != nil {
 		t.Fatal(err)
 	}
+
+	// Then
 	if _, _, err := Load(); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load after Delete = %v, want ErrNotLoggedIn", err)
 	}
 }
 
 func TestLoadNotLoggedIn(t *testing.T) {
+	// Given
 	isolateStorage(t)
+
+	// When / Then
 	if _, _, err := Load(); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load = %v, want ErrNotLoggedIn", err)
 	}
 }
 
 func TestLoadCorruptFile(t *testing.T) {
+	// Given
 	isolateStorage(t)
 	path, err := credentialsPath()
 	if err != nil {
@@ -135,6 +157,8 @@ func TestLoadCorruptFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
+	// When / Then
 	if _, _, err := Load(); err == nil || errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load with corrupt file = %v, want a corruption error", err)
 	}
