@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -57,6 +58,7 @@ func resetFlags() {
 	noBrowser = false
 	loginToken = false
 	loginTokenStdin = false
+	insecureStorage = false
 }
 
 func run(stdin string, args ...string) (string, error) {
@@ -356,11 +358,11 @@ func TestEnvBeatsKeychain(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	if _, err := auth.Save(&auth.Credentials{
+	if err := auth.Save(&auth.Credentials{
 		Kind: auth.KindOAuth, APIURL: f.srv.URL,
 		AccessToken: oauthAccess, RefreshToken: "cmd-refresh",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
-	}); err != nil {
+	}, auth.SourceKeychain); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FLAGSMITH_API_KEY", masterKey)
@@ -462,7 +464,7 @@ func TestLoginTokenStdinRejectsNonMasterKey(t *testing.T) {
 	}
 }
 
-func TestPlaintextFallbackWarns(t *testing.T) {
+func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	keyring.MockInitWithError(errors.New("keychain locked"))
@@ -472,10 +474,107 @@ func TestPlaintextFallbackWarns(t *testing.T) {
 	out, err := run(masterKey+"\n", "login", "--api", f.srv.URL, "--token-stdin")
 
 	// Then
-	if err != nil {
-		t.Fatalf("login: %v", err)
+	if err == nil {
+		t.Fatalf("expected fail-closed error, got success: %q", out)
 	}
-	if !strings.Contains(out, "plaintext") {
-		t.Errorf("output = %q, want a plaintext-storage warning", out)
+	for _, want := range []string{"--insecure-storage", "FLAGSMITH_API_KEY"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to mention %q", err, want)
+		}
+	}
+	if _, statErr := os.Stat(credentialsPath(t)); !os.IsNotExist(statErr) {
+		t.Error("a credentials file was written without opt-in")
+	}
+
+	// When / Then — browser login probes the keychain before starting any flow
+	out, err = run("", "login", "--api", f.srv.URL, "--no-browser")
+	if err == nil || !strings.Contains(err.Error(), "--insecure-storage") {
+		t.Errorf("browser login err = %v, want fail-closed before the flow", err)
+	}
+	if strings.Contains(out, "oauth/authorize") {
+		t.Errorf("output = %q — the OAuth flow started despite no storage for its result", out)
+	}
+}
+
+func credentialsPath(t *testing.T) string {
+	t.Helper()
+	path, err := auth.CredentialsFilePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestInsecureStorageOptIn(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	keyring.MockInitWithError(errors.New("keychain locked"))
+	f := newFakeInstance(t)
+
+	// When
+	loginOut, err := run(masterKey+"\n", "login", "--api", f.srv.URL, "--token-stdin", "--insecure-storage")
+
+	// Then
+	if err != nil {
+		t.Fatalf("login --insecure-storage: %v", err)
+	}
+	if !strings.Contains(loginOut, "plaintext") {
+		t.Errorf("login output = %q, want a plaintext-storage warning", loginOut)
+	}
+
+	// When
+	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if !strings.Contains(statusOut, "file (plaintext)") {
+		t.Errorf("auth status output = %q, want the file (plaintext) source", statusOut)
+	}
+
+	// When
+	logoutOut, err := run("", "logout", "--api", f.srv.URL)
+
+	// Then
+	if err != nil || !strings.Contains(logoutOut, "Logged out") {
+		t.Errorf("logout = (%q, %v)", logoutOut, err)
+	}
+}
+
+func TestRefreshPersistsToSameStore(t *testing.T) {
+	// Given a working keychain but credentials living in the opt-in file store
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	if err := auth.Save(&auth.Credentials{
+		Kind: auth.KindOAuth, APIURL: f.srv.URL,
+		AccessToken: "stale-access", RefreshToken: "cmd-refresh",
+		ExpiresAt: time.Now().Add(-time.Minute),
+	}, auth.SourceFile); err != nil {
+		t.Fatal(err)
+	}
+
+	// When
+	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if !strings.Contains(statusOut, "file (plaintext)") {
+		t.Errorf("auth status output = %q, want the file (plaintext) source", statusOut)
+	}
+	if _, kerr := keyring.Get("flagsmith-cli", f.srv.URL); kerr == nil {
+		t.Error("refresh migrated credentials into the keychain — must persist to the same store")
+	}
+	creds, source, err := auth.Load(f.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != auth.SourceFile {
+		t.Errorf("Load source = %q, want %q", source, auth.SourceFile)
+	}
+	if creds.AccessToken != oauthAccess {
+		t.Errorf("AccessToken = %q, want the refreshed token persisted", creds.AccessToken)
 	}
 }

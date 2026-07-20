@@ -56,17 +56,9 @@ func TestStoreKeychainRoundTrip(t *testing.T) {
 	want := oauthCredentials(saasURL)
 
 	// When
-	source, err := Save(want)
-
-	// Then
-	if err != nil {
+	if err := Save(want, SourceKeychain); err != nil {
 		t.Fatal(err)
 	}
-	if source != SourceKeychain {
-		t.Errorf("Save source = %q, want %q", source, SourceKeychain)
-	}
-
-	// When
 	got, source, err := Load(saasURL)
 
 	// Then
@@ -94,10 +86,10 @@ func TestStoreKeysByInstance(t *testing.T) {
 	isolateStorage(t)
 	saas := oauthCredentials(saasURL)
 	self := &Credentials{Kind: KindMaster, APIURL: selfURL, MasterKey: "AbCd1234.secret"}
-	if _, err := Save(saas); err != nil {
+	if err := Save(saas, SourceKeychain); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Save(self); err != nil {
+	if err := Save(self, SourceKeychain); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,7 +123,7 @@ func TestStoreNormalizesInstanceURL(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	want := oauthCredentials(saasURL)
-	if _, err := Save(want); err != nil {
+	if err := Save(want, SourceKeychain); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,26 +137,21 @@ func TestStoreNormalizesInstanceURL(t *testing.T) {
 	assertCredentialsEqual(t, got, want)
 }
 
-func TestStoreFileFallback(t *testing.T) {
-	// Given
+func TestStoreFileIsExplicitOptIn(t *testing.T) {
+	// Given a WORKING keychain — the file store must never be a silent fallback
 	isolateStorage(t)
-	keyring.MockInitWithError(errors.New("keychain locked"))
 	want := oauthCredentials(saasURL)
 	other := oauthCredentials(selfURL)
 
 	// When
-	source, err := Save(want)
+	if err := Save(want, SourceFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(other, SourceFile); err != nil {
+		t.Fatal(err)
+	}
 
 	// Then
-	if err != nil {
-		t.Fatal(err)
-	}
-	if source != SourceFile {
-		t.Errorf("Save source = %q, want %q", source, SourceFile)
-	}
-	if _, err := Save(other); err != nil {
-		t.Fatal(err)
-	}
 	path, err := CredentialsFilePath()
 	if err != nil {
 		t.Fatal(err)
@@ -203,6 +190,55 @@ func TestStoreFileFallback(t *testing.T) {
 	if _, _, err := Load(selfURL); err != nil {
 		t.Errorf("Load(other) after Delete(saas) = %v, want untouched", err)
 	}
+}
+
+func TestSaveKeychainUnavailableFailsClosed(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	keyring.MockInitWithError(errors.New("keychain locked"))
+
+	// When
+	err := Save(oauthCredentials(saasURL), SourceKeychain)
+
+	// Then
+	if !errors.Is(err, ErrKeychainUnavailable) {
+		t.Errorf("err = %v, want ErrKeychainUnavailable — never a silent file fallback", err)
+	}
+	if _, statErr := os.Stat(mustCredentialsPath(t)); !os.IsNotExist(statErr) {
+		t.Error("a credentials file was written without opt-in")
+	}
+}
+
+func mustCredentialsPath(t *testing.T) string {
+	t.Helper()
+	path, err := CredentialsFilePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestKeychainAvailable(t *testing.T) {
+	t.Run("working keychain", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+
+		// When / Then
+		if !KeychainAvailable() {
+			t.Error("KeychainAvailable = false with a working keychain")
+		}
+	})
+
+	t.Run("broken keychain", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		keyring.MockInitWithError(errors.New("keychain locked"))
+
+		// When / Then
+		if KeychainAvailable() {
+			t.Error("KeychainAvailable = true with a broken keychain")
+		}
+	})
 }
 
 func TestLoadNotLoggedIn(t *testing.T) {

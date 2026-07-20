@@ -46,7 +46,23 @@ const (
 	SourceFile     = "file"
 )
 
-var ErrNotLoggedIn = errors.New("not logged in — run `flagsmith login`")
+var (
+	ErrNotLoggedIn = errors.New("not logged in — run `flagsmith login`")
+
+	// ErrKeychainUnavailable means the OS keychain rejected a write. The
+	// plaintext file store is an explicit opt-in, never a silent fallback.
+	ErrKeychainUnavailable = errors.New("OS keychain unavailable")
+)
+
+// KeychainAvailable probes the OS keychain with a write+delete round-trip.
+func KeychainAvailable() bool {
+	const probeKey = "storage-probe"
+	if err := keyring.Set(keyringService, probeKey, "1"); err != nil {
+		return false
+	}
+	_ = keyring.Delete(keyringService, probeKey)
+	return true
+}
 
 // instanceKey normalizes an API URL into the per-instance storage key.
 func instanceKey(apiURL string) string {
@@ -97,26 +113,30 @@ func writeFileStore(store map[string]*Credentials) error {
 	return os.WriteFile(path, b, 0o600)
 }
 
-// Save stores credentials for their instance in the OS keychain, falling
-// back to the plaintext file. It returns where they were stored.
-func Save(c *Credentials) (string, error) {
+// Save stores credentials for their instance in the given store:
+// SourceKeychain, or SourceFile.
+func Save(c *Credentials, store string) error {
 	key := instanceKey(c.APIURL)
-	b, err := json.Marshal(c)
-	if err != nil {
-		return "", err
+	switch store {
+	case SourceKeychain:
+		b, err := json.Marshal(c)
+		if err != nil {
+			return err
+		}
+		if err := keyring.Set(keyringService, key, string(b)); err != nil {
+			return fmt.Errorf("%w: %v", ErrKeychainUnavailable, err)
+		}
+		return nil
+	case SourceFile:
+		entries, err := readFileStore()
+		if err != nil {
+			return err
+		}
+		entries[key] = c
+		return writeFileStore(entries)
+	default:
+		return fmt.Errorf("unknown credential store %q", store)
 	}
-	if err := keyring.Set(keyringService, key, string(b)); err == nil {
-		return SourceKeychain, nil
-	}
-	store, err := readFileStore()
-	if err != nil {
-		return "", err
-	}
-	store[key] = c
-	if err := writeFileStore(store); err != nil {
-		return "", err
-	}
-	return SourceFile, nil
 }
 
 // Load returns the stored credentials for an instance and their source,

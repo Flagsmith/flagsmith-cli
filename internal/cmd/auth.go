@@ -56,7 +56,9 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 		return nil, err
 	}
 	if refreshed {
-		if source, err = auth.Save(creds); err != nil {
+		// Rotated sessions persist to the store they were loaded from —
+		// refresh never migrates credentials between stores.
+		if err := auth.Save(creds, source); err != nil {
 			return nil, fmt.Errorf("storing refreshed credentials: %w", err)
 		}
 	}
@@ -74,6 +76,15 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 	return cred, nil
 }
 
+// sourceLabel renders a credential source for humans; the plaintext file
+// store is always labelled as such.
+func sourceLabel(source string) string {
+	if source == auth.SourceFile {
+		return "file (plaintext)"
+	}
+	return source
+}
+
 func orgList(orgs []api.Organisation) string {
 	parts := make([]string, len(orgs))
 	for i, o := range orgs {
@@ -82,7 +93,7 @@ func orgList(orgs []api.Organisation) string {
 	return strings.Join(parts, ", ")
 }
 
-// warnPlaintext tells the user when credentials had to bypass the keychain.
+// warnPlaintext reminds the user that the opt-in file store is plaintext.
 func warnPlaintext(cmd *cobra.Command, source string) {
 	if source != auth.SourceFile {
 		return
@@ -92,7 +103,7 @@ func warnPlaintext(cmd *cobra.Command, source string) {
 		path = "the credentials file"
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(),
-		"Warning: OS keychain unavailable — credentials stored in plaintext at %s\n", path)
+		"Warning: credentials stored in plaintext at %s\n", path)
 }
 
 var authStatusCmd = &cobra.Command{
@@ -118,7 +129,7 @@ var authStatusCmd = &cobra.Command{
 			fmt.Fprintf(out, "✓ Logged in to %s as %s\n", apiURL, user.Email)
 		}
 		fmt.Fprintf(out, "  Organisations: %s\n", orgList(orgs))
-		fmt.Fprintf(out, "  Credential source: %s\n", cred.source)
+		fmt.Fprintf(out, "  Credential source: %s\n", sourceLabel(cred.source))
 		if !cred.expires.IsZero() {
 			fmt.Fprintf(out, "  Access token expires: %s\n",
 				cred.expires.Local().Format(time.RFC1123))

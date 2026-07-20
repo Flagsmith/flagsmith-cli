@@ -97,14 +97,18 @@ SDK API (sent as `X-Environment-Key`):
 
 ## 7. Storage
 
-All credentials are stored in the OS keychain, one entry per instance, keyed by API URL. CLI expects `FLAGSMITH_API_KEY` in headless Linux, errors otherwise.
+All credentials are stored in the OS keychain, one entry per instance, keyed by API URL.
+
+When no keychain is available (headless Linux, containers, SSH), `flagsmith login` **fails closed** before starting any flow, naming the two ways out: set `FLAGSMITH_API_KEY`, or re-run with `--insecure-storage` to opt into a plaintext `0600` file (`~/.config/flagsmith/credentials.json`). The plaintext store is never chosen silently; `auth status` reports its credentials as `file (plaintext)`. Refreshed sessions persist to whichever store they were loaded from. CI never touches disk — env vars/OIDC only.
+
+The phase 2 device-authorization grant makes headless *OAuth* sessions possible; those use the same opt-in store, since rotating refresh tokens must be persisted somewhere.
 
 If a non-SaaS API URL provided via `--api-url`, it is stored in flagsmith.json (see 04-project-config.md).
 
 ## 8. Command surface (auth slice)
 
 ```
-flagsmith login [--api URL] [--token] [--token-stdin]
+flagsmith login [--api URL] [--token] [--token-stdin] [--insecure-storage]
 flagsmith logout [--api URL]
 flagsmith auth status        # identity, credential source, expiry, org
 flagsmith auth token         # print a current access token for curl/scripts
