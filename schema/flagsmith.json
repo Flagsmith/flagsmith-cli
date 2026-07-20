@@ -5,6 +5,11 @@
   "description": "Configuration for the Flagsmith CLI.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema reference enabling editor autocomplete and validation."
+    },
     "project": {
       "type": "integer",
       "minimum": 1,
