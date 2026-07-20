@@ -2,25 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/schema/flagsmith.json",
   "title": "Flagsmith CLI config",
-  "description": "Configuration for the Flagsmith CLI. Fields map one-to-one onto command-line flags and FLAGSMITH_* environment variables.",
+  "description": "Configuration for the Flagsmith CLI.",
   "type": "object",
   "properties": {
-    "$schema": {
-      "type": "string",
-      "format": "uri",
-      "description": "JSON Schema reference enabling editor autocomplete and validation."
-    },
     "project": {
       "type": "integer",
       "minimum": 1,
       "title": "Project ID",
-      "description": "Flagsmith project ID. Find it via `flagsmith projects list` or JSON data in the dashboard. `flagsmith config` shows the resolved project name."
+      "description": "Flagsmith project ID. Find it via `flagsmith projects list`, or JSON data in the dashboard. `flagsmith config` shows the resolved project name."
     },
     "organisation": {
       "type": "integer",
       "minimum": 1,
       "title": "Organisation ID",
-      "description": "Optional. Used by organisation-scoped commands that have no project context (e.g. creating a project) and to preselect the organisation in `flagsmith init`. Otherwise the organisation is derived from the project."
+      "description": "Optional. Used by organisation-scoped commands that have no project context (e.g. creating a project). If not set, a default organisation is used. For project-scoped commands the organisation is derived from the project."
     },
     "environment": {
       "type": "string",
@@ -28,8 +23,8 @@
       "not": {
         "pattern": "^ser\\."
       },
-      "title": "Default environment (client-side SDK key)",
-      "description": "Client-side environment key identifying the default environment for `-e`/`--environment`. Unique per environment and safe to commit: client-side keys are public by design. Also enables flag evaluation without Admin API credentials. Server-side keys (ser.*) are secrets and are rejected here: provide those via the FLAGSMITH_ENVIRONMENT_KEY environment variable instead."
+      "title": "Default environment",
+      "description": "Client-side environment key identifying the default environment. Safe to commit: client-side keys are public by design. Enables flag evaluation without Admin API credentials. Server-side keys (ser.*) are secrets and are rejected in `flagsmith.json`: provide those via the FLAGSMITH_ENVIRONMENT_KEY environment variable instead."
     },
     "apiUrl": {
       "type": "string",
@@ -44,15 +39,19 @@
       "format": "uri",
       "pattern": "^https?://",
       "title": "SDK API base URL",
-      "description": "Optional. Base URL of the SDK API used for flag evaluation. Only needed when the SDK API lives on a different host than apiUrl (e.g. when using Edge Proxy). When omitted, falls back to apiUrl, otherwise to Flagsmith Edge API (https://edge.api.flagsmith.com)."
+      "description": "Optional. Base URL of the SDK API used for flag evaluation. Only needed when the SDK API lives on a different host than apiUrl (e.g. when using Edge Proxy). When omitted, falls back to explicitly set apiUrl, otherwise to Flagsmith Edge API (https://edge.api.flagsmith.com)."
     }
   },
   "anyOf": [
     {
-      "required": ["project"]
+      "required": [
+        "project"
+      ]
     },
     {
-      "required": ["environment"]
+      "required": [
+        "environment"
+      ]
     }
   ],
   "additionalProperties": false

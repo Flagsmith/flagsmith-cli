@@ -108,8 +108,8 @@ If a non-SaaS API URL provided via `--api-url`, it is stored in flagsmith.json (
 ## 8. Command surface (auth slice)
 
 ```
-flagsmith login [--api URL] [--token] [--token-stdin] [--insecure-storage]
-flagsmith logout [--api URL]
+flagsmith login [--api-url URL] [--token] [--token-stdin] [--insecure-storage]
+flagsmith logout [--api-url URL]
 flagsmith auth status        # identity, credential source, expiry, org
 flagsmith auth token         # print a current access token for curl/scripts
 ```

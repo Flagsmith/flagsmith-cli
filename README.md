@@ -22,8 +22,8 @@ flagsmith auth token           # print an access token for curl/scripts
 flagsmith logout               # revoke and remove the stored session
 ```
 
-Point at a self-hosted instance with `--api` or `FLAGSMITH_API_URL`:
+Point at a self-hosted instance with `--api-url` or `FLAGSMITH_API_URL`:
 
 ```sh
-flagsmith login --api http://127.0.0.1:8000
+flagsmith login --api-url http://127.0.0.1:8000
 ```

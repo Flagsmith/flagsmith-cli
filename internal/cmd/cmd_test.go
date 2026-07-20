@@ -288,6 +288,47 @@ func TestAPIFlagWorksInAnyPosition(t *testing.T) {
 	}
 }
 
+func TestAPIURLFlagWithHiddenAlias(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When
+	canonical, err := run("", "auth", "status", "--api-url", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("--api-url: %v", err)
+	}
+	if !strings.Contains(canonical, "Acme") {
+		t.Errorf("output = %q, want the fake instance to have been hit", canonical)
+	}
+
+	// When
+	alias, err := run("", "auth", "status", "--api", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("--api alias: %v", err)
+	}
+	if alias != canonical {
+		t.Errorf("alias output differs from canonical:\n%q\n%q", alias, canonical)
+	}
+
+	// When / Then — the alias stays out of help
+	helpOut, err := run("", "--help")
+	if err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	if !strings.Contains(helpOut, "--api-url") {
+		t.Errorf("help = %q, want --api-url documented", helpOut)
+	}
+	if strings.Contains(helpOut, "--api ") {
+		t.Errorf("help = %q, want the --api alias hidden", helpOut)
+	}
+}
+
 func TestEnvMasterKey(t *testing.T) {
 	// Given
 	isolateStorage(t)
