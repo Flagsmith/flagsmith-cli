@@ -9,7 +9,9 @@ Flagsmith has two distinct API surfaces with different credentials, and the CLI 
 | Surface | Purpose | Credentials today |
 |---|---|---|
 | SDK API | Evaluate/fetch flags | Environment keys via `X-Environment-Key`: client-side (public) and server-side (secret) |
-| Admin API | Everything else | User authtoken (legacy, non-expiring), org Master API keys (`Authorization: Api-Key <prefix>.<secret>`), OAuth 2.1 bearer tokens |
+| Admin API | Everything else | Master API keys (`Authorization: Api-Key <prefix>.<secret>`), OAuth 2.1 bearer tokens |
+
+Note: we're omitting the legacy non-expiring user authtokens because they will be replaced with PATs further down the line, and because OAuth fully covers user auth. If static credentials have to be used, Master API Keys are available.
 
 ## 2. The auth matrix: target UX
 
@@ -65,17 +67,25 @@ Unless `FLAGSMITH_API_KEY` is set explicitly, the `Flagsmith/setup-cli@v1` actio
 
 ## 5. SDK API auth
 
-- Explicit: `FLAGSMITH_ENVIRONMENT_KEY` — no Admin API creds needed.
+- Explicit: `FLAGSMITH_ENVIRONMENT` env var (alias: `FLAGSMITH_ENVIRONMENT_KEY`) — no Admin API creds needed.
+- Committed: the `environment` field in `flagsmith.json` is a client-side key (public by design), so a repo with that file evaluates flags with zero credentials (see 04-project-config.md).
 - Derived: when the user has Admin API creds and names a project/environment, the CLI resolves the environment key via the Admin API and caches it. Nobody should copy-paste environment keys to use the CLI locally.
 
 ## 6. Credential precedence & env vars
 
-Highest wins:
+Admin API:
 
 1. Command-line flags
-2. `FLAGSMITH_API_KEY` (Admin API) / `FLAGSMITH_ENVIRONMENT_KEY` (SDK, `X-Environment-Key`)
+2. `FLAGSMITH_API_KEY`
 3. OIDC
 4. Logged-in profile (keychain)
+
+SDK API (sent as `X-Environment-Key`):
+
+1. Command-line flags (`-e` with a client-side key)
+2. `FLAGSMITH_ENVIRONMENT` / `FLAGSMITH_ENVIRONMENT_KEY`
+3. `environment` in the nearest `flagsmith.json`
+4. Derived via Admin API creds from project + environment name
 
 `FLAGSMITH_API_KEY` accepts either Admin API credential. The CLI picks the header by token shape:
 
@@ -87,9 +97,9 @@ Highest wins:
 
 ## 7. Storage
 
-All credentials are stored in the OS keychain, one entry per instance, keyed by API URL. On headless Linux, fallback to a `0600` plaintext file with a visible warning.
+All credentials are stored in the OS keychain, one entry per instance, keyed by API URL. CLI expects `FLAGSMITH_API_KEY` in headless Linux, errors otherwise.
 
-If a non-SaaS API URL provided via `--api-url`, it is stored in flagsmith.json (see 03-project-config.md).
+If a non-SaaS API URL provided via `--api-url`, it is stored in flagsmith.json (see 04-project-config.md).
 
 ## 8. Command surface (auth slice)
 

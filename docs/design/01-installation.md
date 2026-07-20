@@ -7,24 +7,15 @@ Status: draft
 Single static binary via goreleaser, from GitHub Releases:
 
 - `brew install flagsmith/tap/flagsmith` (primary mac/linux path)
-- `curl -fsSL https://get.flagsmith.com | sh` (CI-friendly, pinnable version)
+- `curl -fsSL https://get.flagsmith.com | sh` (CI-friendly, pinnable version via FLAGSMITH_CLI_VERSION)
 - `Flagsmith/setup-cli@v1` GitHub Action installs + performs the OIDC exchange
 - Docker image
 - winget / scoop, deb/rpm
 - `go install` for free
 - Optional: publish a thin npm wrapper under the existing `@flagsmith` scope that downloads the binary — migration bridge for current npm installers
 
-## 2. Target first-run experience
+## 2. `get.flagsmith.com`
 
-```
-$ brew install flagsmith/tap/flagsmith
-$ flagsmith login
-✓ Opened browser… authenticated as kim@flagsmith.com (org: Flagsmith)
-$ flagsmith flags list --project my-app --environment production
-```
+`get.flagsmith.com` redirects to https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh. Security-conscious users are able to use the github CDN url directly, pinning a SHA they trust.
 
-and in GitHub Actions, with org trust configured and `id-token: write` permission, the same commands with no secrets at all.
-
-## 3. Open questions
-
-1. **`get.flagsmith.com`** — does the install-script domain exist / who owns provisioning it?
+Upon successfull installation, `install.sh` prompts the user to run `flagsmith init`.

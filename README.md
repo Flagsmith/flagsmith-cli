@@ -3,8 +3,9 @@
 The next-generation Flagsmith command-line interface. Currently a proof of
 concept focused on installation and authentication — see
 [docs/design/01-installation.md](docs/design/01-installation.md),
-[docs/design/02-authentication.md](docs/design/02-authentication.md) and
-[docs/design/03-project-config.md](docs/design/03-project-config.md).
+[docs/design/02-output-and-interactivity.md](docs/design/02-output-and-interactivity.md),
+[docs/design/03-authentication.md](docs/design/03-authentication.md) and
+[docs/design/04-project-config.md](docs/design/04-project-config.md).
 
 ## Build
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/schema/flagsmith.json",
   "title": "Flagsmith CLI config",
-  "description": "Configuration for the Flagsmith CLI.",
+  "description": "Configuration for the Flagsmith CLI. Fields map one-to-one onto command-line flags and FLAGSMITH_* environment variables.",
   "type": "object",
   "properties": {
     "$schema": {
@@ -25,8 +25,11 @@
     "environment": {
       "type": "string",
       "minLength": 1,
-      "title": "Default environment",
-      "description": "Optional. Environment name used when `-e`/`--environment` is omitted, e.g. \"Development\". Matched case-insensitively."
+      "not": {
+        "pattern": "^ser\\."
+      },
+      "title": "Default environment (client-side SDK key)",
+      "description": "Client-side environment key identifying the default environment for `-e`/`--environment`. Unique per environment and safe to commit: client-side keys are public by design. Also enables flag evaluation without Admin API credentials. Server-side keys (ser.*) are secrets and are rejected here: provide those via the FLAGSMITH_ENVIRONMENT_KEY environment variable instead."
     },
     "apiUrl": {
       "type": "string",
@@ -42,19 +45,15 @@
       "pattern": "^https?://",
       "title": "SDK API base URL",
       "description": "Optional. Base URL of the SDK API used for flag evaluation. Only needed when the SDK API lives on a different host than apiUrl (e.g. when using Edge Proxy). When omitted, falls back to apiUrl, otherwise to Flagsmith Edge API (https://edge.api.flagsmith.com)."
-    },
-    "environmentKey": {
-      "type": "string",
-      "minLength": 1,
-      "not": {
-        "pattern": "^ser\\."
-      },
-      "title": "Client-side SDK key",
-      "description": "Optional. A client-side environment key, enabling flag evaluation without Admin API credentials. Client-side keys are public by design and safe to commit. Server-side keys (ser.*) are secrets and are rejected here: provide those via `FLAGSMITH_ENVIRONMENT_KEY` environment variable instead."
     }
   },
-  "required": [
-    "project"
+  "anyOf": [
+    {
+      "required": ["project"]
+    },
+    {
+      "required": ["environment"]
+    }
   ],
   "additionalProperties": false
 }
