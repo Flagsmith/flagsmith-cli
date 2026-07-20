@@ -785,6 +785,29 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 	}
 }
 
+func TestInitInvalidChoiceReprompts(t *testing.T) {
+	// Given — single org; project prompt has 2 options (acme-api, create new)
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — an invalid choice, then project 1, then environment 1
+	out, err := run("99\n1\n1\n", "init", "--api-url", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "between 1 and") {
+		t.Errorf("output = %q, want a re-prompt instead of a crash", out)
+	}
+	if written := loadWritten(t, root); written.Project != 101 {
+		t.Errorf("written = %+v", written)
+	}
+}
+
 func TestInitReinitShowsDiffAndConfirms(t *testing.T) {
 	// Given
 	isolateStorage(t)

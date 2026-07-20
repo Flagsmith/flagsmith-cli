@@ -28,9 +28,13 @@ $ flagsmith init
 No credentials found.
 Log in to Flagsmith in your browser:
 ✓ Logged in to https://api.flagsmith.com as kim@flagsmith.com
-? Organisation        › Flagsmith
-? Project             › my-app (12345)
-? Default environment › Development (WqXhZk8sVY3dGgTqZ9pJmN)
+
+┃ Project
+┃ > my-app (12345)
+┃   my-other-app (12346)
+┃   Create a new project
+↑ up • ↓ down • / filter • enter submit
+
 ✓ Wrote flagsmith.json
 You're all set! Try:
   flagsmith flags list
@@ -45,16 +49,17 @@ With an existing config in place, `flagsmith init` can be run to regenerate it. 
 ```
 $ flagsmith init
 ✓ Logged in as kim@flagsmith.com (keychain)
-flagsmith.json exists; updating it.
-? Project             › acme-api (67890)
-? Default environment › Production
+flagsmith.json exists — updating it.
 
 - "project": 12345,
 + "project": 67890,
 - "environment": "WqXhZk8sVY3dGgTqZ9pJmN",
 + "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ",
 
-? Write changes? (y/N) › y
+┃ Write changes?
+┃   Yes     No
+←/→ toggle • enter submit • y Yes • n No
+
 ✓ Wrote flagsmith.json
 ```
 
