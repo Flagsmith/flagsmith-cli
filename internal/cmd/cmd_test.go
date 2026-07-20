@@ -785,6 +785,53 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 	}
 }
 
+func TestInitPreservesExistingOrganisation(t *testing.T) {
+	// Given — a single-org user re-initialising a file that records its org
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 12345, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — non-interactive re-init that doesn't touch the organisation
+	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
+
+	// Then — the organisation must survive, not be dropped
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	if written := loadWritten(t, root); written.Organisation != 3 {
+		t.Errorf("organisation = %d, want 3 preserved", written.Organisation)
+	}
+}
+
+func TestInitReinitReoffersOrgPicker(t *testing.T) {
+	// Given — a multi-org user re-initialising; current org is NOT first
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.orgs = []map[string]any{{"id": 7, "name": "Beta"}, {"id": 3, "name": "Acme"}}
+	f.projects["7"] = []map[string]any{{"id": 202, "name": "beta-app"}}
+	f.envs["202"] = []map[string]any{{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"}}
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 101, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — accept the org picker default, then project 1, environment 1
+	out, err := run("\n1\n1\n", "init", "--api-url", f.srv.URL)
+
+	// Then — the picker was offered, and its default (the current org) held
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Organisation") {
+		t.Errorf("output = %q, want the org picker re-offered on re-init", out)
+	}
+	if written := loadWritten(t, root); written.Organisation != 3 {
+		t.Errorf("organisation = %d, want the pre-selected current org (3)", written.Organisation)
+	}
+}
+
 func TestInitInvalidChoiceReprompts(t *testing.T) {
 	// Given — single org; project prompt has 2 options (acme-api, create new)
 	isolateStorage(t)

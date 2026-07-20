@@ -82,7 +82,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if pc.Project.Source == sourceConfig {
 		configProjectID, _ = pc.Project.Value.(int)
 	}
+	// Carry forward any organisation already in context (existing file,
+	// flag, or env) so re-init never drops it; the multi-org picker below
+	// overrides it with a fresh choice.
 	organisationID := 0
+	if v, ok := pc.Organisation.Value.(int); ok {
+		organisationID = v
+	}
 	if projectID == 0 {
 		if !interactive() {
 			return usageErrorf(
@@ -95,28 +101,43 @@ func runInit(cmd *cobra.Command, args []string) error {
 		for _, o := range orgs {
 			names.Organisations[strconv.Itoa(o.ID)] = o.Name
 		}
+		// An org from a flag/env is an explicit decision (no prompt); one
+		// from the config file is only the picker's default, so re-init
+		// always re-offers the choice.
+		explicitOrg, explicitOrgSet := 0, false
+		if v, ok := explicit(pc.Organisation); ok {
+			explicitOrg, explicitOrgSet = v.(int), true
+		}
+		configOrg := 0
+		if pc.Organisation.Source == sourceConfig {
+			configOrg, _ = pc.Organisation.Value.(int)
+		}
+
 		var org api.Organisation
 		switch {
 		case len(orgs) == 0:
 			return errors.New("no organisations are accessible with these credentials")
-		case pc.Organisation.Value != nil:
-			wanted := pc.Organisation.Value.(int)
+		case explicitOrgSet:
 			for _, o := range orgs {
-				if o.ID == wanted {
+				if o.ID == explicitOrg {
 					org = o
 				}
 			}
 			if org.ID == 0 {
-				return fmt.Errorf("organisation %d is not accessible with these credentials", wanted)
+				return fmt.Errorf("organisation %d is not accessible with these credentials", explicitOrg)
 			}
 		case len(orgs) == 1:
 			org = orgs[0]
 		default:
 			options := make([]string, len(orgs))
+			defaultOrg := 0
 			for i, o := range orgs {
 				options[i] = fmt.Sprintf("%s (%d)", o.Name, o.ID)
+				if o.ID == configOrg {
+					defaultOrg = i
+				}
 			}
-			idx, err := selectPrompt(cmd, "Organisation", options, 0)
+			idx, err := selectPrompt(cmd, "Organisation", options, defaultOrg)
 			if err != nil {
 				return err
 			}
