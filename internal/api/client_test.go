@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -50,6 +51,106 @@ func TestUsersMe(t *testing.T) {
 			t.Errorf("err = %v, want a 401 error", err)
 		}
 	})
+}
+
+func TestProjects(t *testing.T) {
+	t.Run("paginated response", func(t *testing.T) {
+		// Given
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/projects/" || r.URL.Query().Get("organisation") != "3" {
+				t.Errorf("request = %s %s", r.URL.Path, r.URL.RawQuery)
+			}
+			fmt.Fprint(w, `{"count":1,"results":[{"id":101,"name":"acme-api"}]}`)
+		}))
+		defer srv.Close()
+
+		// When
+		projects, err := Projects(context.Background(), srv.URL, Bearer("t"), 3)
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(projects) != 1 || projects[0].ID != 101 || projects[0].Name != "acme-api" {
+			t.Errorf("projects = %+v", projects)
+		}
+	})
+
+	t.Run("bare array response", func(t *testing.T) {
+		// Given
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `[{"id":101,"name":"acme-api"},{"id":202,"name":"beta"}]`)
+		}))
+		defer srv.Close()
+
+		// When
+		projects, err := Projects(context.Background(), srv.URL, Bearer("t"), 3)
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(projects) != 2 || projects[1].Name != "beta" {
+			t.Errorf("projects = %+v", projects)
+		}
+	})
+}
+
+func TestCreateProject(t *testing.T) {
+	// Given
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Name         string `json:"name"`
+			Organisation int    `json:"organisation"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Name != "acme-web" || body.Organisation != 3 {
+			t.Errorf("body = %+v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `{"id":999,"name":"acme-web"}`)
+	}))
+	defer srv.Close()
+
+	// When
+	p, err := CreateProject(context.Background(), srv.URL, Bearer("t"), "acme-web", 3)
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ID != 999 || p.Name != "acme-web" {
+		t.Errorf("project = %+v", p)
+	}
+}
+
+func TestEnvironments(t *testing.T) {
+	// Given
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/environments/" || r.URL.Query().Get("project") != "101" {
+			t.Errorf("request = %s %s", r.URL.Path, r.URL.RawQuery)
+		}
+		fmt.Fprint(w, `{"count":2,"results":[
+			{"id":1,"name":"Development","api_key":"WqXhZk8sVY3dGgTqZ9pJmN"},
+			{"id":2,"name":"Production","api_key":"K2mVsGdXhZ8kQqZ9pJmNbJ"}]}`)
+	}))
+	defer srv.Close()
+
+	// When
+	envs, err := Environments(context.Background(), srv.URL, APIKey("k.s"), 101)
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 2 || envs[0].APIKey != "WqXhZk8sVY3dGgTqZ9pJmN" || envs[1].Name != "Production" {
+		t.Errorf("environments = %+v", envs)
+	}
 }
 
 func TestOrganisations(t *testing.T) {

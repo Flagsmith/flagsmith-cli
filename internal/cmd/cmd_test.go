@@ -15,11 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/zalando/go-keyring"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
+	"github.com/Flagsmith/flagsmith-cli/internal/config"
 )
 
 const (
@@ -61,8 +63,16 @@ func resetFlags() {
 		_ = f.Value.Set(f.DefValue)
 		f.Changed = false
 	}
-	rootCmd.PersistentFlags().VisitAll(reset)
-	configCmd.Flags().VisitAll(reset)
+	// Reset local flags on every command too — cobra's --help is a local
+	// flag and would otherwise stay sticky across Execute calls.
+	var resetAll func(c *cobra.Command)
+	resetAll = func(c *cobra.Command) {
+		c.Flags().VisitAll(reset)
+		for _, sub := range c.Commands() {
+			resetAll(sub)
+		}
+	}
+	resetAll(rootCmd)
 	noBrowser = false
 	loginToken = false
 	loginTokenStdin = false
@@ -71,6 +81,9 @@ func resetFlags() {
 
 func run(stdin string, args ...string) (string, error) {
 	resetFlags()
+	if args == nil {
+		args = []string{} // nil would make cobra fall back to os.Args
+	}
 	buf := &bytes.Buffer{}
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
@@ -86,13 +99,34 @@ func run(stdin string, args ...string) (string, error) {
 type fakeInstance struct {
 	srv *httptest.Server
 
-	mu      sync.Mutex
-	revoked []url.Values
+	mu       sync.Mutex
+	revoked  []url.Values
+	orgs     []map[string]any
+	projects map[string][]map[string]any // orgID -> projects
+	envs     map[string][]map[string]any // projectID -> environments
+	created  []string
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
 	t.Helper()
-	f := &fakeInstance{}
+	f := &fakeInstance{
+		orgs: []map[string]any{{"id": 3, "name": "Acme"}},
+		projects: map[string][]map[string]any{
+			"3": {{"id": 101, "name": "acme-api"}},
+		},
+		envs: map[string][]map[string]any{
+			"101": {
+				{"id": 1, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN"},
+				{"id": 2, "name": "Production", "api_key": "K2mVsGdXhZ8kQqZ9pJmNbJ"},
+			},
+			"12345": {
+				{"id": 3, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN"},
+			},
+			"999": {
+				{"id": 4, "name": "Development", "api_key": "NewProjDevKey000000000"},
+			},
+		},
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
@@ -124,16 +158,59 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"email": "kim@example.com", "uuid": "u-1"})
 	})
-	mux.HandleFunc("GET /api/v1/organisations/", func(w http.ResponseWriter, r *http.Request) {
+	authorized := func(r *http.Request) bool {
 		a := r.Header.Get("Authorization")
-		if a != "Api-Key "+masterKey && a != "Bearer "+oauthAccess && a != "Bearer "+bearerToken {
+		return a == "Api-Key "+masterKey || a == "Bearer "+oauthAccess || a == "Bearer "+bearerToken
+	}
+	mux.HandleFunc("GET /api/v1/organisations/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"count":   1,
-			"results": []map[string]any{{"id": 3, "name": "Acme"}},
-		})
+		f.mu.Lock()
+		orgs := f.orgs
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(orgs), "results": orgs})
+	})
+	mux.HandleFunc("GET /api/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		projects := f.projects[r.URL.Query().Get("organisation")]
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(projects), "results": projects})
+	})
+	mux.HandleFunc("POST /api/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Name         string `json:"name"`
+			Organisation int    `json:"organisation"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.created = append(f.created, body.Name)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": 999, "name": body.Name})
+	})
+	mux.HandleFunc("GET /api/v1/environments/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		envs := f.envs[r.URL.Query().Get("project")]
+		f.mu.Unlock()
+		if envs == nil {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"count": len(envs), "results": envs})
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -534,6 +611,221 @@ func TestConfigCommand(t *testing.T) {
 			t.Errorf("err = %v, want a pointer to FLAGSMITH_ENVIRONMENT_KEY", err)
 		}
 	})
+}
+
+// fakeTTY makes prompts believe stdin is a terminal for one test.
+func fakeTTY(t *testing.T) {
+	t.Helper()
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { stdinIsTTY = orig })
+}
+
+func loadWritten(t *testing.T, dir string) *config.File {
+	t.Helper()
+	f, _, err := config.Load(filepath.Join(dir, "flagsmith.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestInitNonInteractive(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When
+	out, err := run("", "init", "--api-url", f.srv.URL,
+		"--project", "12345", "--environment", "WqXhZk8sVY3dGgTqZ9pJmN", "--yes")
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{"Verified access", "Wrote flagsmith.json"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output = %q, want it to contain %q", out, want)
+		}
+	}
+	written := loadWritten(t, root)
+	if written.Project != 12345 || written.Environment != "WqXhZk8sVY3dGgTqZ9pJmN" {
+		t.Errorf("written = %+v", written)
+	}
+	if written.APIURL != f.srv.URL {
+		t.Errorf("apiUrl = %q, want the non-SaaS instance recorded", written.APIURL)
+	}
+	if !strings.Contains(written.Schema, "schema/flagsmith.json") {
+		t.Errorf("$schema = %q", written.Schema)
+	}
+	if got := cache.Load(f.srv.URL); got.Environments["WqXhZk8sVY3dGgTqZ9pJmN"] != "Development" {
+		t.Errorf("cache = %+v, want environment names seeded", got)
+	}
+}
+
+func TestInitNonInteractiveRequiresProject(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When
+	_, err := run("", "init", "--api-url", f.srv.URL, "--yes")
+
+	// Then
+	var ue *usageError
+	if !errors.As(err, &ue) {
+		t.Fatalf("err = %v, want a usage error (exit 2)", err)
+	}
+	if !strings.Contains(err.Error(), "--project") {
+		t.Errorf("err = %v, want it to name --project", err)
+	}
+}
+
+func TestInitNoCredentials(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	tempRepo(t)
+
+	// When
+	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
+
+	// Then
+	if err == nil {
+		t.Fatal("expected an error with no credentials")
+	}
+	for _, want := range []string{"FLAGSMITH_API_KEY", "flagsmith login"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to mention %q", err, want)
+		}
+	}
+}
+
+func TestInitRefusesOverwriteWithoutYes(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 1}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When
+	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345")
+
+	// Then
+	if err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("err = %v, want a refusal pointing at --yes", err)
+	}
+}
+
+func TestInitInteractiveMultiOrg(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
+	f.projects["7"] = []map[string]any{{"id": 202, "name": "beta-app"}}
+	f.envs["202"] = []map[string]any{
+		{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"},
+	}
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — pick org 2 (Beta), project 1 (beta-app), environment 1 (Development)
+	out, err := run("2\n1\n1\n", "init", "--api-url", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{"Organisation", "Project", "environment", "Wrote flagsmith.json"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output = %q, want it to contain %q", out, want)
+		}
+	}
+	written := loadWritten(t, root)
+	if written.Project != 202 || written.Environment != "BetaDevKey00000000000" {
+		t.Errorf("written = %+v", written)
+	}
+	if written.Organisation != 7 {
+		t.Errorf("organisation = %d, want 7 recorded for a multi-org user", written.Organisation)
+	}
+}
+
+func TestInitInteractiveCreateProject(t *testing.T) {
+	// Given — single org, one existing project; option 2 is "create new"
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — choose create (option 2), accept default name, pick env 1
+	out, err := run("2\n\n1\n", "init", "--api-url", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Created project") {
+		t.Errorf("output = %q, want a created-project line", out)
+	}
+	f.mu.Lock()
+	created := append([]string{}, f.created...)
+	f.mu.Unlock()
+	if len(created) != 1 || created[0] != filepath.Base(root) {
+		t.Errorf("created = %v, want the cwd name as the default project name", created)
+	}
+	if written := loadWritten(t, root); written.Project != 999 {
+		t.Errorf("written = %+v", written)
+	}
+}
+
+func TestInitReinitShowsDiffAndConfirms(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — pick project 1 (acme-api, 101), env 2 (Production), confirm
+	out, err := run("1\n2\ny\n", "init", "--api-url", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	for _, want := range []string{`- "project": 12345`, `+ "project": 101`, "Write changes?"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output = %q, want it to contain %q", out, want)
+		}
+	}
+	if written := loadWritten(t, root); written.Project != 101 || written.Environment != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
+		t.Errorf("written = %+v", written)
+	}
+}
+
+func TestBareInvocationNudgesInit(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	tempRepo(t)
+
+	// When
+	out, err := run("")
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "flagsmith init") {
+		t.Errorf("output = %q, want a nudge towards flagsmith init", out)
+	}
 }
 
 func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
