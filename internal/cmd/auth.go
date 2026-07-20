@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 )
 
 const envAPIKey = "FLAGSMITH_API_KEY"
@@ -85,6 +87,15 @@ func sourceLabel(source string) string {
 	return source
 }
 
+// rememberOrganisations opportunistically seeds the name cache.
+func rememberOrganisations(orgs []api.Organisation) {
+	names := map[string]string{}
+	for _, o := range orgs {
+		names[strconv.Itoa(o.ID)] = o.Name
+	}
+	_ = cache.Merge(apiURL, &cache.Names{Organisations: names})
+}
+
 func orgList(orgs []api.Organisation) string {
 	parts := make([]string, len(orgs))
 	for i, o := range orgs {
@@ -110,6 +121,9 @@ var authStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the current identity, organisation and credential source",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, err := applyContext(cmd); err != nil {
+			return err
+		}
 		cred, err := resolveCredential(cmd.Context())
 		if err != nil {
 			return err
@@ -118,6 +132,7 @@ var authStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		rememberOrganisations(orgs)
 		out := cmd.OutOrStdout()
 		if cred.kind == auth.KindMaster {
 			fmt.Fprintf(out, "✓ Authenticated to %s with a Master API key\n", apiURL)
@@ -142,6 +157,9 @@ var authTokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Print the active Admin API credential (for curl and scripts)",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, err := applyContext(cmd); err != nil {
+			return err
+		}
 		cred, err := resolveCredential(cmd.Context())
 		if err != nil {
 			return err

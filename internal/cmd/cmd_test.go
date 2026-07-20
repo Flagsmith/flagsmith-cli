@@ -15,9 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
 	"github.com/zalando/go-keyring"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 )
 
 const (
@@ -55,6 +57,12 @@ func isolateStorage(t *testing.T) {
 // resetFlags clears package-level flag state that would otherwise leak
 // between Execute calls on the shared rootCmd.
 func resetFlags() {
+	reset := func(f *pflag.Flag) {
+		_ = f.Value.Set(f.DefValue)
+		f.Changed = false
+	}
+	rootCmd.PersistentFlags().VisitAll(reset)
+	configCmd.Flags().VisitAll(reset)
 	noBrowser = false
 	loginToken = false
 	loginTokenStdin = false
@@ -326,6 +334,242 @@ func TestAPIURLFlagWithHiddenAlias(t *testing.T) {
 	}
 	if strings.Contains(helpOut, "--api ") {
 		t.Errorf("help = %q, want the --api alias hidden", helpOut)
+	}
+}
+
+// tempRepo creates a git repo dir, chdirs into it, and returns its path.
+func tempRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	return root
+}
+
+func writeConfig(t *testing.T, dir, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, "flagsmith.json")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func configJSON(t *testing.T, args ...string) map[string]map[string]any {
+	t.Helper()
+	out, err := run("", append([]string{"config", "--json"}, args...)...)
+	if err != nil {
+		t.Fatalf("config --json: %v\noutput: %s", err, out)
+	}
+	parsed := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("parsing %q: %v", out, err)
+	}
+	return parsed
+}
+
+func TestConfigCommand(t *testing.T) {
+	t.Run("defaults with no config file", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+
+		// When
+		got := configJSON(t)
+
+		// Then
+		if v := got["apiUrl"]; v["value"] != "https://api.flagsmith.com" || v["source"] != "default" {
+			t.Errorf("apiUrl = %v", v)
+		}
+		if v := got["sdkApiUrl"]; v["value"] != "https://edge.api.flagsmith.com" || v["source"] != "default" {
+			t.Errorf("sdkApiUrl = %v", v)
+		}
+		if v := got["configPath"]; v["value"] != nil {
+			t.Errorf("configPath = %v, want null", v)
+		}
+		if v := got["project"]; v["value"] != nil {
+			t.Errorf("project = %v, want null", v)
+		}
+	})
+
+	t.Run("file, env, cli sources with cache names", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		root := tempRepo(t)
+		path := writeConfig(t, root, `{
+			"project": 12345,
+			"organisation": 3,
+			"environment": "K2mVsGdXhZ8kQqZ9pJmNbJ",
+			"apiUrl": "https://acme.example"
+		}`)
+		if err := cache.Merge("https://acme.example", &cache.Names{
+			Organisations: map[string]string{"3": "Acme"},
+			Projects:      map[string]string{"12345": "my-app"},
+			Environments:  map[string]string{"StagingKey123": "Staging"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("FLAGSMITH_ENVIRONMENT", "StagingKey123")
+
+		// When
+		got := configJSON(t, "--sdk-api-url", "https://flags.example")
+
+		// Then
+		if v := got["configPath"]; v["value"] != path || v["source"] != "default" {
+			t.Errorf("configPath = %v", v)
+		}
+		if v := got["project"]; v["value"] != float64(12345) || v["name"] != "my-app" || v["source"] != "config" {
+			t.Errorf("project = %v", v)
+		}
+		if v := got["organisation"]; v["value"] != float64(3) || v["name"] != "Acme" || v["source"] != "config" {
+			t.Errorf("organisation = %v", v)
+		}
+		if v := got["environment"]; v["value"] != "StagingKey123" || v["name"] != "Staging" || v["source"] != "env" {
+			t.Errorf("environment = %v", v)
+		}
+		if v := got["apiUrl"]; v["value"] != "https://acme.example" || v["source"] != "config" {
+			t.Errorf("apiUrl = %v", v)
+		}
+		if v := got["sdkApiUrl"]; v["value"] != "https://flags.example" || v["source"] != "cli" {
+			t.Errorf("sdkApiUrl = %v", v)
+		}
+	})
+
+	t.Run("sdk api url follows a set api url", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+
+		// When
+		got := configJSON(t, "--api-url", "https://self.example")
+
+		// Then
+		if v := got["apiUrl"]; v["source"] != "cli" {
+			t.Errorf("apiUrl = %v", v)
+		}
+		if v := got["sdkApiUrl"]; v["value"] != "https://self.example" || v["source"] != "default" {
+			t.Errorf("sdkApiUrl = %v, want it to follow apiUrl as default", v)
+		}
+	})
+
+	t.Run("explicit config path via flag", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+		elsewhere := t.TempDir()
+		path := writeConfig(t, elsewhere, `{"project": 7}`)
+
+		// When
+		got := configJSON(t, "--config-path", path)
+
+		// Then
+		if v := got["configPath"]; v["value"] != path || v["source"] != "cli" {
+			t.Errorf("configPath = %v", v)
+		}
+		if v := got["project"]; v["value"] != float64(7) {
+			t.Errorf("project = %v", v)
+		}
+	})
+
+	t.Run("human output shows values and sources", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 12345}`)
+
+		// When
+		out, err := run("", "config")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"12345", "config", "https://api.flagsmith.com", "default", "flagsmith.json"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want it to contain %q", out, want)
+			}
+		}
+	})
+
+	t.Run("unknown config fields warn on stderr", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 1, "enviroment": "typo"}`)
+
+		// When
+		out, err := run("", "config")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "unknown field") {
+			t.Errorf("output = %q, want an unknown-field warning", out)
+		}
+	})
+
+	t.Run("bad FLAGSMITH_PROJECT errors", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+		t.Setenv("FLAGSMITH_PROJECT", "not-a-number")
+
+		// When / Then
+		if _, err := run("", "config"); err == nil || !strings.Contains(err.Error(), "FLAGSMITH_PROJECT") {
+			t.Errorf("err = %v, want a FLAGSMITH_PROJECT parse error", err)
+		}
+	})
+
+	t.Run("server-side key via -e is rejected", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+
+		// When / Then
+		if _, err := run("", "config", "-e", "ser.AbCd"); err == nil ||
+			!strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
+			t.Errorf("err = %v, want a pointer to FLAGSMITH_ENVIRONMENT_KEY", err)
+		}
+	})
+}
+
+func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 1, "apiUrl": "`+f.srv.URL+`"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — no --api-url flag anywhere
+	out, err := run("", "auth", "status")
+
+	// Then
+	if err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if !strings.Contains(out, "Acme") {
+		t.Errorf("output = %q, want the config-file apiUrl to have been used", out)
+	}
+}
+
+func TestAuthStatusSeedsNameCache(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When
+	if _, err := run("", "auth", "status", "--api-url", f.srv.URL); err != nil {
+		t.Fatal(err)
+	}
+
+	// Then
+	if got := cache.Load(f.srv.URL); got.Organisations["3"] != "Acme" {
+		t.Errorf("cache = %+v, want the organisation name remembered", got)
 	}
 }
 

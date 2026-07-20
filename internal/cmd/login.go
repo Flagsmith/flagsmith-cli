@@ -45,6 +45,9 @@ func newLoginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "Log in to Flagsmith in your browser, or store a Master API key",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if _, err := applyContext(cmd); err != nil {
+				return err
+			}
 			if loginToken || loginTokenStdin {
 				return masterKeyLogin(cmd)
 			}
