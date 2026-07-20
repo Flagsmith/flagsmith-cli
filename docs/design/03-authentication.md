@@ -17,9 +17,9 @@ Note: we're omitting the legacy non-expiring user authtokens because they will b
 
 | Context | Admin API | SDK API |
 |---|---|---|
-| Local dev, interactive | `flagsmith login` → browser OAuth (PKCE + loopback), refresh token in OS keychain | Auto-resolved via Admin API creds, or `FLAGSMITH_ENVIRONMENT_KEY` |
+| Local dev, interactive | `flagsmith login` → browser OAuth (PKCE + loopback), refresh token in OS keychain | `environment` from `flagsmith.json`, or `FLAGSMITH_ENVIRONMENT_KEY` |
 | Local dev, static | `FLAGSMITH_API_KEY` env var | `FLAGSMITH_ENVIRONMENT_KEY` env var |
-| CI, zero-secret | OIDC exchange (Actions OIDC token to short-lived Flagsmith token) — new server work | Auto-resolved, or explicit env var |
+| CI, zero-secret | OIDC exchange (Actions OIDC token to short-lived Flagsmith token) — new server work | `environment` from `flagsmith.json`, or explicit env var |
 | CI, static | `FLAGSMITH_API_KEY` from secret store | `FLAGSMITH_ENVIRONMENT_KEY` from secret store |
 
 Flagsmith already implements OAuth 2.1, so the CLI's interactive login can ride the existing OAuth stack. The genuinely new build is OIDC federation for CI.
@@ -67,9 +67,8 @@ Unless `FLAGSMITH_API_KEY` is set explicitly, the `Flagsmith/setup-cli@v1` actio
 
 ## 5. SDK API auth
 
-- Explicit: `FLAGSMITH_ENVIRONMENT` env var (alias: `FLAGSMITH_ENVIRONMENT_KEY`) — no Admin API creds needed.
-- Committed: the `environment` field in `flagsmith.json` is a client-side key (public by design), so a repo with that file evaluates flags with zero credentials (see 04-project-config.md).
-- Derived: when the user has Admin API creds and names a project/environment, the CLI resolves the environment key via the Admin API and caches it. Nobody should copy-paste environment keys to use the CLI locally.
+- Credential: `FLAGSMITH_ENVIRONMENT_KEY` — SDK auth, takes precedence. Accepts client-side *and* server-side (`ser.*`) keys; the env var is the only home for server-side keys, which are secrets and rejected everywhere else.
+- Context: `FLAGSMITH_ENVIRONMENT` — the *default environment* as a client-side key, same semantics as `environment` in `flagsmith.json` (see 04-project-config.md). Client-side keys double as SDK auth, so either source alone suffices for flag evaluation with zero Admin API creds.
 
 ## 6. Credential precedence & env vars
 
@@ -83,9 +82,9 @@ Admin API:
 SDK API (sent as `X-Environment-Key`):
 
 1. Command-line flags (`-e` with a client-side key)
-2. `FLAGSMITH_ENVIRONMENT` / `FLAGSMITH_ENVIRONMENT_KEY`
-3. `environment` in the nearest `flagsmith.json`
-4. Derived via Admin API creds from project + environment name
+2. `FLAGSMITH_ENVIRONMENT_KEY` (SDK auth: client- or server-side key)
+3. `FLAGSMITH_ENVIRONMENT` (default environment: client-side key)
+4. `environment` in the nearest `flagsmith.json`
 
 `FLAGSMITH_API_KEY` accepts either Admin API credential. The CLI picks the header by token shape:
 

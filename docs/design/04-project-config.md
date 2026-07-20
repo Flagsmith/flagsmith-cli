@@ -102,8 +102,6 @@ Path to config can be provided explicitly via a global `-c/--config-path` flag, 
 
 In addition to a `flagsmith.json` file, every value can be provided via a global CLI flag or a `FLAGSMITH_`-prefixed environment variable.
 
-`-e`/`--environment` and `FLAGSMITH_ENVIRONMENT` take client-side environment keys, exactly as stored in `flagsmith.json`. Environment names are display-only (see Name cache).
-
 ### Schema
 
 `flagsmith.json`'s schema is described by `schema/flagsmith.json`.
