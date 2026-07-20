@@ -21,7 +21,7 @@ Interactive behaviour and output are governed by global flags / environment vari
 ## 2. Output
 
 - stdout carries the result; stderr carries logs. Success lines are prefixed `✓`, warnings with `Warning:`.
-- `--json` is the scripting interface, available on every command that outputs data. Also settable as `FLASGMITH_JSON_OUTPUT=1`.
+- `--json` is the scripting interface, available on every command that outputs data. Also settable as `FLAGSMITH_JSON_OUTPUT=1`.
 
 ## 3. Exit codes
 

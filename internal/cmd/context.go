@@ -53,7 +53,7 @@ func intEnv(name string) (int, bool, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 {
-		return 0, false, fmt.Errorf("%s must be a positive integer ID, got %q", name, raw)
+		return 0, false, usageErrorf("%s must be a positive integer ID, got %q", name, raw)
 	}
 	return n, true, nil
 }

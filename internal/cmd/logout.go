@@ -31,7 +31,7 @@ func runLogout(cmd *cobra.Command, args []string) error {
 	}
 	if creds.EffectiveKind() == auth.KindOAuth {
 		if err := auth.Revoke(cmd.Context(), creds); err != nil {
-			fmt.Fprintf(cmd.OutOrStdout(),
+			fmt.Fprintf(cmd.ErrOrStderr(),
 				"Warning: could not revoke session server-side: %v\n", err)
 		}
 	}

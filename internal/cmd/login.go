@@ -66,6 +66,12 @@ func newLoginCmd() *cobra.Command {
 }
 
 func browserLogin(cmd *cobra.Command) error {
+	// --yes/--no-input promises zero interaction; a browser login is
+	// nothing but interaction.
+	if yesFlag || os.Getenv("FLAGSMITH_NO_INPUT") != "" {
+		return errors.New(
+			"browser login cannot run with --no-input/--yes — pipe a Master API key with --token-stdin, or set FLAGSMITH_API_KEY")
+	}
 	// Resolve storage before starting the flow — minting tokens we can't
 	// store would strand a live session.
 	store, err := credentialStore()
@@ -73,8 +79,8 @@ func browserLogin(cmd *cobra.Command) error {
 		return err
 	}
 	open := browser.OpenURL
-	if noBrowser {
-		open = nil
+	if noBrowser || !stdinIsTTY() {
+		open = nil // without a TTY the CLI never opens a browser (02)
 	}
 	creds, err := auth.Login(cmd.Context(), apiURL, open, cmd.OutOrStdout())
 	if err != nil {

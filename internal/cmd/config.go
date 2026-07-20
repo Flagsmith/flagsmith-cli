@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configJSONOutput bool
-
 func formatValue(v resolved) string {
 	if v.Value == nil {
 		return "-"
@@ -29,7 +27,7 @@ var configCmd = &cobra.Command{
 			return err
 		}
 
-		if configJSONOutput {
+		if jsonOutput() {
 			out := struct {
 				ConfigPath   resolved `json:"configPath"`
 				Project      resolved `json:"project"`
@@ -62,7 +60,5 @@ var configCmd = &cobra.Command{
 }
 
 func init() {
-	configCmd.Flags().BoolVar(&configJSONOutput, "json", false,
-		"output the resolved context as JSON")
 	rootCmd.AddCommand(configCmd)
 }

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -134,6 +135,32 @@ var authStatusCmd = &cobra.Command{
 		}
 		rememberOrganisations(orgs)
 		out := cmd.OutOrStdout()
+		if jsonOutput() {
+			status := struct {
+				APIURL        string             `json:"apiUrl"`
+				Kind          auth.Kind          `json:"kind"`
+				Email         string             `json:"email,omitempty"`
+				Organisations []api.Organisation `json:"organisations"`
+				Source        string             `json:"credentialSource"`
+				ExpiresAt     string             `json:"expiresAt,omitempty"`
+			}{APIURL: apiURL, Kind: cred.kind, Organisations: orgs, Source: sourceLabel(cred.source)}
+			if cred.kind != auth.KindMaster {
+				user, err := api.UsersMe(cmd.Context(), apiURL, cred.auth)
+				if err != nil {
+					return err
+				}
+				status.Email = user.Email
+			}
+			if !cred.expires.IsZero() {
+				status.ExpiresAt = cred.expires.Format(time.RFC3339)
+			}
+			encoded, err := json.MarshalIndent(status, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(out, string(encoded))
+			return nil
+		}
 		if cred.kind == auth.KindMaster {
 			fmt.Fprintf(out, "✓ Authenticated to %s with a Master API key\n", apiURL)
 		} else {
@@ -163,6 +190,14 @@ var authTokenCmd = &cobra.Command{
 		cred, err := resolveCredential(cmd.Context())
 		if err != nil {
 			return err
+		}
+		if jsonOutput() {
+			encoded, err := json.Marshal(map[string]string{"token": cred.token})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
+			return nil
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), cred.token)
 		return nil

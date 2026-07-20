@@ -828,6 +828,221 @@ func TestBareInvocationNudgesInit(t *testing.T) {
 	}
 }
 
+// runSplit is run with stdout and stderr captured separately.
+func runSplit(stdin string, args ...string) (string, string, error) {
+	resetFlags()
+	if args == nil {
+		args = []string{}
+	}
+	outBuf, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
+	rootCmd.SetOut(outBuf)
+	rootCmd.SetErr(errBuf)
+	rootCmd.SetIn(strings.NewReader(stdin))
+	rootCmd.SetArgs(args)
+	err := rootCmd.Execute()
+	return outBuf.String(), errBuf.String(), err
+}
+
+func TestJSONIsGlobal(t *testing.T) {
+	t.Run("auth status --json", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "auth", "status", "--api-url", f.srv.URL, "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("auth status --json: %v", err)
+		}
+		var status struct {
+			APIURL        string `json:"apiUrl"`
+			Kind          string `json:"kind"`
+			Organisations []struct {
+				ID   int    `json:"id"`
+				Name string `json:"name"`
+			} `json:"organisations"`
+			Source string `json:"credentialSource"`
+		}
+		if err := json.Unmarshal([]byte(out), &status); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if status.Kind != "master" || status.Source != "$FLAGSMITH_API_KEY" ||
+			len(status.Organisations) != 1 || status.Organisations[0].Name != "Acme" {
+			t.Errorf("status = %+v", status)
+		}
+	})
+
+	t.Run("auth token --json", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		newFakeInstance(t)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "auth", "token", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("auth token --json: %v", err)
+		}
+		var token struct {
+			Token string `json:"token"`
+		}
+		if err := json.Unmarshal([]byte(out), &token); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if token.Token != masterKey {
+			t.Errorf("token = %q", token.Token)
+		}
+	})
+
+	t.Run("FLAGSMITH_JSON_OUTPUT enables JSON", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+		t.Setenv("FLAGSMITH_JSON_OUTPUT", "1")
+
+		// When
+		out, err := run("", "config")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !json.Valid([]byte(out)) {
+			t.Errorf("output = %q, want JSON via env var", out)
+		}
+	})
+}
+
+func TestWarningsGoToStderr(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 1, "enviroment": "typo"}`)
+
+	// When
+	stdout, stderr, err := runSplit("", "config")
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout, "unknown field") {
+		t.Errorf("stdout = %q — warnings belong on stderr", stdout)
+	}
+	if !strings.Contains(stderr, "unknown field") {
+		t.Errorf("stderr = %q, want the unknown-field warning", stderr)
+	}
+}
+
+func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
+	// Given — a stored OAuth session whose instance is unreachable
+	isolateStorage(t)
+	if err := auth.Save(&auth.Credentials{
+		Kind: auth.KindOAuth, APIURL: "http://127.0.0.1:1",
+		AccessToken: "x", RefreshToken: "y",
+		ExpiresAt: time.Now().Add(10 * time.Minute),
+	}, auth.SourceKeychain); err != nil {
+		t.Fatal(err)
+	}
+
+	// When
+	stdout, stderr, err := runSplit("", "logout", "--api-url", "http://127.0.0.1:1")
+
+	// Then
+	if err != nil {
+		t.Fatalf("logout: %v", err)
+	}
+	if !strings.Contains(stdout, "Logged out") {
+		t.Errorf("stdout = %q, want the result", stdout)
+	}
+	if !strings.Contains(stderr, "Warning") || strings.Contains(stdout, "Warning") {
+		t.Errorf("stderr = %q / stdout = %q — the revoke warning belongs on stderr", stderr, stdout)
+	}
+}
+
+func TestBrowserLoginWithoutTTYNeverOpensBrowser(t *testing.T) {
+	// Given — no TTY and no --no-browser flag; opening a real browser here
+	// would violate 02 (and hijack the test machine)
+	isolateStorage(t)
+	f := newFakeInstance(t)
+
+	// When
+	resetFlags()
+	out := &syncBuffer{}
+	rootCmd.SetOut(out)
+	rootCmd.SetErr(out)
+	rootCmd.SetIn(strings.NewReader(""))
+	rootCmd.SetArgs([]string{"login", "--api-url", f.srv.URL})
+	done := make(chan error, 1)
+	go func() { done <- rootCmd.Execute() }()
+
+	authURLPattern := regexp.MustCompile(`https?://\S+/oauth/authorize/\?\S+`)
+	var q url.Values
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && q == nil {
+		if m := authURLPattern.FindString(out.String()); m != "" {
+			u, err := url.Parse(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q = u.Query()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if q == nil {
+		t.Fatalf("no authorization URL printed; output: %q", out.String())
+	}
+	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
+		t.Fatal(err)
+	}
+
+	// Then
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("login: %v\noutput: %s", err, out.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("login did not return")
+	}
+}
+
+func TestBrowserLoginRefusesNoInput(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+
+	// When — --yes promises zero interaction; waiting on a browser is interaction
+	_, err := run("", "login", "--api-url", f.srv.URL, "--yes")
+
+	// Then
+	if err == nil || !strings.Contains(err.Error(), "--token-stdin") {
+		t.Errorf("err = %v, want a refusal pointing at the non-interactive options", err)
+	}
+}
+
+func TestInvalidEnvProjectIsUsageError(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	tempRepo(t)
+	t.Setenv("FLAGSMITH_PROJECT", "not-a-number")
+
+	// When
+	_, err := run("", "config")
+
+	// Then
+	var usage *usageError
+	if !errors.As(err, &usage) {
+		t.Errorf("err = %v, want a usage error (exit 2) for invalid promptable input", err)
+	}
+}
+
 func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
 	// Given
 	isolateStorage(t)
