@@ -206,6 +206,66 @@ func Features(ctx context.Context, apiURL string, auth Auth, projectID, environm
 	return features, nil
 }
 
+// FeatureRef targets a feature by name or id (exactly one) in update-flag-v2.
+type FeatureRef struct {
+	Name string `json:"name,omitempty"`
+	ID   int    `json:"id,omitempty"`
+}
+
+// FeatureValue is a typed flag value in the update-flag-v2 wire form: the type
+// as a word and the value always as a string.
+type FeatureValue struct {
+	Type  string `json:"type"`  // "integer" | "string" | "boolean"
+	Value string `json:"value"` // always a string; parsed server-side per type
+}
+
+// EnvironmentDefault is the environment-wide state update-flag-v2 requires in
+// full on every call.
+type EnvironmentDefault struct {
+	Enabled bool         `json:"enabled"`
+	Value   FeatureValue `json:"value"`
+}
+
+// UpdateFlagRequest is the update-flag-v2 body (environment default only; this
+// endpoint does not manage identity overrides).
+type UpdateFlagRequest struct {
+	Feature            FeatureRef         `json:"feature"`
+	EnvironmentDefault EnvironmentDefault `json:"environment_default"`
+}
+
+// ErrWorkflowGated is returned when update-flag-v2 refuses because the
+// environment has change-request workflows enabled.
+var ErrWorkflowGated = fmt.Errorf("this environment uses change-request workflows; direct updates are disabled")
+
+// UpdateFlag applies an environment-default change via the experimental
+// update-flag-v2 endpoint, keyed by the environment's client-side key. The
+// endpoint returns 204 No Content on success.
+func UpdateFlag(ctx context.Context, apiURL string, auth Auth, environmentKey string, in UpdateFlagRequest) error {
+	body, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	u := strings.TrimRight(apiURL, "/") + "/api/experiments/environments/" + environmentKey + "/update-flag-v2/"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	auth.Apply(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return ErrWorkflowGated
+	}
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("POST %s returned %s", u, resp.Status)
+	}
+	return nil
+}
+
 // Environment is the subset of the environments API the CLI uses.
 type Environment struct {
 	ID     int    `json:"id"`

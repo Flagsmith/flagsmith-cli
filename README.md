@@ -20,6 +20,7 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
 - `flagsmith flag list` — list feature flags in the current environment.
 - `flagsmith flag get <feature>` — show a single flag's state in the current environment.
+- `flagsmith flag update <feature>` — toggle (`--enable`/`--disable`) or set the value (`--value`, `--type`).
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

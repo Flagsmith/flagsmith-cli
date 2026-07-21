@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/zalando/go-keyring"
 
+	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/config"
@@ -104,9 +106,11 @@ type fakeInstance struct {
 	envs        map[string][]map[string]any // projectID -> environments
 	created     []string
 	createdEnvs []string
-	features    map[string][]map[string]any // projectID -> features list; nil → default
-	lastFeatEnv string                      // last ?environment= seen by /features/
-	tokenPosts  int                         // count of POST /o/token/ (refresh) calls
+	features      map[string][]map[string]any // projectID -> features list; nil → default
+	lastFeatEnv   string                      // last ?environment= seen by /features/
+	tokenPosts    int                         // count of POST /o/token/ (refresh) calls
+	lastUpdate    map[string]any              // last update-flag-v2 request body
+	workflowGated bool                        // when true, update-flag-v2 returns 403
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -249,9 +253,66 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			"count": len(items), "next": nil, "previous": nil, "results": items,
 		})
 	})
+	mux.HandleFunc("POST /api/experiments/environments/{env}/update-flag-v2/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if f.workflowGated {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastUpdate = body
+		f.applyFlagUpdate(body)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+// applyFlagUpdate mutates the stored features to reflect an update-flag-v2
+// body, so a re-fetch after the mutation sees the new state. Called under lock.
+func (f *fakeInstance) applyFlagUpdate(body map[string]any) {
+	feature, _ := body["feature"].(map[string]any)
+	name, _ := feature["name"].(string)
+	def, _ := body["environment_default"].(map[string]any)
+	enabled, _ := def["enabled"].(bool)
+	val, _ := def["value"].(map[string]any)
+	for _, items := range f.features {
+		for _, item := range items {
+			if item["name"] != name {
+				continue
+			}
+			state, _ := item["environment_feature_state"].(map[string]any)
+			if state == nil {
+				state = map[string]any{}
+				item["environment_feature_state"] = state
+			}
+			state["enabled"] = enabled
+			state["feature_state_value"] = scalarFromWire(val)
+		}
+	}
+}
+
+// scalarFromWire turns an update-flag-v2 {type,value} into the bare scalar the
+// features list would report.
+func scalarFromWire(val map[string]any) any {
+	t, _ := val["type"].(string)
+	v, _ := val["value"].(string)
+	switch t {
+	case "integer":
+		n, _ := strconv.Atoi(v)
+		return n
+	case "boolean":
+		return v == "true"
+	default:
+		return v
+	}
 }
 
 func (f *fakeInstance) revokeCount() int {
@@ -1703,6 +1764,146 @@ func TestFlagGet(t *testing.T) {
 			t.Errorf("err = %v, want a not-found error naming the feature", err)
 		}
 	})
+}
+
+// flagUpdateEnv writes a config bound to project 101 / Development and returns
+// the fake instance with admin credentials set.
+func flagUpdateEnv(t *testing.T) *fakeInstance {
+	t.Helper()
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	return f
+}
+
+func TestFlagUpdate(t *testing.T) {
+	t.Run("--enable preserves the current value and reprints", func(t *testing.T) {
+		// Given max_items is off with integer value 25
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "update", "max_items", "--enable", "--yes")
+
+		// Then — the full environment default carries enabled=true and value 25
+		if err != nil {
+			t.Fatalf("flag update: %v\noutput: %s", err, out)
+		}
+		def := f.lastUpdate["environment_default"].(map[string]any)
+		val := def["value"].(map[string]any)
+		if def["enabled"] != true || val["type"] != "integer" || val["value"] != "25" {
+			t.Errorf("environment_default = %+v", def)
+		}
+		if !strings.Contains(out, "Enabled max_items") {
+			t.Errorf("output = %q, want an Enabled confirmation", out)
+		}
+	})
+
+	t.Run("--value infers integer", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "update", "onboarding_banner", "--value", "42", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update: %v", err)
+		}
+		val := f.lastUpdate["environment_default"].(map[string]any)["value"].(map[string]any)
+		if val["type"] != "integer" || val["value"] != "42" {
+			t.Errorf("value = %+v, want inferred integer 42", val)
+		}
+		if !strings.Contains(out, "Set onboarding_banner to 42") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--type string keeps a numeric literal as a string, quoted in message", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "update", "max_items", "--value", "25", "--type", "string", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update: %v", err)
+		}
+		val := f.lastUpdate["environment_default"].(map[string]any)["value"].(map[string]any)
+		if val["type"] != "string" || val["value"] != "25" {
+			t.Errorf("value = %+v, want string \"25\"", val)
+		}
+		if !strings.Contains(out, `Set max_items to "25"`) {
+			t.Errorf("output = %q, want the string value quoted", out)
+		}
+	})
+
+	t.Run("--enable and --disable conflict", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "update", "max_items", "--enable", "--disable", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		_ = f
+	})
+
+	t.Run("nothing to update errors", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "update", "max_items", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "nothing to update") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		_ = f
+	})
+
+	t.Run("workflow-gated environment is reported clearly", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.workflowGated = true
+		_, err := run("", "flag", "update", "max_items", "--enable", "--yes")
+		if !errors.Is(err, api.ErrWorkflowGated) {
+			t.Errorf("err = %v, want ErrWorkflowGated", err)
+		}
+	})
+
+	t.Run("unknown feature errors before any write", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "update", "ghost", "--enable", "--yes")
+		if err == nil || !strings.Contains(err.Error(), "ghost") {
+			t.Errorf("err = %v, want a not-found error", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write attempted", f.lastUpdate)
+		}
+	})
+
+	t.Run("without --yes and no TTY exits 2", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "update", "max_items", "--enable")
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Errorf("err = %v, want a usage error (confirmation needed)", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write without confirmation", f.lastUpdate)
+		}
+	})
+}
+
+func TestFlagCreateIsNudge(t *testing.T) {
+	// Given / When
+	f := flagUpdateEnv(t)
+	_, err := run("", "flag", "create", "brand-new")
+
+	// Then — a usage error pointing at feature create
+	var ue *usageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "feature create brand-new") {
+		t.Errorf("err = %v, want a nudge toward `feature create`", err)
+	}
+	_ = f
 }
 
 func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {

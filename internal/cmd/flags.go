@@ -96,37 +96,46 @@ var flagGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// search is a case-insensitive contains match, so narrow to the exact
-		// feature client-side.
+		// The server's search is a contains match, so fetch and narrow to the
+		// exact feature client-side.
 		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID)
 		if err != nil {
 			return err
 		}
-		var feature *api.Feature
-		for i := range features {
-			if strings.EqualFold(features[i].Name, name) {
-				feature = &features[i]
-				break
-			}
-		}
+		feature := findFeature(features, name)
 		if feature == nil {
 			return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
 		}
-		return output.Render(cmd.OutOrStdout(), feature, outputOpts(), func(w io.Writer) error {
-			fields := []output.Field{
-				{Label: "Feature", Value: feature.Name},
-				{Label: "Description", Value: feature.Description},
-				{Label: "Type", Value: feature.Type},
-				{Label: "Enabled", Value: strconv.FormatBool(flagEnabled(feature.EnvironmentState))},
-				{Label: "Value", Value: flagValue(feature.EnvironmentState)},
-				{Label: "Segment overrides", Value: strconv.Itoa(feature.NumSegmentOverrides)},
-				{Label: "Identity overrides", Value: identityOverrides(feature.NumIdentityOverrides)},
-				{Label: "Code references", Value: strconv.Itoa(feature.CodeReferences())},
-				{Label: "Lifecycle stage", Value: lifecycleOrDash(feature.LifecycleStage)},
-			}
-			return output.Detail(w, fields)
-		})
+		return renderFlagDetail(cmd, feature)
 	},
+}
+
+// findFeature returns the feature whose name matches ref exactly (case
+// insensitive), or nil. The features endpoint's own filter is a contains match.
+func findFeature(features []api.Feature, ref string) *api.Feature {
+	for i := range features {
+		if strings.EqualFold(features[i].Name, ref) {
+			return &features[i]
+		}
+	}
+	return nil
+}
+
+// renderFlagDetail prints one flag's detail view (or its raw JSON item).
+func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
+	return output.Render(cmd.OutOrStdout(), feature, outputOpts(), func(w io.Writer) error {
+		return output.Detail(w, []output.Field{
+			{Label: "Feature", Value: feature.Name},
+			{Label: "Description", Value: feature.Description},
+			{Label: "Type", Value: feature.Type},
+			{Label: "Enabled", Value: strconv.FormatBool(flagEnabled(feature.EnvironmentState))},
+			{Label: "Value", Value: flagValue(feature.EnvironmentState)},
+			{Label: "Segment overrides", Value: strconv.Itoa(feature.NumSegmentOverrides)},
+			{Label: "Identity overrides", Value: identityOverrides(feature.NumIdentityOverrides)},
+			{Label: "Code references", Value: strconv.Itoa(feature.CodeReferences())},
+			{Label: "Lifecycle stage", Value: lifecycleOrDash(feature.LifecycleStage)},
+		})
+	})
 }
 
 func lifecycleOrDash(stage string) string {
@@ -159,6 +168,6 @@ func plural(n int, one, many string) string {
 }
 
 func init() {
-	flagCmd.AddCommand(flagListCmd, flagGetCmd)
+	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)
 }
