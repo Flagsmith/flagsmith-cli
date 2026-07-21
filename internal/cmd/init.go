@@ -27,10 +27,73 @@ func schemaURL() string {
 		"https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/%s/schema/flagsmith.json", version)
 }
 
+var (
+	createProjectFlag     string
+	createEnvironmentFlag string
+)
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Bind this directory to a Flagsmith project (writes flagsmith.json)",
 	RunE:  runInit,
+}
+
+// explicitValue returns a context value only when it came from a flag or
+// env var — a decision, as opposed to a flagsmith.json value which is a
+// default the prompts pre-select.
+func explicitValue(r resolved) (any, bool) {
+	if r.Source == sourceCLI || r.Source == sourceEnv {
+		return r.Value, true
+	}
+	return nil, false
+}
+
+// resolveOrganisation determines the organisation to act in and seeds the
+// name cache. The bool is true when more than one organisation was
+// available — the choice is then worth recording in flagsmith.json. An
+// explicit --organisation wins; a lone org is used silently; otherwise the
+// picker runs (self-guarding to exit 2 naming --organisation without a TTY).
+func resolveOrganisation(cmd *cobra.Command, pc *projectContext, cred *activeCredential, names *cache.Names) (api.Organisation, bool, error) {
+	orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+	if err != nil {
+		return api.Organisation{}, false, err
+	}
+	for _, o := range orgs {
+		names.Organisations[strconv.Itoa(o.ID)] = o.Name
+	}
+	if len(orgs) == 0 {
+		return api.Organisation{}, false, errors.New("no organisations are accessible with these credentials")
+	}
+	ambiguous := len(orgs) > 1
+	if v, ok := explicitValue(pc.Organisation); ok {
+		want := v.(int)
+		for _, o := range orgs {
+			if o.ID == want {
+				return o, ambiguous, nil
+			}
+		}
+		return api.Organisation{}, false, fmt.Errorf("organisation %d is not accessible with these credentials", want)
+	}
+	if len(orgs) == 1 {
+		return orgs[0], false, nil
+	}
+	configOrg := 0
+	if pc.Organisation.Source == sourceConfig {
+		configOrg, _ = pc.Organisation.Value.(int)
+	}
+	options := make([]string, len(orgs))
+	defaultOrg := 0
+	for i, o := range orgs {
+		options[i] = fmt.Sprintf("%s (%d)", o.Name, o.ID)
+		if o.ID == configOrg {
+			defaultOrg = i
+		}
+	}
+	idx, err := selectPrompt(cmd, "organisation", "Organisation", options, defaultOrg)
+	if err != nil {
+		return api.Organisation{}, false, err
+	}
+	return orgs[idx], true, nil
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -42,6 +105,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	errOut := cmd.ErrOrStderr()
+
+	// Creating a resource and selecting an existing one are mutually exclusive.
+	if createProjectFlag != "" {
+		if _, ok := explicitValue(pc.Project); ok {
+			return usageErrorf("--project and --create-project are mutually exclusive")
+		}
+	}
+	if createEnvironmentFlag != "" {
+		if _, ok := explicitValue(pc.Environment); ok {
+			return usageErrorf("--environment and --create-environment are mutually exclusive")
+		}
+	}
 
 	// Credentials: log in inline when interactive, fail with the ways out
 	// otherwise.
@@ -67,102 +142,66 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Environments:  map[string]string{},
 	}
 
-	// Only flag/env inputs are decisions; values from an existing
-	// flagsmith.json are prompt defaults — init's job is rewriting them.
-	explicit := func(r resolved) (any, bool) {
-		if r.Source == sourceCLI || r.Source == sourceEnv {
-			return r.Value, true
-		}
-		return nil, false
-	}
-
-	projectID := 0
-	if v, ok := explicit(pc.Project); ok {
-		projectID = v.(int)
-	}
-	configProjectID := 0
-	if pc.Project.Source == sourceConfig {
-		configProjectID, _ = pc.Project.Value.(int)
-	}
-	// Carry forward any organisation already in context (existing file,
-	// flag, or env) so re-init never drops it; the multi-org picker below
-	// overrides it with a fresh choice.
+	// Carry forward any organisation already in context (existing file, flag,
+	// or env) so re-init never drops it; a multi-org choice overrides it.
 	organisationID := 0
 	if v, ok := pc.Organisation.Value.(int); ok {
 		organisationID = v
 	}
-	if projectID == 0 {
-		if !interactive() {
-			return usageErrorf(
-				"no TTY and no --project given — cannot prompt.\nUsage: flagsmith init --project <id> [--environment <key>] [--api-url <url>] --yes")
-		}
-		orgs, err := api.Organisations(ctx, apiURL, cred.auth)
+
+	projectID := 0
+	if v, ok := explicitValue(pc.Project); ok {
+		projectID = v.(int)
+	}
+
+	switch {
+	case createProjectFlag != "":
+		org, ambiguous, err := resolveOrganisation(cmd, pc, cred, names)
 		if err != nil {
 			return err
 		}
-		for _, o := range orgs {
-			names.Organisations[strconv.Itoa(o.ID)] = o.Name
+		if ambiguous {
+			organisationID = org.ID
 		}
-		// An org from a flag/env is an explicit decision (no prompt); one
-		// from the config file is only the picker's default, so re-init
-		// always re-offers the choice.
-		explicitOrg, explicitOrgSet := 0, false
-		if v, ok := explicit(pc.Organisation); ok {
-			explicitOrg, explicitOrgSet = v.(int), true
+		created, err := api.CreateProject(ctx, apiURL, cred.auth, createProjectFlag, org.ID)
+		if err != nil {
+			return fmt.Errorf("creating project: %w", err)
 		}
-		configOrg := 0
-		if pc.Organisation.Source == sourceConfig {
-			configOrg, _ = pc.Organisation.Value.(int)
+		output.Success(errOut, "Created project %s (%d)", created.Name, created.ID)
+		projectID = created.ID
+		names.Projects[strconv.Itoa(created.ID)] = created.Name
+	case projectID != 0:
+		// use the explicitly provided project
+	default:
+		if !interactive() {
+			return usageErrorf(
+				"no TTY and no --project/--create-project given.\nUsage: flagsmith init --project <id> | --create-project <name> [--environment <key>] --yes")
 		}
-
-		var org api.Organisation
-		switch {
-		case len(orgs) == 0:
-			return errors.New("no organisations are accessible with these credentials")
-		case explicitOrgSet:
-			for _, o := range orgs {
-				if o.ID == explicitOrg {
-					org = o
-				}
-			}
-			if org.ID == 0 {
-				return fmt.Errorf("organisation %d is not accessible with these credentials", explicitOrg)
-			}
-		case len(orgs) == 1:
-			org = orgs[0]
-		default:
-			options := make([]string, len(orgs))
-			defaultOrg := 0
-			for i, o := range orgs {
-				options[i] = fmt.Sprintf("%s (%d)", o.Name, o.ID)
-				if o.ID == configOrg {
-					defaultOrg = i
-				}
-			}
-			idx, err := selectPrompt(cmd, "Organisation", options, defaultOrg)
-			if err != nil {
-				return err
-			}
-			org = orgs[idx]
-			organisationID = org.ID // record the choice for multi-org users
+		org, ambiguous, err := resolveOrganisation(cmd, pc, cred, names)
+		if err != nil {
+			return err
 		}
-
+		if ambiguous {
+			organisationID = org.ID
+		}
 		projects, err := api.Projects(ctx, apiURL, cred.auth, org.ID)
 		if err != nil {
 			return err
 		}
-		options := make([]string, 0, len(projects)+1)
-		for _, p := range projects {
-			options = append(options, fmt.Sprintf("%s (%d)", p.Name, p.ID))
+		configProjectID := 0
+		if pc.Project.Source == sourceConfig {
+			configProjectID, _ = pc.Project.Value.(int)
 		}
-		options = append(options, "Create a new project")
+		options := make([]string, 0, len(projects)+1)
 		defaultProject := 0
 		for i, p := range projects {
+			options = append(options, fmt.Sprintf("%s (%d)", p.Name, p.ID))
 			if p.ID == configProjectID {
 				defaultProject = i
 			}
 		}
-		idx, err := selectPrompt(cmd, "Project", options, defaultProject)
+		options = append(options, "Create a new project")
+		idx, err := selectPrompt(cmd, "project", "Project", options, defaultProject)
 		if err != nil {
 			return err
 		}
@@ -171,7 +210,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			name, err := textPrompt(cmd, "Project name", filepath.Base(cwd))
+			name, err := textPrompt(cmd, "create-project", "Project name", filepath.Base(cwd))
 			if err != nil {
 				return err
 			}
@@ -196,19 +235,28 @@ func runInit(cmd *cobra.Command, args []string) error {
 	for _, e := range envs {
 		names.Environments[e.APIKey] = e.Name
 	}
-	if !interactive() {
+	if !interactive() && createProjectFlag == "" && createEnvironmentFlag == "" {
 		output.Success(errOut, "Verified access to project %d", projectID)
 	}
 
 	envKey := ""
-	if v, ok := explicit(pc.Environment); ok {
-		envKey, _ = v.(string)
+	if v, ok := explicitValue(pc.Environment); ok {
+		envKey = v.(string)
 	}
 	configEnvKey := ""
 	if pc.Environment.Source == sourceConfig {
 		configEnvKey, _ = pc.Environment.Value.(string)
 	}
-	if envKey != "" {
+	switch {
+	case createEnvironmentFlag != "":
+		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, createEnvironmentFlag, projectID)
+		if err != nil {
+			return fmt.Errorf("creating environment: %w", err)
+		}
+		output.Success(errOut, "Created environment %s", created.Name)
+		envKey = created.APIKey
+		names.Environments[created.APIKey] = created.Name
+	case envKey != "":
 		found := false
 		for _, e := range envs {
 			if e.APIKey == envKey {
@@ -218,10 +266,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if !found {
 			return fmt.Errorf("environment key %q not found in project %d", envKey, projectID)
 		}
-	} else if interactive() && len(envs) == 0 {
+	case interactive() && len(envs) == 0:
 		// A project with no environments (e.g. one just created) can't be
 		// picked from — offer to create one, defaulting to Development.
-		name, err := textPrompt(cmd, "No environments yet — create one named", "Development")
+		name, err := textPrompt(cmd, "create-environment", "No environments yet — create one named", "Development")
 		if err != nil {
 			return err
 		}
@@ -232,7 +280,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		output.Success(errOut, "Created environment %s", created.Name)
 		envKey = created.APIKey
 		names.Environments[created.APIKey] = created.Name
-	} else if interactive() && len(envs) > 0 {
+	case interactive() && len(envs) > 0:
 		options := make([]string, 0, len(envs)+1)
 		def := 0
 		for i, e := range envs {
@@ -245,13 +293,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 			}
 		}
 		options = append(options, "(skip)")
-		idx, err := selectPrompt(cmd, "Default environment", options, def)
+		idx, err := selectPrompt(cmd, "environment", "Default environment", options, def)
 		if err != nil {
 			return err
 		}
 		if idx < len(envs) {
 			envKey = envs[idx].APIKey
 		}
+	default:
+		// Non-interactive with no environment flag: carry forward the
+		// existing config value rather than dropping it.
+		envKey = configEnvKey
 	}
 
 	newFile := &config.File{
@@ -274,18 +326,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if loadErr != nil {
 			old = &config.File{}
 		}
-		if interactive() {
+		if stdinIsTTY() && !yesFlag {
 			fmt.Fprintf(out, "%s exists — updating it.\n\n%s\n", config.FileName, fileDiff(old, newFile))
-			ok, err := confirmPrompt(cmd, "Write changes?")
-			if err != nil {
-				return err
-			}
-			if !ok {
-				fmt.Fprintln(errOut, "Aborted; nothing written.")
-				return nil
-			}
-		} else if !yesFlag {
-			return fmt.Errorf("%s exists. Pass --yes to overwrite it non-interactively", config.FileName)
+		}
+		ok, err := confirmOrYes(cmd, "Write changes?")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			fmt.Fprintln(errOut, "Aborted; nothing written.")
+			return nil
 		}
 	}
 
@@ -345,5 +395,9 @@ func fileDiff(old, updated *config.File) string {
 }
 
 func init() {
+	initCmd.Flags().StringVar(&createProjectFlag, "create-project", "",
+		"create a new project with this name and bind to it")
+	initCmd.Flags().StringVar(&createEnvironmentFlag, "create-environment", "",
+		"create a new environment with this name and use it")
 	rootCmd.AddCommand(initCmd)
 }

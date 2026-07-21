@@ -735,9 +735,133 @@ func TestInitRefusesOverwriteWithoutYes(t *testing.T) {
 	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345")
 
+	// Then — a promptable confirmation missing its flag is exit 2, naming it
+	var ue *usageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("err = %v, want a usage error (exit 2) naming --yes", err)
+	}
+}
+
+func TestInitCreateProjectFlag(t *testing.T) {
+	// Given — single org, non-interactive
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — create both a project and its environment purely via flags
+	out, err := run("", "init", "--api-url", f.srv.URL,
+		"--create-project", "acme-new", "--create-environment", "Development", "--yes")
+
 	// Then
-	if err == nil || !strings.Contains(err.Error(), "--yes") {
-		t.Errorf("err = %v, want a refusal pointing at --yes", err)
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	f.mu.Lock()
+	created, createdEnvs := append([]string{}, f.created...), append([]string{}, f.createdEnvs...)
+	f.mu.Unlock()
+	if len(created) != 1 || created[0] != "acme-new" {
+		t.Errorf("created projects = %v", created)
+	}
+	if len(createdEnvs) != 1 || createdEnvs[0] != "Development" {
+		t.Errorf("created envs = %v", createdEnvs)
+	}
+	if w := loadWritten(t, root); w.Project != 999 || w.Environment != "createdEnvKey00000000" {
+		t.Errorf("written = %+v", w)
+	}
+}
+
+func TestInitCreateProjectRequiresOrgWhenMultiOrg(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
+	tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — no --organisation, no TTY
+	_, err := run("", "init", "--api-url", f.srv.URL, "--create-project", "x", "--yes")
+
+	// Then — exit 2, naming the flag that resolves it
+	var ue *usageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "organisation") {
+		t.Errorf("err = %v, want a usage error naming --organisation", err)
+	}
+}
+
+func TestInitCreateProjectConflictsWithProject(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When / Then
+	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "101", "--create-project", "x", "--yes")
+	var ue *usageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("err = %v, want a mutual-exclusion usage error", err)
+	}
+}
+
+func TestInitCreateEnvironmentFlag(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When
+	out, err := run("", "init", "--api-url", f.srv.URL,
+		"--project", "101", "--create-environment", "Staging", "--yes")
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	f.mu.Lock()
+	createdEnvs := append([]string{}, f.createdEnvs...)
+	f.mu.Unlock()
+	if len(createdEnvs) != 1 || createdEnvs[0] != "Staging" {
+		t.Errorf("created envs = %v", createdEnvs)
+	}
+	if w := loadWritten(t, root); w.Environment != "createdEnvKey00000000" {
+		t.Errorf("written = %+v", w)
+	}
+}
+
+func TestInitCreateEnvironmentConflictsWithEnvironment(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When / Then
+	_, err := run("", "init", "--api-url", f.srv.URL,
+		"--project", "101", "--environment", "WqXhZk8sVY3dGgTqZ9pJmN", "--create-environment", "x", "--yes")
+	var ue *usageError
+	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("err = %v, want a mutual-exclusion usage error", err)
+	}
+}
+
+func TestPromptSelfGuardsWithoutTTY(t *testing.T) {
+	// Given — prompting disallowed (no TTY)
+	orig := stdinIsTTY
+	stdinIsTTY = func() bool { return false }
+	t.Cleanup(func() { stdinIsTTY = orig })
+	yesFlag = false
+	initPrompts(rootCmd)
+
+	// When / Then — a prompt refuses and names its flag, exit 2
+	if _, err := selectPrompt(rootCmd, "project", "Project", []string{"a"}, 0); err == nil {
+		t.Error("selectPrompt should refuse without a TTY")
+	} else {
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--project") {
+			t.Errorf("err = %v, want usage error naming --project", err)
+		}
 	}
 }
 
