@@ -115,8 +115,25 @@ In addition to a `flagsmith.json` file, every value can be provided via a global
 
 Every file generated via `flagsmith init` includes a `"$schema": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/<CLI version tag>/schema/flagsmith.json"` entry. 
 
-## 3. Name cache
+## 3. Named references and name cache
 
-Displaying organisations, projects (stored as IDs) and environments (stored as public keys) is enriched with names, stored in a local cache at `os.UserCacheDir()/flagsmith/cache.json`, keyed by `apiUrl`. Any Admin API command refreshes it opportunistically.
+Every entity input is regarded as a reference: its canonical identifier, or its name.
 
-The names are strictly cosmetic: never consulted for authorisation or resolution, and a cache miss degrades to showing the bare ID/key. This keeps names out of committed values while keeping the CLI human-readable offline.
+For environments, the reference is assumed to be a key, and a name is recognised only when it can be resolved.
+
+For other entities, an all-digit reference is regarded as the id, and anything else a name.
+
+Resolution turns a name into its canonical id/key by listing the entity's scope over the Admin API and matching by name, case-insensitively:
+- organisation ∈ the user's organisations.
+- project ∈ organisation.
+- environment ∈ project.
+
+In case of no admin credentials or no match, the CLI exits 1. In case of ambiguous resolution, the CLI prompts to pick one entry, or exits 2 without TTY.
+
+Resolution is lazy, i.e. performed when a command needs the canonical form, not while assembling context. This keeps `flagsmith config` offline and credentialless, showing the reference as given plus a cached resolution when available.
+
+`flagsmith init` stores a reference as authored and never rewrites a name to a key on re-run; its interactive pickers write the canonical key.
+
+A local cache at `os.UserCacheDir()/flagsmith/cache.json`, keyed by `apiUrl`, maps between canonical identifiers and names both ways. Any Admin API command refreshes it opportunistically.
+
+The cache is best-effort: display degrades to the bare id/key on a miss, and a resolution served from cache that the API later rejects triggers a re-list. It keeps the CLI human-readable and reference resolution fast, offline where possible.
