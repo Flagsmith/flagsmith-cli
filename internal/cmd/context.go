@@ -46,16 +46,18 @@ func (p *projectContext) apiURL() string {
 	return p.APIURL.Value.(string)
 }
 
-func intEnv(name string) (int, bool, error) {
-	raw := os.Getenv(name)
+// parseRef classifies a project/organisation reference string: an all-digit
+// value is its numeric ID, anything else a name (resolved later via the Admin
+// API). Empty yields nil.
+func parseRef(raw string) any {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return 0, false, nil
+		return nil
 	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 1 {
-		return 0, false, usageErrorf("%s must be a positive integer ID, got %q", name, raw)
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		return n
 	}
-	return n, true, nil
+	return raw
 }
 
 // resolveContext applies the context precedence for every value and
@@ -101,29 +103,27 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 		file = &config.File{}
 	}
 
-	// project
-	if envProject, set, err := intEnv("FLAGSMITH_PROJECT"); err != nil {
-		return nil, err
-	} else if cmd.Flags().Changed("project") {
-		pc.Project = resolved{Value: projectFlag, Source: sourceCLI}
-	} else if set {
-		pc.Project = resolved{Value: envProject, Source: sourceEnv}
-	} else if file.Project != 0 {
-		pc.Project = resolved{Value: file.Project, Source: sourceConfig}
-	} else {
+	// project (an ID or a name; see parseRef)
+	switch {
+	case cmd.Flags().Changed("project"):
+		pc.Project = resolved{Value: parseRef(projectFlag), Source: sourceCLI}
+	case os.Getenv("FLAGSMITH_PROJECT") != "":
+		pc.Project = resolved{Value: parseRef(os.Getenv("FLAGSMITH_PROJECT")), Source: sourceEnv}
+	case file.Project != nil:
+		pc.Project = resolved{Value: file.Project.Value(), Source: sourceConfig}
+	default:
 		pc.Project = resolved{Value: nil, Source: sourceDefault}
 	}
 
-	// organisation
-	if envOrg, set, err := intEnv("FLAGSMITH_ORGANISATION"); err != nil {
-		return nil, err
-	} else if cmd.Flags().Changed("organisation") {
-		pc.Organisation = resolved{Value: organisationFlag, Source: sourceCLI}
-	} else if set {
-		pc.Organisation = resolved{Value: envOrg, Source: sourceEnv}
-	} else if file.Organisation != 0 {
-		pc.Organisation = resolved{Value: file.Organisation, Source: sourceConfig}
-	} else {
+	// organisation (an ID or a name; see parseRef)
+	switch {
+	case cmd.Flags().Changed("organisation"):
+		pc.Organisation = resolved{Value: parseRef(organisationFlag), Source: sourceCLI}
+	case os.Getenv("FLAGSMITH_ORGANISATION") != "":
+		pc.Organisation = resolved{Value: parseRef(os.Getenv("FLAGSMITH_ORGANISATION")), Source: sourceEnv}
+	case file.Organisation != nil:
+		pc.Organisation = resolved{Value: file.Organisation.Value(), Source: sourceConfig}
+	default:
 		pc.Organisation = resolved{Value: nil, Source: sourceDefault}
 	}
 

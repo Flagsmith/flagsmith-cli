@@ -2,11 +2,13 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -16,11 +18,71 @@ const FileName = "flagsmith.json"
 // File is the parsed flagsmith.json. Zero values mean "not set".
 type File struct {
 	Schema       string `json:"$schema,omitempty"`
-	Project      int    `json:"project,omitempty"`
-	Organisation int    `json:"organisation,omitempty"`
+	Project      *Ref   `json:"project,omitempty"`
+	Organisation *Ref   `json:"organisation,omitempty"`
 	Environment  string `json:"environment,omitempty"`
 	APIURL       string `json:"apiUrl,omitempty"`
 	SDKAPIURL    string `json:"sdkApiUrl,omitempty"`
+}
+
+// Ref is a project or organisation reference: either a numeric ID or a name.
+// An all-digit reference (given as a JSON number or a numeric string) is an
+// ID; anything else is a name resolved via the Admin API. The nil *Ref means
+// "not set".
+type Ref struct {
+	ID   int
+	Name string
+}
+
+// Value returns the reference as the context layer wants it: an int ID, a
+// string name, or nil when unset.
+func (r *Ref) Value() any {
+	switch {
+	case r == nil:
+		return nil
+	case r.ID != 0:
+		return r.ID
+	case r.Name != "":
+		return r.Name
+	default:
+		return nil
+	}
+}
+
+func (r *Ref) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		s = strings.TrimSpace(s)
+		if n, err := strconv.Atoi(s); err == nil { // "12345" → ID
+			r.ID = n
+			return nil
+		}
+		r.Name = s
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(b, &n); err != nil {
+		return err
+	}
+	r.ID = n
+	return nil
+}
+
+func (r Ref) MarshalJSON() ([]byte, error) {
+	if r.ID != 0 {
+		return json.Marshal(r.ID)
+	}
+	if r.Name != "" {
+		return json.Marshal(r.Name)
+	}
+	return []byte("null"), nil
 }
 
 var knownFields = map[string]bool{

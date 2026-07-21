@@ -19,8 +19,8 @@ var apiURL string
 var (
 	apiURLFlag       string
 	sdkAPIURLFlag    string
-	projectFlag      int
-	organisationFlag int
+	projectFlag      string
+	organisationFlag string
 	environmentFlag  string
 	configPathFlag   string
 	yesFlag          bool
@@ -95,10 +95,10 @@ func init() {
 		"Flagsmith API base URL (env: FLAGSMITH_API_URL)")
 	flags.StringVar(&sdkAPIURLFlag, "sdk-api-url", "",
 		"SDK API base URL for flag evaluation (env: FLAGSMITH_SDK_API_URL)")
-	flags.IntVarP(&projectFlag, "project", "p", 0,
-		"project ID (env: FLAGSMITH_PROJECT)")
-	flags.IntVar(&organisationFlag, "organisation", 0,
-		"organisation ID (env: FLAGSMITH_ORGANISATION)")
+	flags.StringVarP(&projectFlag, "project", "p", "",
+		"project ID or name (env: FLAGSMITH_PROJECT)")
+	flags.StringVar(&organisationFlag, "organisation", "",
+		"organisation ID or name (env: FLAGSMITH_ORGANISATION)")
 	flags.StringVarP(&environmentFlag, "environment", "e", "",
 		"environment as its client-side SDK key (env: FLAGSMITH_ENVIRONMENT)")
 	flags.StringVarP(&configPathFlag, "config-path", "c", "",

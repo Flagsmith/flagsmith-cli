@@ -176,7 +176,7 @@ func TestLoad(t *testing.T) {
 		if len(warnings) != 0 {
 			t.Errorf("warnings = %v, want none", warnings)
 		}
-		if f.Project != 12345 || f.Organisation != 3 ||
+		if f.Project.ID != 12345 || f.Organisation.ID != 3 ||
 			f.Environment != "WqXhZk8sVY3dGgTqZ9pJmN" ||
 			f.APIURL != "https://flagsmith.acme.internal" ||
 			f.SDKAPIURL != "https://flags.acme.com" {
@@ -210,8 +210,8 @@ func TestLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if f.Project != 1 {
-			t.Errorf("Project = %d", f.Project)
+		if f.Project.ID != 1 {
+			t.Errorf("Project = %d", f.Project.ID)
 		}
 		if len(warnings) != 1 || !strings.Contains(warnings[0], "enviroment") {
 			t.Errorf("warnings = %v, want one about the unknown field", warnings)
@@ -228,4 +228,46 @@ func TestLoad(t *testing.T) {
 			t.Error("expected a parse error")
 		}
 	})
+}
+
+func TestRefParsing(t *testing.T) {
+	// Given / When / Then — a JSON number, a numeric string, and a name all
+	// classify per the reference rule (all-digit → ID, else name).
+	cases := []struct {
+		name    string
+		json    string
+		wantID  int
+		wantVal any
+	}{
+		{"json number", `{"project": 12345}`, 12345, 12345},
+		{"numeric string", `{"project": "12345"}`, 12345, 12345},
+		{"name", `{"project": "my-app"}`, 0, "my-app"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var f File
+			if err := json.Unmarshal([]byte(tc.json), &f); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if f.Project.ID != tc.wantID {
+				t.Errorf("ID = %d, want %d", f.Project.ID, tc.wantID)
+			}
+			if got := f.Project.Value(); got != tc.wantVal {
+				t.Errorf("Value() = %v, want %v", got, tc.wantVal)
+			}
+		})
+	}
+}
+
+func TestRefRoundTrip(t *testing.T) {
+	// Given an ID reference and a name reference
+	// When / Then — each marshals back to its authored shape
+	id := &Ref{ID: 101}
+	if b, _ := json.Marshal(id); string(b) != "101" {
+		t.Errorf("ID marshalled to %s, want 101", b)
+	}
+	name := &Ref{Name: "acme-api"}
+	if b, _ := json.Marshal(name); string(b) != `"acme-api"` {
+		t.Errorf("name marshalled to %s, want \"acme-api\"", b)
+	}
 }

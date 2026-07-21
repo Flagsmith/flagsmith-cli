@@ -11,16 +11,18 @@
       "description": "JSON Schema reference enabling editor autocomplete and validation."
     },
     "project": {
-      "type": "integer",
+      "type": ["integer", "string"],
       "minimum": 1,
-      "title": "Project ID",
-      "description": "Flagsmith project ID. Find it via `flagsmith projects list`, or JSON data in the dashboard. `flagsmith config` shows the resolved project name."
+      "minLength": 1,
+      "title": "Project",
+      "description": "Flagsmith project, as its numeric ID or its name. Find the ID in the dashboard (its URL, or the JSON data view); a name is resolved via the Admin API. `flagsmith config` shows the resolved project name."
     },
     "organisation": {
-      "type": "integer",
+      "type": ["integer", "string"],
       "minimum": 1,
-      "title": "Organisation ID",
-      "description": "Optional. Used by organisation-scoped commands that have no project context (e.g. creating a project). If not set, a default organisation is used. For project-scoped commands the organisation is derived from the project."
+      "minLength": 1,
+      "title": "Organisation",
+      "description": "Optional. Organisation, as its numeric ID or its name. Used by organisation-scoped commands that have no project context (e.g. creating a project). If not set, a default organisation is used. For project-scoped commands the organisation is derived from the project."
     },
     "environment": {
       "type": "string",
@@ -29,7 +31,7 @@
         "pattern": "^ser\\."
       },
       "title": "Default environment",
-      "description": "Client-side environment key identifying the default environment. Safe to commit: client-side keys are public by design. Enables flag evaluation without Admin API credentials. Server-side keys (ser.*) are secrets and are rejected in `flagsmith.json`: provide those via the FLAGSMITH_ENVIRONMENT_KEY environment variable instead."
+      "description": "A client-side environment key (recommended), or an environment name. A key is safe to commit — client-side keys are public by design — and enables flag evaluation with no Admin API credentials; a name is resolved via the Admin API and needs credentials. Server-side keys (ser.*) are secrets and are rejected here — provide those via the FLAGSMITH_ENVIRONMENT_KEY environment variable instead."
     },
     "apiUrl": {
       "type": "string",

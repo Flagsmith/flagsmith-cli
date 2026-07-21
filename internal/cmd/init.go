@@ -136,6 +136,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// A project/organisation passed by name is resolved to its canonical ID
+	// up front, so the rest of init works in IDs and records them.
+	if _, ok := pc.Organisation.Value.(string); ok {
+		id, err := resolveOrganisationID(cmd, pc, cred)
+		if err != nil {
+			return err
+		}
+		pc.Organisation.Value = id
+	}
+	if _, ok := pc.Project.Value.(string); ok {
+		id, err := resolveProjectID(cmd, pc, cred)
+		if err != nil {
+			return err
+		}
+		pc.Project.Value = id
+	}
+
 	names := &cache.Names{
 		Organisations: map[string]string{},
 		Projects:      map[string]string{},
@@ -308,8 +325,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	newFile := &config.File{
 		Schema:       schemaURL(),
-		Project:      projectID,
-		Organisation: organisationID,
+		Project:      refOrNil(projectID),
+		Organisation: refOrNil(organisationID),
 		Environment:  envKey,
 	}
 	if pc.APIURL.Value.(string) != defaultAPIURL {
@@ -353,6 +370,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// refOrNil wraps a resolved ID as a config reference, or nil when unset so
+// the field is omitted from flagsmith.json.
+func refOrNil(id int) *config.Ref {
+	if id == 0 {
+		return nil
+	}
+	return &config.Ref{ID: id}
+}
+
 // fileDiff renders changed fields between two configs as -/+ JSON lines.
 func fileDiff(old, updated *config.File) string {
 	render := func(f *config.File) map[string]string {
@@ -361,10 +387,10 @@ func fileDiff(old, updated *config.File) string {
 			encoded, _ := json.Marshal(v)
 			lines[key] = fmt.Sprintf("%q: %s,", key, encoded)
 		}
-		if f.Project != 0 {
+		if f.Project != nil {
 			set("project", f.Project)
 		}
-		if f.Organisation != 0 {
+		if f.Organisation != nil {
 			set("organisation", f.Organisation)
 		}
 		if f.Environment != "" {

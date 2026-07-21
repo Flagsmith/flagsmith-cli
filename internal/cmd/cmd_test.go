@@ -714,15 +714,18 @@ func TestConfigCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("bad FLAGSMITH_PROJECT errors", func(t *testing.T) {
-		// Given
+	t.Run("non-numeric FLAGSMITH_PROJECT is taken as a name", func(t *testing.T) {
+		// Given a non-digit value — a project name, not an error
 		isolateStorage(t)
 		tempRepo(t)
-		t.Setenv("FLAGSMITH_PROJECT", "not-a-number")
+		t.Setenv("FLAGSMITH_PROJECT", "my-app")
 
-		// When / Then
-		if _, err := run("", "config"); err == nil || !strings.Contains(err.Error(), "FLAGSMITH_PROJECT") {
-			t.Errorf("err = %v, want a FLAGSMITH_PROJECT parse error", err)
+		// When — config is offline and resolves nothing
+		got := configJSON(t)
+
+		// Then — recorded verbatim as the project reference, sourced from env
+		if v := got["project"]; v["value"] != "my-app" || v["source"] != "env" {
+			t.Errorf("project = %v, want the name carried through from the env var", v)
 		}
 	})
 
@@ -756,6 +759,15 @@ func loadWritten(t *testing.T, dir string) *config.File {
 	return f
 }
 
+// refID returns a config reference's ID, or 0 when unset — nil-safe for terse
+// test assertions.
+func refID(r *config.Ref) int {
+	if r == nil {
+		return 0
+	}
+	return r.ID
+}
+
 func TestInitNonInteractive(t *testing.T) {
 	// Given
 	isolateStorage(t)
@@ -777,7 +789,7 @@ func TestInitNonInteractive(t *testing.T) {
 		}
 	}
 	written := loadWritten(t, root)
-	if written.Project != 12345 || written.Environment != "WqXhZk8sVY3dGgTqZ9pJmN" {
+	if refID(written.Project) != 12345 || written.Environment != "WqXhZk8sVY3dGgTqZ9pJmN" {
 		t.Errorf("written = %+v", written)
 	}
 	if written.APIURL != f.srv.URL {
@@ -873,7 +885,7 @@ func TestInitCreateProjectFlag(t *testing.T) {
 	if len(createdEnvs) != 1 || createdEnvs[0] != "Development" {
 		t.Errorf("created envs = %v", createdEnvs)
 	}
-	if w := loadWritten(t, root); w.Project != 999 || w.Environment != "createdEnvKey00000000" {
+	if w := loadWritten(t, root); refID(w.Project) != 999 || w.Environment != "createdEnvKey00000000" {
 		t.Errorf("written = %+v", w)
 	}
 }
@@ -998,11 +1010,11 @@ func TestInitInteractiveMultiOrg(t *testing.T) {
 		}
 	}
 	written := loadWritten(t, root)
-	if written.Project != 202 || written.Environment != "BetaDevKey00000000000" {
+	if refID(written.Project) != 202 || written.Environment != "BetaDevKey00000000000" {
 		t.Errorf("written = %+v", written)
 	}
-	if written.Organisation != 7 {
-		t.Errorf("organisation = %d, want 7 recorded for a multi-org user", written.Organisation)
+	if refID(written.Organisation) != 7 {
+		t.Errorf("organisation = %d, want 7 recorded for a multi-org user", refID(written.Organisation))
 	}
 }
 
@@ -1035,7 +1047,7 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 	if len(createdEnvs) != 1 || createdEnvs[0] != "Development" {
 		t.Errorf("createdEnvs = %v, want a Development environment created", createdEnvs)
 	}
-	if written := loadWritten(t, root); written.Project != 999 || written.Environment != "createdEnvKey00000000" {
+	if written := loadWritten(t, root); refID(written.Project) != 999 || written.Environment != "createdEnvKey00000000" {
 		t.Errorf("written = %+v", written)
 	}
 }
@@ -1111,8 +1123,8 @@ func TestInitPreservesExistingOrganisation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init: %v\noutput: %s", err, out)
 	}
-	if written := loadWritten(t, root); written.Organisation != 3 {
-		t.Errorf("organisation = %d, want 3 preserved", written.Organisation)
+	if written := loadWritten(t, root); refID(written.Organisation) != 3 {
+		t.Errorf("organisation = %d, want 3 preserved", refID(written.Organisation))
 	}
 }
 
@@ -1138,8 +1150,8 @@ func TestInitReinitReoffersOrgPicker(t *testing.T) {
 	if !strings.Contains(out, "Organisation") {
 		t.Errorf("output = %q, want the org picker re-offered on re-init", out)
 	}
-	if written := loadWritten(t, root); written.Organisation != 3 {
-		t.Errorf("organisation = %d, want the pre-selected current org (3)", written.Organisation)
+	if written := loadWritten(t, root); refID(written.Organisation) != 3 {
+		t.Errorf("organisation = %d, want the pre-selected current org (3)", refID(written.Organisation))
 	}
 }
 
@@ -1161,7 +1173,7 @@ func TestInitInvalidChoiceReprompts(t *testing.T) {
 	if !strings.Contains(out, "between 1 and") {
 		t.Errorf("output = %q, want a re-prompt instead of a crash", out)
 	}
-	if written := loadWritten(t, root); written.Project != 101 {
+	if written := loadWritten(t, root); refID(written.Project) != 101 {
 		t.Errorf("written = %+v", written)
 	}
 }
@@ -1187,7 +1199,7 @@ func TestInitReinitShowsDiffAndConfirms(t *testing.T) {
 			t.Errorf("output = %q, want it to contain %q", out, want)
 		}
 	}
-	if written := loadWritten(t, root); written.Project != 101 || written.Environment != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
+	if written := loadWritten(t, root); refID(written.Project) != 101 || written.Environment != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
 		t.Errorf("written = %+v", written)
 	}
 }
@@ -1412,19 +1424,38 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	}
 }
 
-func TestInvalidEnvProjectIsUsageError(t *testing.T) {
-	// Given
+func TestProjectNameResolvesForEnvironmentLookup(t *testing.T) {
+	// Given a config naming both the project and the environment
 	isolateStorage(t)
-	tempRepo(t)
-	t.Setenv("FLAGSMITH_PROJECT", "not-a-number")
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": "acme-api", "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
 
-	// When
-	_, err := run("", "config")
+	// When — flag list needs the project ID to list environments by name
+	out, err := run("", "flag", "list")
 
-	// Then
-	var usage *usageError
-	if !errors.As(err, &usage) {
-		t.Errorf("err = %v, want a usage error (exit 2) for invalid promptable input", err)
+	// Then — "acme-api" resolved to project 101, "Development" to its key
+	if err != nil {
+		t.Fatalf("flag list: %v\noutput: %s", err, out)
+	}
+	if got := f.environmentKey(); got != "WqXhZk8sVY3dGgTqZ9pJmN" {
+		t.Errorf("SDK key = %q, want the key resolved via the named project", got)
+	}
+}
+
+func TestUnknownProjectNameErrors(t *testing.T) {
+	// Given a project name that matches nothing in the organisation
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": "ghost", "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When / Then — the miss surfaces when a command needs the project
+	_, err := run("", "flag", "list")
+	if err == nil || !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("err = %v, want a not-found error naming the project", err)
 	}
 }
 
