@@ -1,11 +1,6 @@
 # Flagsmith CLI
 
-The next-generation Flagsmith command-line interface. Currently a proof of
-concept focused on installation and authentication — see
-[docs/design/01-installation.md](docs/design/01-installation.md),
-[docs/design/02-output-and-interactivity.md](docs/design/02-output-and-interactivity.md),
-[docs/design/03-authentication.md](docs/design/03-authentication.md) and
-[docs/design/04-project-config.md](docs/design/04-project-config.md).
+The next-generation Flagsmith command-line interface (work in progress).
 
 ## Build
 
@@ -13,17 +8,33 @@ concept focused on installation and authentication — see
 go build -o flagsmith .
 ```
 
-## Use
+## Quickstart
 
 ```sh
-flagsmith login                # browser-based OAuth (PKCE, loopback)
-flagsmith auth status          # identity, credential source, token expiry
-flagsmith auth token           # print an access token for curl/scripts
-flagsmith logout               # revoke and remove the stored session
+flagsmith init          # log in, pick a project + environment, write flagsmith.json
+flagsmith flags list    # list the flags in the current environment
 ```
 
-Point at a self-hosted instance with `--api-url` or `FLAGSMITH_API_URL`:
+## Commands
 
-```sh
-flagsmith login --api-url http://127.0.0.1:8000
-```
+- `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
+- `flagsmith flags list` — list feature flags in the current environment.
+- `flagsmith config` — show the resolved context and where each value comes from.
+- `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
+- `flagsmith auth status` — identity, organisations, credential source, token expiry.
+- `flagsmith auth token` — print the active Admin API credential for curl/scripts.
+
+## Conventions
+
+- `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
+- Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK).
+- Self-hosted: `--api-url` or `FLAGSMITH_API_URL`.
+
+## Design
+
+[Installation](docs/design/01-installation.md) ·
+[Output & interactivity](docs/design/02-output-and-interactivity.md) ·
+[Authentication](docs/design/03-authentication.md) ·
+[Project config](docs/design/04-project-config.md) ·
+[CRUD conventions](docs/design/05-crud.md) ·
+[Flags](docs/design/06-flags.md)
