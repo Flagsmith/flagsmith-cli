@@ -52,6 +52,12 @@ var rootCmd = &cobra.Command{
 	Use:          "flagsmith",
 	Short:        "The Flagsmith command-line interface",
 	SilenceUsage: true,
+	// Drop any memoised credential from a prior run before each invocation
+	// (matters in-process, e.g. tests reusing rootCmd across Execute calls).
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		resetCredentialCache()
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "%s.\n\n", cmd.Short)

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -105,6 +106,7 @@ type fakeInstance struct {
 	createdEnvs []string
 	flags       []map[string]any // SDK /flags/ response; nil → default two
 	lastEnvKey  string           // last X-Environment-Key seen by /flags/
+	tokenPosts  int              // count of POST /o/token/ (refresh) calls
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -133,6 +135,9 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		})
 	})
 	mux.HandleFunc("POST /o/token/", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.tokenPosts++
+		f.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  oauthAccess,
 			"refresh_token": "cmd-refresh",
@@ -263,6 +268,12 @@ func (f *fakeInstance) environmentKey() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.lastEnvKey
+}
+
+func (f *fakeInstance) refreshCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.tokenPosts
 }
 
 func TestFlagListResolvesEnvironmentName(t *testing.T) {
@@ -1421,6 +1432,52 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	// Then
 	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_API_KEY") {
 		t.Errorf("err = %v, want a refusal pointing at FLAGSMITH_API_KEY", err)
+	}
+}
+
+func TestResolveCredentialRefreshesOnceUnderConcurrency(t *testing.T) {
+	// Given an expired OAuth session and many concurrent callers
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	if err := auth.Save(&auth.Credentials{
+		APIURL:       f.srv.URL,
+		AccessToken:  "stale",
+		RefreshToken: "cmd-refresh",
+		ExpiresAt:    time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	apiURL = f.srv.URL
+	resetCredentialCache()
+
+	// When — N goroutines resolve the credential simultaneously
+	const n = 20
+	var wg sync.WaitGroup
+	results := make([]*activeCredential, n)
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = resolveCredential(context.Background())
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// Then — the session refreshed exactly once, shared by every caller
+	if got := f.refreshCount(); got != 1 {
+		t.Errorf("refresh POSTs = %d, want exactly 1 (herd collapsed)", got)
+	}
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("caller %d: %v", i, errs[i])
+		}
+		if results[i].token != oauthAccess {
+			t.Errorf("caller %d token = %q, want the refreshed access token", i, results[i].token)
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,6 +19,23 @@ import (
 )
 
 const envAPIKey = "FLAGSMITH_API_KEY"
+
+// credMu guards a per-invocation memo of the resolved credential, keyed by
+// instance URL. It collapses concurrent resolutions into one: the first caller
+// does the load-refresh-save under the lock (so an expired OAuth token is
+// refreshed exactly once, with a single rotated refresh token saved), and
+// later callers get the cached result. resetCredentialCache clears it at the
+// start of each command run.
+var (
+	credMu    sync.Mutex
+	credCache = map[string]*activeCredential{}
+)
+
+func resetCredentialCache() {
+	credMu.Lock()
+	credCache = map[string]*activeCredential{}
+	credMu.Unlock()
+}
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
@@ -33,10 +51,28 @@ type activeCredential struct {
 	expires time.Time // zero when not applicable
 }
 
-// resolveCredential applies the credential precedence chain:
+// resolveCredential returns the Admin API credential for the current
+// instance, memoised for the invocation. Concurrent callers serialise on
+// credMu so an expired OAuth session refreshes exactly once; only successful
+// results are cached, so a login performed mid-invocation is still picked up.
+func resolveCredential(ctx context.Context) (*activeCredential, error) {
+	credMu.Lock()
+	defer credMu.Unlock()
+	if c, ok := credCache[apiURL]; ok {
+		return c, nil
+	}
+	c, err := loadCredential(ctx)
+	if err != nil {
+		return nil, err
+	}
+	credCache[apiURL] = c
+	return c, nil
+}
+
+// loadCredential applies the credential precedence chain:
 // $FLAGSMITH_API_KEY first, then the stored login for the instance
 // (refreshing and re-saving the session when expired).
-func resolveCredential(ctx context.Context) (*activeCredential, error) {
+func loadCredential(ctx context.Context) (*activeCredential, error) {
 	if v := os.Getenv(envAPIKey); v != "" {
 		kind, err := auth.ClassifyAPIKey(v)
 		if err != nil {
