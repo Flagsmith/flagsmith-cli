@@ -46,8 +46,10 @@ func featureTypeLabel(t string) string {
 // values can be very large (JSON blobs, long strings).
 const valueDisplayMax = 40
 
-// truncateValue shortens an over-long value for table display, marking the cut.
+// truncateValue flattens a value to a single line (values are often multi-line
+// JSON) and shortens it for table display, marking the cut.
 func truncateValue(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
 	if len(r) <= valueDisplayMax {
 		return s

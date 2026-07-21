@@ -1760,6 +1760,40 @@ func TestFlagsList(t *testing.T) {
 			t.Errorf("output = %q, want the long value truncated", out)
 		}
 	})
+
+	t.Run("multi-line JSON value stays on one row", func(t *testing.T) {
+		// Given a value containing newlines (a JSON blob)
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		f.features["101"] = []map[string]any{{
+			"id": 1, "name": "blob", "type": "STANDARD",
+			"environment_feature_state": map[string]any{
+				"enabled": true, "feature_state_value": "[\n  {\n    \"value\": \"EQUAL\"\n  }\n]",
+			},
+		}}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "list")
+
+		// Then — the value row holds no embedded newline; only the table's own
+		// line breaks remain (header, one data row, blank line, count).
+		if err != nil {
+			t.Fatalf("flags list: %v", err)
+		}
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		for _, l := range lines {
+			// Any JSON fragment must sit on the blob row, not spill onto its own.
+			if strings.Contains(l, `"value"`) && !strings.HasPrefix(l, "blob") {
+				t.Errorf("value spilled onto its own row: %q", l)
+			}
+		}
+		if !strings.Contains(out, `[ { "value": "EQUAL" } ]`) {
+			t.Errorf("output = %q, want the value flattened to one line", out)
+		}
+	})
 }
 
 func TestFlagGet(t *testing.T) {
