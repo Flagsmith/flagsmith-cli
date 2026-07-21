@@ -176,7 +176,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1)
+		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 0)
 
 		// Then
 		if err != nil {
@@ -206,7 +206,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1)
+		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,11 +229,75 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		_, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1)
+		_, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 0)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "403") {
 			t.Errorf("err = %v, want 403", err)
+		}
+	})
+
+	t.Run("segment param is sent when non-zero", func(t *testing.T) {
+		// Given
+		var gotSegment string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotSegment = r.URL.Query().Get("segment")
+			fmt.Fprint(w, `{"count":0,"results":[]}`)
+		}))
+		defer srv.Close()
+
+		// When
+		if _, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 12); err != nil {
+			t.Fatal(err)
+		}
+
+		// Then
+		if gotSegment != "12" {
+			t.Errorf("segment = %q, want 12", gotSegment)
+		}
+	})
+}
+
+func TestDeleteSegmentOverride(t *testing.T) {
+	t.Run("posts the feature and segment, accepts 204", func(t *testing.T) {
+		// Given
+		var body map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost ||
+				r.URL.Path != "/api/experiments/environments/envkey/delete-segment-override/" {
+				t.Errorf("request = %s %s", r.Method, r.URL.Path)
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer srv.Close()
+
+		// When
+		err := DeleteSegmentOverride(context.Background(), srv.URL, APIKey("k.s"), "envkey", "max_items", 12)
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body["feature"].(map[string]any)["name"] != "max_items" ||
+			body["segment"].(map[string]any)["id"] != float64(12) {
+			t.Errorf("body = %+v", body)
+		}
+	})
+
+	t.Run("404 becomes a no-override error", func(t *testing.T) {
+		// Given
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer srv.Close()
+
+		// When
+		err := DeleteSegmentOverride(context.Background(), srv.URL, APIKey("k.s"), "envkey", "max_items", 12)
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "segment 12") {
+			t.Errorf("err = %v, want a no-override error", err)
 		}
 	})
 }

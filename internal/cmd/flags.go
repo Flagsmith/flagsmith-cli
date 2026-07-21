@@ -58,7 +58,7 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID)
+		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, 0)
 		if err != nil {
 			return err
 		}
@@ -86,6 +86,8 @@ var flagListCmd = &cobra.Command{
 	},
 }
 
+var flagGetSegmentFlag int
+
 var flagGetCmd = &cobra.Command{
 	Use:   "get <feature>",
 	Short: "Show a single flag's state in the current environment",
@@ -98,13 +100,19 @@ var flagGetCmd = &cobra.Command{
 		}
 		// The server's search is a contains match, so fetch and narrow to the
 		// exact feature client-side.
-		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID)
+		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, flagGetSegmentFlag)
 		if err != nil {
 			return err
 		}
 		feature := findFeature(features, name)
 		if feature == nil {
 			return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
+		}
+		if flagGetSegmentFlag != 0 {
+			if feature.SegmentState == nil {
+				return fmt.Errorf("%q has no override for segment %d in %s", name, flagGetSegmentFlag, environmentLabel(env))
+			}
+			return renderSegmentDetail(cmd, feature, flagGetSegmentFlag)
 		}
 		return renderFlagDetail(cmd, feature)
 	},
@@ -119,6 +127,19 @@ func findFeature(features []api.Feature, ref string) *api.Feature {
 		}
 	}
 	return nil
+}
+
+// renderSegmentDetail prints a flag's state for one segment override.
+func renderSegmentDetail(cmd *cobra.Command, feature *api.Feature, segmentID int) error {
+	return output.Render(cmd.OutOrStdout(), feature, outputOpts(), func(w io.Writer) error {
+		return output.Detail(w, []output.Field{
+			{Label: "Feature", Value: feature.Name},
+			{Label: "Type", Value: feature.Type},
+			{Label: "Segment", Value: strconv.Itoa(segmentID)},
+			{Label: "Enabled", Value: strconv.FormatBool(flagEnabled(feature.SegmentState))},
+			{Label: "Value", Value: flagValue(feature.SegmentState)},
+		})
+	})
 }
 
 // renderFlagDetail prints one flag's detail view (or its raw JSON item).
@@ -168,6 +189,7 @@ func plural(n int, one, many string) string {
 }
 
 func init() {
-	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagCreateCmd)
+	flagGetCmd.Flags().IntVar(&flagGetSegmentFlag, "segment", 0, "show the override for this segment id")
+	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagDeleteCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)
 }

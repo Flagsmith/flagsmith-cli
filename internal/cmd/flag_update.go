@@ -11,10 +11,12 @@ import (
 )
 
 var (
-	flagEnableFlag  bool
-	flagDisableFlag bool
-	flagValueFlag   string
-	flagTypeFlag    string
+	flagEnableFlag    bool
+	flagDisableFlag   bool
+	flagValueFlag     string
+	flagTypeFlag      string
+	flagUpdateSegment int
+	flagDeleteSegment int
 )
 
 var flagUpdateCmd = &cobra.Command{
@@ -39,11 +41,12 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 		return usageErrorf("--type only applies together with --value")
 	}
 
+	segmentID := flagUpdateSegment
 	_, cred, projectID, env, err := flagContext(cmd)
 	if err != nil {
 		return err
 	}
-	features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID)
+	features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, segmentID)
 	if err != nil {
 		return err
 	}
@@ -52,56 +55,114 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
 	}
 
-	// update-flag-v2 requires the whole environment default, so start from the
-	// current state and apply only the requested changes.
-	enabled := flagEnabled(feature.EnvironmentState)
+	// update-flag-v2 always requires the whole environment default, so carry it
+	// forward unchanged.
+	req := api.UpdateFlagRequest{
+		Feature: api.FeatureRef{Name: name},
+		EnvironmentDefault: api.EnvironmentDefault{
+			Enabled: flagEnabled(feature.EnvironmentState),
+			Value:   featureValueFromScalar(currentScalar(feature.EnvironmentState)),
+		},
+	}
+
+	// The state being changed: the environment default, or a segment override.
+	target := feature.EnvironmentState
+	scope := "environment " + environmentLabel(env)
+	if segmentID != 0 {
+		target = feature.SegmentState // nil when the override does not exist yet
+		scope = fmt.Sprintf("segment %d in environment %s", segmentID, environmentLabel(env))
+	}
+
+	enabled := flagEnabled(target)
 	if enable {
 		enabled = true
 	}
 	if disable {
 		enabled = false
 	}
-	value := featureValueFromScalar(currentScalar(feature))
+	// A new segment override with no explicit value inherits the environment
+	// default; otherwise keep the target's current value.
+	value := req.EnvironmentDefault.Value
+	if target != nil {
+		value = featureValueFromScalar(currentScalar(target))
+	}
 	if setValue {
 		if value, err = inferFeatureValue(flagValueFlag, flagTypeFlag); err != nil {
 			return err
 		}
 	}
 
+	if segmentID == 0 {
+		req.EnvironmentDefault.Enabled = enabled
+		req.EnvironmentDefault.Value = value
+	} else {
+		req.SegmentOverrides = []api.SegmentOverride{{SegmentID: segmentID, Enabled: enabled, Value: value}}
+	}
+
 	errOut := cmd.ErrOrStderr()
-	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Update %s in %s?", name, environmentLabel(env))); err != nil {
+	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Update %s in %s?", name, scope)); err != nil {
 		return err
 	} else if !ok {
 		fmt.Fprintln(errOut, "Aborted; nothing changed.")
 		return nil
 	}
 
-	if err := api.UpdateFlag(cmd.Context(), apiURL, cred.auth, env.APIKey, api.UpdateFlagRequest{
-		Feature:            api.FeatureRef{Name: name},
-		EnvironmentDefault: api.EnvironmentDefault{Enabled: enabled, Value: value},
-	}); err != nil {
+	if err := api.UpdateFlag(cmd.Context(), apiURL, cred.auth, env.APIKey, req); err != nil {
 		return err
 	}
 
 	if setValue {
-		output.Success(errOut, "Set %s to %s in environment %s", name, displayValue(value), environmentLabel(env))
+		output.Success(errOut, "Set %s to %s in %s", name, displayValue(value), scope)
 	}
 	if enable {
-		output.Success(errOut, "Enabled %s in environment %s", name, environmentLabel(env))
+		output.Success(errOut, "Enabled %s in %s", name, scope)
 	}
 	if disable {
-		output.Success(errOut, "Disabled %s in environment %s", name, environmentLabel(env))
+		output.Success(errOut, "Disabled %s in %s", name, scope)
 	}
 
 	// Result model: an update also prints the resulting resource to stdout.
-	features, err = api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID)
+	features, err = api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, segmentID)
 	if err != nil {
 		return err
 	}
-	if updated := findFeature(features, name); updated != nil {
-		return renderFlagDetail(cmd, updated)
+	updated := findFeature(features, name)
+	if updated == nil {
+		return nil
 	}
-	return nil
+	if segmentID != 0 {
+		return renderSegmentDetail(cmd, updated, segmentID)
+	}
+	return renderFlagDetail(cmd, updated)
+}
+
+var flagDeleteCmd = &cobra.Command{
+	Use:   "delete <feature>",
+	Short: "Delete a flag's segment override in the current environment",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		if !cmd.Flags().Changed("segment") {
+			return usageErrorf("provide --segment <id> to delete a segment override")
+		}
+		_, cred, _, env, err := flagContext(cmd)
+		if err != nil {
+			return err
+		}
+		errOut := cmd.ErrOrStderr()
+		label := fmt.Sprintf("delete %s override for segment %d in %s", name, flagDeleteSegment, environmentLabel(env))
+		if ok, err := confirmOrYes(cmd, label+"?"); err != nil {
+			return err
+		} else if !ok {
+			fmt.Fprintln(errOut, "Aborted; nothing changed.")
+			return nil
+		}
+		if err := api.DeleteSegmentOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, name, flagDeleteSegment); err != nil {
+			return err
+		}
+		output.Success(errOut, "Deleted %s override for segment %d in environment %s", name, flagDeleteSegment, environmentLabel(env))
+		return nil
+	},
 }
 
 // flagCreateCmd is hidden: it exists only to intercept `flag create` with a
@@ -122,12 +183,12 @@ var flagCreateCmd = &cobra.Command{
 	},
 }
 
-// currentScalar returns a feature's current environment value, or nil.
-func currentScalar(f *api.Feature) any {
-	if f.EnvironmentState == nil {
+// currentScalar returns a feature state's current value, or nil.
+func currentScalar(fs *api.FeatureState) any {
+	if fs == nil {
 		return nil
 	}
-	return f.EnvironmentState.Value
+	return fs.Value
 }
 
 // featureValueFromScalar converts a value read from the features list (a bare
@@ -191,4 +252,6 @@ func init() {
 	flagUpdateCmd.Flags().BoolVar(&flagDisableFlag, "disable", false, "turn the flag off")
 	flagUpdateCmd.Flags().StringVar(&flagValueFlag, "value", "", "set the flag value")
 	flagUpdateCmd.Flags().StringVar(&flagTypeFlag, "type", "", "force the value type: string, integer, or boolean")
+	flagUpdateCmd.Flags().IntVar(&flagUpdateSegment, "segment", 0, "target this segment's override instead of the environment default")
+	flagDeleteCmd.Flags().IntVar(&flagDeleteSegment, "segment", 0, "the segment id whose override to delete")
 }

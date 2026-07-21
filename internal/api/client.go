@@ -163,6 +163,7 @@ type Feature struct {
 	LifecycleStage       string               `json:"lifecycle_stage"`
 	CodeReferencesCounts []CodeReferenceCount `json:"code_references_counts"`
 	EnvironmentState     *FeatureState        `json:"environment_feature_state"`
+	SegmentState         *FeatureState        `json:"segment_feature_state"`
 
 	raw json.RawMessage
 }
@@ -196,10 +197,15 @@ func (f Feature) CodeReferences() int {
 }
 
 // Features lists a project's features with their state in one environment, via
-// the Admin API. The environment is identified by its numeric ID.
-func Features(ctx context.Context, apiURL string, auth Auth, projectID, environmentID int) ([]Feature, error) {
+// the Admin API. The environment is identified by its numeric ID. When
+// segmentID is non-zero, each feature also carries its segment_feature_state
+// for that segment.
+func Features(ctx context.Context, apiURL string, auth Auth, projectID, environmentID, segmentID int) ([]Feature, error) {
 	var features []Feature
 	path := fmt.Sprintf("/api/v1/projects/%d/features/?environment=%d", projectID, environmentID)
+	if segmentID != 0 {
+		path += fmt.Sprintf("&segment=%d", segmentID)
+	}
 	if err := getList(ctx, apiURL, path, auth, &features); err != nil {
 		return nil, err
 	}
@@ -226,11 +232,54 @@ type EnvironmentDefault struct {
 	Value   FeatureValue `json:"value"`
 }
 
-// UpdateFlagRequest is the update-flag-v2 body (environment default only; this
-// endpoint does not manage identity overrides).
+// SegmentOverride is one segment's state in the update-flag-v2 body.
+type SegmentOverride struct {
+	SegmentID int          `json:"segment_id"`
+	Enabled   bool         `json:"enabled"`
+	Value     FeatureValue `json:"value"`
+}
+
+// UpdateFlagRequest is the update-flag-v2 body. environment_default is always
+// required; segment_overrides only creates/updates the segments listed and
+// never removes others. This endpoint does not manage identity overrides.
 type UpdateFlagRequest struct {
 	Feature            FeatureRef         `json:"feature"`
 	EnvironmentDefault EnvironmentDefault `json:"environment_default"`
+	SegmentOverrides   []SegmentOverride  `json:"segment_overrides,omitempty"`
+}
+
+// DeleteSegmentOverride removes a feature's override for one segment, via the
+// experimental delete-segment-override endpoint keyed by the environment key.
+func DeleteSegmentOverride(ctx context.Context, apiURL string, auth Auth, environmentKey, featureName string, segmentID int) error {
+	body, err := json.Marshal(map[string]any{
+		"feature": FeatureRef{Name: featureName},
+		"segment": map[string]int{"id": segmentID},
+	})
+	if err != nil {
+		return err
+	}
+	u := strings.TrimRight(apiURL, "/") + "/api/experiments/environments/" + environmentKey + "/delete-segment-override/"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	auth.Apply(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return ErrWorkflowGated
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("no override exists for segment %d", segmentID)
+	}
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("POST %s returned %s", u, resp.Status)
+	}
+	return nil
 }
 
 // ErrWorkflowGated is returned when update-flag-v2 refuses because the
