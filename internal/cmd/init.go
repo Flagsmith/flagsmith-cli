@@ -20,7 +20,7 @@ import (
 
 // version is the CLI version tag, stamped by the release build; the
 // $schema URL written by init pins the schema of the writing CLI.
-var version = "main"
+var version = "feat/cli-v2"
 
 func schemaURL() string {
 	return fmt.Sprintf(
