@@ -1,4 +1,4 @@
-# Flagsmith CLI v2: Flags
+# Flagsmith CLI v2: `flagsmith flag`
 
 Status: draft
 
@@ -6,7 +6,45 @@ A flag is a feature's state in the current environment: its on/off and value, as
 
 ## 1. Resource
 
-Flags are read from the SDK API (`sdkApiUrl` + environment key, resolved per [04-project-config.md](04-project-config.md)), so `flags` read commands need only an environment key — no Admin API credentials. Note: this will break server-side only features.
+The natural human identifier for `flag` is the feature name:
+
+```
+$ flagsmith flag get checkout-v2
+```
+
+## 2. Mutation
+
+Flags always exist for environments, so a bare `flag create` / `flag delete` wouldn't make sense. The following will exit 2:
+
+```
+$ flagsmith flag create brand-new-feature
+Did you mean flagsmith feature create brand-new-feature?
+
+Usage:
+  ...
+```
+
+```
+$ flagsmith flag delete checkout-v2
+Error: provide either one of --segment, --identifier.
+```
+
+Toggle the environment default:
+
+```
+$ flagsmith flag enable checkout-v2
+✓ Enabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+$ flagsmith flag disable checkout-v2
+✓ Disabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+$ flagsmith flag toggle checkout-v2
+✓ Enabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+$ flagsmith flag toggle checkout-v2
+✓ Disabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+```
+
+
+
+Flags are read from the SDK API (`sdkApiUrl` + environment key, resolved per [04-project-config.md](04-project-config.md)), so `flag` read commands need only an environment key — no Admin API credentials. Note: this will break server-side only features.
 
 | Field | Meaning |
 |---|---|
@@ -15,7 +53,7 @@ Flags are read from the SDK API (`sdkApiUrl` + environment key, resolved per [04
 | `value` | The feature-state value: a string, number, boolean, or null. |
 | `type` | `STANDARD` or `MULTIVARIATE`. |
 
-## 2. `flags list`
+## 2. `flag list`
 
 `GET {sdkApiUrl}/api/v1/flags/` with `X-Environment-Key`, returning every flag as a bare array.
 
@@ -23,5 +61,5 @@ Human output is a `NAME` / `ENABLED` / `VALUE` table with a count; JSON is the a
 
 ## 3. Later
 
-- `flags get <name>`.
-- `flags enable`/`disable`/`set <name> <value>` — mutate a feature state. Should consume the experimental endpoint.
+- `flag get <name>`.
+- `flag enable`/`disable`/`set <name> <value>` — mutate a feature state. Should consume the experimental endpoint.

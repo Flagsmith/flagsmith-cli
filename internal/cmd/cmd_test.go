@@ -1347,7 +1347,7 @@ func TestFlagsList(t *testing.T) {
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
 
 		// When — no credentials at all, only the environment key
-		out, err := run("", "flags", "list")
+		out, err := run("", "flag", "list")
 
 		// Then
 		if err != nil {
@@ -1368,7 +1368,7 @@ func TestFlagsList(t *testing.T) {
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
 
 		// When
-		out, err := run("", "flags", "list", "--json")
+		out, err := run("", "flag", "list", "--json")
 
 		// Then
 		if err != nil {
@@ -1392,7 +1392,7 @@ func TestFlagsList(t *testing.T) {
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
 
 		// When
-		out, err := run("", "flags", "list")
+		out, err := run("", "flag", "list")
 
 		// Then
 		if err != nil {
@@ -1412,7 +1412,7 @@ func TestFlagsList(t *testing.T) {
 		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "ser.someServerKey")
 
 		// When
-		out, err := run("", "flags", "list")
+		out, err := run("", "flag", "list")
 
 		// Then
 		if err != nil {
@@ -1431,7 +1431,7 @@ func TestFlagsList(t *testing.T) {
 		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
 
 		// When
-		_, err := run("", "flags", "list")
+		_, err := run("", "flag", "list")
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "environment") {

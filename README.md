@@ -12,13 +12,13 @@ go build -o flagsmith .
 
 ```sh
 flagsmith init          # log in, pick a project + environment, write flagsmith.json
-flagsmith flags list    # list the flags in the current environment
+flagsmith flag list    # list the flags in the current environment
 ```
 
 ## Commands
 
 - `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
-- `flagsmith flags list` — list feature flags in the current environment.
+- `flagsmith flag list` — list feature flags in the current environment.
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

@@ -13,8 +13,8 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
-var flagsCmd = &cobra.Command{
-	Use:   "flags",
+var flagCmd = &cobra.Command{
+	Use:   "flag",
 	Short: "Inspect feature flags in the current environment",
 }
 
@@ -39,7 +39,7 @@ func flagValue(v any) string {
 	return fmt.Sprint(v)
 }
 
-var flagsListCmd = &cobra.Command{
+var flagListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List every flag in the current environment",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,6 +81,6 @@ func plural(n int, one, many string) string {
 }
 
 func init() {
-	flagsCmd.AddCommand(flagsListCmd)
-	rootCmd.AddCommand(flagsCmd)
+	flagCmd.AddCommand(flagListCmd)
+	rootCmd.AddCommand(flagCmd)
 }

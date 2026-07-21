@@ -6,7 +6,7 @@ The shared conventions every resource command follow.
 
 ## 1. Command shape
 
-`flagsmith <resource> <verb>`, resource plural:
+`flagsmith <resource> <verb>`, resource singular:
 
 - `list` — every resource in the current context.
 - `get <id>` — one resource.
@@ -33,7 +33,7 @@ The stdout/stderr split, `--json`/`--jq` and common exit codes are defined in [0
 
 - `create`/`update` take resource fields as flags; per-resource help docs enumerate them. A missing required field follows 02: prompt in a TTY, otherwise exit 2 naming the flag.
 - `delete` is destructive, so it confirms per 02: prompts unless `--yes`, and without a TTY `--yes` is required.
-- `--json` on any mutation returns the affected resource, so scripts can capture generated identifiers (e.g. `flagsmith flags create … --json --jq .id`).
+- `--json` on any mutation returns the affected resource, so scripts can capture generated identifiers (e.g. `flagsmith flag create … --json --jq .id`).
 
 ## 5. Errors
 

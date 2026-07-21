@@ -37,7 +37,7 @@ Log in to Flagsmith in your browser:
 
 ✓ Wrote flagsmith.json
 You're all set! Try:
-  flagsmith flags list
+  flagsmith flag list
 ```
 
 Organisation prompt is skipped if user is only part of one organisation. For multi-org users, the chosen organisation is recorded so org-scoped commands don't have to ask again.

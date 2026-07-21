@@ -349,7 +349,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	_ = cache.Merge(apiURL, names)
 
 	output.Success(errOut, "Wrote %s", config.FileName)
-	fmt.Fprintln(errOut, "You're all set! Try:\n  flagsmith flags list")
+	fmt.Fprintln(errOut, "You're all set! Try:\n  flagsmith flag list")
 	return nil
 }
 
