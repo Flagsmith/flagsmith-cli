@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
 // apiURL is the resolved instance URL for the current invocation, set by
@@ -24,11 +25,17 @@ var (
 	configPathFlag   string
 	yesFlag          bool
 	jsonFlag         bool
+	jqFlag           string
 )
 
 // jsonOutput reports whether machine-readable output was requested.
 func jsonOutput() bool {
 	return jsonFlag || os.Getenv("FLAGSMITH_JSON_OUTPUT") != ""
+}
+
+// outputOpts is the render format for the current invocation.
+func outputOpts() output.Options {
+	return output.Options{JSON: jsonOutput(), JQ: jqFlag}
 }
 
 // usageError is a missing/invalid input a prompt would have collected
@@ -100,6 +107,8 @@ func init() {
 		"never prompt; answer confirmations affirmatively (env: FLAGSMITH_NO_INPUT)")
 	flags.BoolVar(&jsonFlag, "json", false,
 		"output JSON instead of human-readable text (env: FLAGSMITH_JSON_OUTPUT)")
+	flags.StringVar(&jqFlag, "jq", "",
+		"filter JSON output through a jq expression (implies --json)")
 
 	// Hidden aliases: --api for --api-url, --no-input for --yes.
 	rootCmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {

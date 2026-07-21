@@ -1103,15 +1103,19 @@ func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
 	// When
 	stdout, stderr, err := runSplit("", "logout", "--api-url", "http://127.0.0.1:1")
 
-	// Then
+	// Then — logout is a mutation: confirmation and warning on stderr,
+	// stdout empty (no data result).
 	if err != nil {
 		t.Fatalf("logout: %v", err)
 	}
-	if !strings.Contains(stdout, "Logged out") {
-		t.Errorf("stdout = %q, want the result", stdout)
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "Warning") || strings.Contains(stdout, "Warning") {
-		t.Errorf("stderr = %q / stdout = %q — the revoke warning belongs on stderr", stderr, stdout)
+	if !strings.Contains(stderr, "Logged out") {
+		t.Errorf("stderr = %q, want the confirmation", stderr)
+	}
+	if !strings.Contains(stderr, "Warning") {
+		t.Errorf("stderr = %q, want the revoke warning", stderr)
 	}
 }
 

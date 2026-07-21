@@ -1,11 +1,13 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
 func formatValue(v resolved) string {
@@ -27,35 +29,31 @@ var configCmd = &cobra.Command{
 			return err
 		}
 
-		if jsonOutput() {
-			out := struct {
-				ConfigPath   resolved `json:"configPath"`
-				Project      resolved `json:"project"`
-				Organisation resolved `json:"organisation"`
-				Environment  resolved `json:"environment"`
-				APIURL       resolved `json:"apiUrl"`
-				SDKAPIURL    resolved `json:"sdkApiUrl"`
-			}{pc.ConfigPath, pc.Project, pc.Organisation, pc.Environment, pc.APIURL, pc.SDKAPIURL}
-			encoded, err := json.MarshalIndent(out, "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
-			return nil
-		}
+		// config's JSON is a bespoke keyed shape (it is CLI context, not an
+		// API resource); the same value feeds the human table.
+		data := struct {
+			ConfigPath   resolved `json:"configPath"`
+			Project      resolved `json:"project"`
+			Organisation resolved `json:"organisation"`
+			Environment  resolved `json:"environment"`
+			APIURL       resolved `json:"apiUrl"`
+			SDKAPIURL    resolved `json:"sdkApiUrl"`
+		}{pc.ConfigPath, pc.Project, pc.Organisation, pc.Environment, pc.APIURL, pc.SDKAPIURL}
 
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 2, 0, 3, ' ', 0)
-		configPath := "-"
-		if pc.ConfigPath.Value != nil {
-			configPath = fmt.Sprint(pc.ConfigPath.Value)
-		}
-		fmt.Fprintf(w, "Config file\t%s\t%s\n", configPath, pc.ConfigPath.Source)
-		fmt.Fprintf(w, "Project\t%s\t%s\n", formatValue(pc.Project), pc.Project.Source)
-		fmt.Fprintf(w, "Organisation\t%s\t%s\n", formatValue(pc.Organisation), pc.Organisation.Source)
-		fmt.Fprintf(w, "Environment\t%s\t%s\n", formatValue(pc.Environment), pc.Environment.Source)
-		fmt.Fprintf(w, "API\t%s\t%s\n", formatValue(pc.APIURL), pc.APIURL.Source)
-		fmt.Fprintf(w, "SDK API\t%s\t%s\n", formatValue(pc.SDKAPIURL), pc.SDKAPIURL.Source)
-		return w.Flush()
+		return output.Render(cmd.OutOrStdout(), data, outputOpts(), func(w io.Writer) error {
+			tw := tabwriter.NewWriter(w, 2, 0, 3, ' ', 0)
+			configPath := "-"
+			if pc.ConfigPath.Value != nil {
+				configPath = fmt.Sprint(pc.ConfigPath.Value)
+			}
+			fmt.Fprintf(tw, "Config file\t%s\t%s\n", configPath, pc.ConfigPath.Source)
+			fmt.Fprintf(tw, "Project\t%s\t%s\n", formatValue(pc.Project), pc.Project.Source)
+			fmt.Fprintf(tw, "Organisation\t%s\t%s\n", formatValue(pc.Organisation), pc.Organisation.Source)
+			fmt.Fprintf(tw, "Environment\t%s\t%s\n", formatValue(pc.Environment), pc.Environment.Source)
+			fmt.Fprintf(tw, "API\t%s\t%s\n", formatValue(pc.APIURL), pc.APIURL.Source)
+			fmt.Fprintf(tw, "SDK API\t%s\t%s\n", formatValue(pc.SDKAPIURL), pc.SDKAPIURL.Source)
+			return tw.Flush()
+		})
 	},
 }
 

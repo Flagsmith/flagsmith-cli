@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
 func newLogoutCmd() *cobra.Command {
@@ -23,7 +24,7 @@ func runLogout(cmd *cobra.Command, args []string) error {
 	}
 	creds, _, err := auth.Load(apiURL)
 	if errors.Is(err, auth.ErrNotLoggedIn) {
-		fmt.Fprintln(cmd.OutOrStdout(), "Not logged in.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Not logged in.")
 		return nil
 	}
 	if err != nil {
@@ -38,7 +39,7 @@ func runLogout(cmd *cobra.Command, args []string) error {
 	if err := auth.Delete(apiURL); err != nil {
 		return fmt.Errorf("removing stored credentials: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Logged out of %s\n", creds.APIURL)
+	output.Success(cmd.ErrOrStderr(), "Logged out of %s", creds.APIURL)
 	return nil
 }
 

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +14,7 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
+	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
 const envAPIKey = "FLAGSMITH_API_KEY"
@@ -134,49 +135,46 @@ var authStatusCmd = &cobra.Command{
 			return err
 		}
 		rememberOrganisations(orgs)
-		out := cmd.OutOrStdout()
-		if jsonOutput() {
-			status := struct {
-				APIURL        string             `json:"apiUrl"`
-				Kind          auth.Kind          `json:"kind"`
-				Email         string             `json:"email,omitempty"`
-				Organisations []api.Organisation `json:"organisations"`
-				Source        string             `json:"credentialSource"`
-				ExpiresAt     string             `json:"expiresAt,omitempty"`
-			}{APIURL: apiURL, Kind: cred.kind, Organisations: orgs, Source: sourceLabel(cred.source)}
-			if cred.kind != auth.KindMaster {
-				user, err := api.UsersMe(cmd.Context(), apiURL, cred.auth)
-				if err != nil {
-					return err
-				}
-				status.Email = user.Email
-			}
-			if !cred.expires.IsZero() {
-				status.ExpiresAt = cred.expires.Format(time.RFC3339)
-			}
-			encoded, err := json.MarshalIndent(status, "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(out, string(encoded))
-			return nil
-		}
-		if cred.kind == auth.KindMaster {
-			fmt.Fprintf(out, "✓ Authenticated to %s with a Master API key\n", apiURL)
-		} else {
+
+		email := ""
+		if cred.kind != auth.KindMaster {
 			user, err := api.UsersMe(cmd.Context(), apiURL, cred.auth)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "✓ Logged in to %s as %s\n", apiURL, user.Email)
+			email = user.Email
 		}
-		fmt.Fprintf(out, "  Organisations: %s\n", orgList(orgs))
-		fmt.Fprintf(out, "  Credential source: %s\n", sourceLabel(cred.source))
+		status := struct {
+			APIURL        string             `json:"apiUrl"`
+			Kind          auth.Kind          `json:"kind"`
+			Email         string             `json:"email,omitempty"`
+			Organisations []api.Organisation `json:"organisations"`
+			Source        string             `json:"credentialSource"`
+			ExpiresAt     string             `json:"expiresAt,omitempty"`
+		}{APIURL: apiURL, Kind: cred.kind, Email: email, Organisations: orgs, Source: sourceLabel(cred.source)}
 		if !cred.expires.IsZero() {
-			fmt.Fprintf(out, "  Access token expires: %s\n",
-				cred.expires.Local().Format(time.RFC1123))
+			status.ExpiresAt = cred.expires.Format(time.RFC3339)
 		}
-		return nil
+
+		return output.Render(cmd.OutOrStdout(), status, outputOpts(), func(w io.Writer) error {
+			identity := "Master API key"
+			if email != "" {
+				identity = email
+			}
+			fields := []output.Field{
+				{Label: "Instance", Value: apiURL},
+				{Label: "Identity", Value: identity},
+				{Label: "Organisations", Value: orgList(orgs)},
+				{Label: "Credential source", Value: sourceLabel(cred.source)},
+			}
+			if !cred.expires.IsZero() {
+				fields = append(fields, output.Field{
+					Label: "Access token expires",
+					Value: cred.expires.Local().Format(time.RFC1123),
+				})
+			}
+			return output.Detail(w, fields)
+		})
 	},
 }
 
@@ -191,16 +189,12 @@ var authTokenCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if jsonOutput() {
-			encoded, err := json.Marshal(map[string]string{"token": cred.token})
-			if err != nil {
+		return output.Render(cmd.OutOrStdout(),
+			map[string]string{"token": cred.token}, outputOpts(),
+			func(w io.Writer) error {
+				_, err := fmt.Fprintln(w, cred.token)
 				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
-			return nil
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), cred.token)
-		return nil
+			})
 	},
 }
 

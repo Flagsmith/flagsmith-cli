@@ -13,6 +13,7 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
 var (
@@ -94,9 +95,9 @@ func browserLogin(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("logged in, but fetching identity failed: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(),
-		"✓ Logged in to %s as %s\n  Credentials stored in %s.\n",
-		creds.APIURL, user.Email, sourceLabel(store))
+	errOut := cmd.ErrOrStderr()
+	output.Success(errOut, "Logged in to %s as %s", creds.APIURL, user.Email)
+	fmt.Fprintf(errOut, "  Credentials stored in %s.\n", sourceLabel(store))
 	return nil
 }
 
@@ -129,9 +130,9 @@ func masterKeyLogin(cmd *cobra.Command) error {
 		return fmt.Errorf("storing credentials: %w", err)
 	}
 	warnPlaintext(cmd, store)
-	fmt.Fprintf(cmd.OutOrStdout(),
-		"✓ Authenticated to %s with a Master API key (organisation: %s)\n  Credentials stored in %s.\n",
-		apiURL, orgList(orgs), sourceLabel(store))
+	errOut := cmd.ErrOrStderr()
+	output.Success(errOut, "Authenticated to %s with a Master API key (organisation: %s)", apiURL, orgList(orgs))
+	fmt.Fprintf(errOut, "  Credentials stored in %s.\n", sourceLabel(store))
 	return nil
 }
 

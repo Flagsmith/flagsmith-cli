@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/schema/flagsmith.json",
-  "project": 23218,
+  "project": 30353,
   "organisation": 2250,
-  "environment": "bxvrspxs9MgxP4sDKhQgPs",
+  "environment": "WjcYQTLAxf7gQ4XVeWFMaS",
   "apiUrl": "https://api-staging.flagsmith.com"
 }

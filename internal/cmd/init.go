@@ -15,6 +15,7 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/config"
+	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
 // version is the CLI version tag, stamped by the release build; the
@@ -40,6 +41,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	initPrompts(cmd)
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
+	errOut := cmd.ErrOrStderr()
 
 	// Credentials: log in inline when interactive, fail with the ways out
 	// otherwise.
@@ -177,7 +179,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return fmt.Errorf("creating project: %w", err)
 			}
-			fmt.Fprintf(out, "✓ Created project %s (%d)\n", created.Name, created.ID)
+			output.Success(errOut, "Created project %s (%d)", created.Name, created.ID)
 			projectID = created.ID
 			names.Projects[strconv.Itoa(created.ID)] = created.Name
 		} else {
@@ -195,7 +197,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		names.Environments[e.APIKey] = e.Name
 	}
 	if !interactive() {
-		fmt.Fprintf(out, "✓ Verified access to project %d\n", projectID)
+		output.Success(errOut, "Verified access to project %d", projectID)
 	}
 
 	envKey := ""
@@ -227,7 +229,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("creating environment: %w", err)
 		}
-		fmt.Fprintf(out, "✓ Created environment %s\n", created.Name)
+		output.Success(errOut, "Created environment %s", created.Name)
 		envKey = created.APIKey
 		names.Environments[created.APIKey] = created.Name
 	} else if interactive() && len(envs) > 0 {
@@ -279,7 +281,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 			if !ok {
-				fmt.Fprintln(out, "Aborted; nothing written.")
+				fmt.Fprintln(errOut, "Aborted; nothing written.")
 				return nil
 			}
 		} else if !yesFlag {
@@ -296,7 +298,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	_ = cache.Merge(apiURL, names)
 
-	fmt.Fprintf(out, "✓ Wrote %s\nYou're all set! Try:\n  flagsmith flags list\n", config.FileName)
+	output.Success(errOut, "Wrote %s", config.FileName)
+	fmt.Fprintln(errOut, "You're all set! Try:\n  flagsmith flags list")
 	return nil
 }
 
