@@ -216,6 +216,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if !found {
 			return fmt.Errorf("environment key %q not found in project %d", envKey, projectID)
 		}
+	} else if interactive() && len(envs) == 0 {
+		// A project with no environments (e.g. one just created) can't be
+		// picked from — offer to create one, defaulting to Development.
+		name, err := textPrompt(cmd, "No environments yet — create one named", "Development")
+		if err != nil {
+			return err
+		}
+		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, name, projectID)
+		if err != nil {
+			return fmt.Errorf("creating environment: %w", err)
+		}
+		fmt.Fprintf(out, "✓ Created environment %s\n", created.Name)
+		envKey = created.APIKey
+		names.Environments[created.APIKey] = created.Name
 	} else if interactive() && len(envs) > 0 {
 		options := make([]string, 0, len(envs)+1)
 		def := 0

@@ -99,12 +99,13 @@ func run(stdin string, args ...string) (string, error) {
 type fakeInstance struct {
 	srv *httptest.Server
 
-	mu       sync.Mutex
-	revoked  []url.Values
-	orgs     []map[string]any
-	projects map[string][]map[string]any // orgID -> projects
-	envs     map[string][]map[string]any // projectID -> environments
-	created  []string
+	mu          sync.Mutex
+	revoked     []url.Values
+	orgs        []map[string]any
+	projects    map[string][]map[string]any // orgID -> projects
+	envs        map[string][]map[string]any // projectID -> environments
+	created     []string
+	createdEnvs []string
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -121,9 +122,6 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			},
 			"12345": {
 				{"id": 3, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN"},
-			},
-			"999": {
-				{"id": 4, "name": "Development", "api_key": "NewProjDevKey000000000"},
 			},
 		},
 	}
@@ -195,6 +193,11 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Lock()
 		f.created = append(f.created, body.Name)
 		f.mu.Unlock()
+		f.mu.Lock()
+		if f.envs["999"] == nil {
+			f.envs["999"] = []map[string]any{} // created projects start empty
+		}
+		f.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{"id": 999, "name": body.Name})
 	})
@@ -204,13 +207,29 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
-		envs := f.envs[r.URL.Query().Get("project")]
+		envs, known := f.envs[r.URL.Query().Get("project")]
 		f.mu.Unlock()
-		if envs == nil {
-			w.WriteHeader(http.StatusForbidden)
+		if !known {
+			w.WriteHeader(http.StatusForbidden) // no access to this project
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"count": len(envs), "results": envs})
+	})
+	mux.HandleFunc("POST /api/v1/environments/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Name    string `json:"name"`
+			Project int    `json:"project"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.createdEnvs = append(f.createdEnvs, body.Name)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": 42, "name": body.Name, "api_key": "createdEnvKey00000000"})
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -764,8 +783,9 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 	t.Setenv("FLAGSMITH_API_KEY", masterKey)
 	fakeTTY(t)
 
-	// When — choose create (option 2), accept default name, pick env 1
-	out, err := run("2\n\n1\n", "init", "--api-url", f.srv.URL)
+	// When — choose create (option 2), accept default project name, then
+	// accept the default environment name (Development) for the empty project
+	out, err := run("2\n\n\n", "init", "--api-url", f.srv.URL)
 
 	// Then
 	if err != nil {
@@ -776,12 +796,72 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 	}
 	f.mu.Lock()
 	created := append([]string{}, f.created...)
+	createdEnvs := append([]string{}, f.createdEnvs...)
 	f.mu.Unlock()
 	if len(created) != 1 || created[0] != filepath.Base(root) {
 		t.Errorf("created = %v, want the cwd name as the default project name", created)
 	}
-	if written := loadWritten(t, root); written.Project != 999 {
+	if len(createdEnvs) != 1 || createdEnvs[0] != "Development" {
+		t.Errorf("createdEnvs = %v, want a Development environment created", createdEnvs)
+	}
+	if written := loadWritten(t, root); written.Project != 999 || written.Environment != "createdEnvKey00000000" {
 		t.Errorf("written = %+v", written)
+	}
+}
+
+func TestInitEmptyProjectPromptsEnvironmentCreation(t *testing.T) {
+	// Given — an existing accessible project with no environments
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.envs["101"] = []map[string]any{}
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — pick the existing (empty) project, accept the env-name default
+	out, err := run("1\n\n", "init", "--api-url", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "environment") {
+		t.Errorf("output = %q, want an environment-creation prompt", out)
+	}
+	f.mu.Lock()
+	createdEnvs := append([]string{}, f.createdEnvs...)
+	f.mu.Unlock()
+	if len(createdEnvs) != 1 || createdEnvs[0] != "Development" {
+		t.Errorf("createdEnvs = %v, want a Development environment created", createdEnvs)
+	}
+	if written := loadWritten(t, root); written.Environment != "createdEnvKey00000000" {
+		t.Errorf("written = %+v", written)
+	}
+}
+
+func TestInitEmptyProjectNonInteractiveSkipsEnvironment(t *testing.T) {
+	// Given — non-interactive init of an empty project
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.envs["101"] = []map[string]any{}
+	root := tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — no TTY, no environment given: don't create anything silently
+	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "101", "--yes")
+
+	// Then
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	f.mu.Lock()
+	createdEnvs := append([]string{}, f.createdEnvs...)
+	f.mu.Unlock()
+	if len(createdEnvs) != 0 {
+		t.Errorf("createdEnvs = %v, want none created without a TTY", createdEnvs)
+	}
+	if written := loadWritten(t, root); written.Environment != "" {
+		t.Errorf("written = %+v, want no environment", written)
 	}
 }
 

@@ -153,3 +153,30 @@ func Environments(ctx context.Context, apiURL string, auth Auth, projectID int) 
 	}
 	return envs, nil
 }
+
+func CreateEnvironment(ctx context.Context, apiURL string, auth Auth, name string, projectID int) (*Environment, error) {
+	body, err := json.Marshal(map[string]any{"name": name, "project": projectID})
+	if err != nil {
+		return nil, err
+	}
+	u := strings.TrimRight(apiURL, "/") + "/api/v1/environments/"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	auth.Apply(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("POST %s returned %s", u, resp.Status)
+	}
+	env := &Environment{}
+	if err := json.NewDecoder(resp.Body).Decode(env); err != nil {
+		return nil, err
+	}
+	return env, nil
+}

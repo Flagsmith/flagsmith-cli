@@ -44,6 +44,8 @@ Organisation prompt is skipped if user is only part of one organisation. For mul
 
 When selecting projects, the user has an option to create a new one, cwd name proposed as default for new project.
 
+A project with no environments — a freshly created one, for instance — has nothing to pick from, so `init` offers to create an environment instead (default name `Development`) and records its key. Non-interactively, an empty project is written without an environment rather than creating one silently.
+
 With an existing config in place, `flagsmith init` can be run to regenerate it. Current values preselected, changes shown as a diff:
 
 ```

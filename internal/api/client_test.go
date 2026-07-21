@@ -153,6 +153,39 @@ func TestEnvironments(t *testing.T) {
 	}
 }
 
+func TestCreateEnvironment(t *testing.T) {
+	// Given
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/environments/" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Name    string `json:"name"`
+			Project int    `json:"project"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Name != "Development" || body.Project != 101 {
+			t.Errorf("body = %+v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `{"id":5,"name":"Development","api_key":"FreshDevKey0000000000"}`)
+	}))
+	defer srv.Close()
+
+	// When
+	env, err := CreateEnvironment(context.Background(), srv.URL, Bearer("t"), "Development", 101)
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.APIKey != "FreshDevKey0000000000" || env.Name != "Development" {
+		t.Errorf("env = %+v", env)
+	}
+}
+
 func TestOrganisations(t *testing.T) {
 	t.Run("master API key auth uses the Api-Key scheme", func(t *testing.T) {
 		// Given
