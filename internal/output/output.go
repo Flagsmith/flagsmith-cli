@@ -27,8 +27,9 @@ var tickColor = color.New(color.FgGreen, color.Bold)
 
 // SGR codes applied after tabwriter alignment (see paint).
 const (
-	sgrBold = "1"
-	sgrCyan = "36"
+	sgrBold  = "1"
+	sgrFaint = "2"
+	sgrCyan  = "36"
 )
 
 // paint wraps s in an ANSI SGR sequence, or returns it unchanged when colour
@@ -124,35 +125,64 @@ func Table(w io.Writer, headers []string, rows [][]string) error {
 	return err
 }
 
-// Field is one label/value pair in a detail view.
+// Field is one row in a detail view: a label, a value, and an optional
+// source (e.g. where a config value came from). When any field has a
+// source, Detail renders a third, dimmed column.
 type Field struct {
-	Label string
-	Value string
+	Label  string
+	Value  string
+	Source string
 }
 
-// Detail writes an aligned key/value view of a single resource, with the
-// labels coloured. As with Table, alignment happens on plain text first and
-// the colour is applied to the label column afterwards.
+// Detail writes an aligned key/value view of a single resource. Labels are
+// coloured and, when present, sources dimmed. As with Table, alignment
+// happens on the plain text first and colour is applied afterwards, so the
+// escape bytes never affect column widths.
 func Detail(w io.Writer, fields []Field) error {
+	hasSource := false
+	for _, f := range fields {
+		if f.Source != "" {
+			hasSource = true
+		}
+	}
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
 	for _, f := range fields {
-		fmt.Fprintf(tw, "%s\t%s\n", f.Label, f.Value)
+		if hasSource {
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", f.Label, f.Value, f.Source)
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\n", f.Label, f.Value)
+		}
 	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
 	for _, line := range splitLines(buf.String()) {
-		// The label ends at the first column gap (two or more spaces);
-		// intra-label spaces are single, so this never splits a label.
-		gap := strings.Index(line, "  ")
-		if gap < 0 {
-			fmt.Fprintln(w, line)
-			continue
-		}
-		fmt.Fprintln(w, paint(sgrCyan, line[:gap])+line[gap:])
+		fmt.Fprintln(w, colorDetailLine(line, hasSource))
 	}
 	return nil
+}
+
+// colorDetailLine colours an already-aligned detail line: the label (first
+// column) cyan and, when hasSource, the source (last column) dim. Columns
+// are separated by runs of two or more spaces; intra-cell spaces are single,
+// so the boundaries are unambiguous.
+func colorDetailLine(line string, hasSource bool) string {
+	if color.NoColor {
+		return line
+	}
+	labelEnd := strings.Index(line, "  ")
+	if labelEnd < 0 {
+		return line
+	}
+	if !hasSource {
+		return paint(sgrCyan, line[:labelEnd]) + line[labelEnd:]
+	}
+	srcStart := strings.LastIndex(line, "  ") + 2
+	if srcStart <= labelEnd+2 { // no distinct third column
+		return paint(sgrCyan, line[:labelEnd]) + line[labelEnd:]
+	}
+	return paint(sgrCyan, line[:labelEnd]) + line[labelEnd:srcStart] + paint(sgrFaint, line[srcStart:])
 }
 
 // Success writes a ✓-prefixed confirmation line (callers pass stderr).

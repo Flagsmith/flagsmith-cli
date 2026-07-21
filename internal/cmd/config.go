@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -41,18 +40,18 @@ var configCmd = &cobra.Command{
 		}{pc.ConfigPath, pc.Project, pc.Organisation, pc.Environment, pc.APIURL, pc.SDKAPIURL}
 
 		return output.Render(cmd.OutOrStdout(), data, outputOpts(), func(w io.Writer) error {
-			tw := tabwriter.NewWriter(w, 2, 0, 3, ' ', 0)
 			configPath := "-"
 			if pc.ConfigPath.Value != nil {
 				configPath = fmt.Sprint(pc.ConfigPath.Value)
 			}
-			fmt.Fprintf(tw, "Config file\t%s\t%s\n", configPath, pc.ConfigPath.Source)
-			fmt.Fprintf(tw, "Project\t%s\t%s\n", formatValue(pc.Project), pc.Project.Source)
-			fmt.Fprintf(tw, "Organisation\t%s\t%s\n", formatValue(pc.Organisation), pc.Organisation.Source)
-			fmt.Fprintf(tw, "Environment\t%s\t%s\n", formatValue(pc.Environment), pc.Environment.Source)
-			fmt.Fprintf(tw, "API\t%s\t%s\n", formatValue(pc.APIURL), pc.APIURL.Source)
-			fmt.Fprintf(tw, "SDK API\t%s\t%s\n", formatValue(pc.SDKAPIURL), pc.SDKAPIURL.Source)
-			return tw.Flush()
+			return output.Detail(w, []output.Field{
+				{Label: "Config file", Value: configPath, Source: pc.ConfigPath.Source},
+				{Label: "Project", Value: formatValue(pc.Project), Source: pc.Project.Source},
+				{Label: "Organisation", Value: formatValue(pc.Organisation), Source: pc.Organisation.Source},
+				{Label: "Environment", Value: formatValue(pc.Environment), Source: pc.Environment.Source},
+				{Label: "API", Value: formatValue(pc.APIURL), Source: pc.APIURL.Source},
+				{Label: "SDK API", Value: formatValue(pc.SDKAPIURL), Source: pc.SDKAPIURL.Source},
+			})
 		})
 	},
 }

@@ -42,6 +42,21 @@ $ flagsmith flag toggle checkout-v2
 ✓ Disabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
 ```
 
+ Set environment default value:
+
+ ```
+ $ flagsmith flag set-value checkout-v2 green
+ ✓ Set checkout-v2 to "green" in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+ ```
+
+Set an identity override and enable its flag:
+
+```
+$ flagsmith flag set-value checkout-v2 orange --identifier id123 --enable
+ ✓ Set checkout-v2 to "orange" for identifier id123 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+ ✓ Enabled checkout-v2 for identifier id123 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+```
+
 
 
 Flags are read from the SDK API (`sdkApiUrl` + environment key, resolved per [04-project-config.md](04-project-config.md)), so `flag` read commands need only an environment key — no Admin API credentials. Note: this will break server-side only features.

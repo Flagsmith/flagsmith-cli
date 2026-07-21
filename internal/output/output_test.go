@@ -213,7 +213,7 @@ func TestDetail(t *testing.T) {
 	var b bytes.Buffer
 
 	// When
-	err := Detail(&b, []Field{{"Name", "my-flag"}, {"Enabled", "true"}})
+	err := Detail(&b, []Field{{Label: "Name", Value: "my-flag"}, {Label: "Enabled", Value: "true"}})
 
 	// Then
 	if err != nil {
@@ -222,6 +222,49 @@ func TestDetail(t *testing.T) {
 	out := b.String()
 	if !strings.Contains(out, "Name") || !strings.Contains(out, "my-flag") {
 		t.Errorf("detail = %q", out)
+	}
+}
+
+func TestDetailWithSourceColumn(t *testing.T) {
+	// Given fields carrying a source, with values that contain spaces
+	fields := []Field{
+		{Label: "Config file", Value: "/work/flagsmith.json", Source: "default"},
+		{Label: "Project", Value: "my-app (12345)", Source: "config"},
+		{Label: "SDK API", Value: "https://edge.api.flagsmith.com", Source: "default"},
+	}
+	render := func() string {
+		var b bytes.Buffer
+		if err := Detail(&b, fields); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+
+	color.NoColor = true
+	plain := render()
+	color.NoColor = false
+	colored := render()
+	color.NoColor = true
+
+	// Then all three columns are present and aligned in the plain view.
+	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
+	if strings.Index(lines[0], "default") != strings.Index(lines[2], "default") {
+		t.Errorf("source column not aligned:\n%q\n%q", lines[0], lines[2])
+	}
+	if strings.ContainsAny(plain, "\x1b\xff") {
+		t.Errorf("plain detail contains escape bytes: %q", plain)
+	}
+	// The label is coloured and the source dimmed; the space-containing value
+	// (e.g. "my-app (12345)") is left untouched.
+	if !strings.Contains(colored, "\x1b[36m") || !strings.Contains(colored, "\x1b[2m") {
+		t.Errorf("expected cyan label and dim source: %q", colored)
+	}
+	if strings.Contains(colored, "\x1b[36mmy-app") || strings.Contains(colored, "\x1b[2mmy-app") {
+		t.Errorf("value was coloured: %q", colored)
+	}
+	// Colour applied after alignment: stripping ANSI reproduces the plain layout.
+	if got := ansiPattern.ReplaceAllString(colored, ""); got != plain {
+		t.Errorf("colour changed alignment:\nstripped = %q\nplain    = %q", got, plain)
 	}
 }
 
