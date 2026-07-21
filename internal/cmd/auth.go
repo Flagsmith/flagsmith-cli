@@ -51,7 +51,7 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 		return cred, nil
 	}
 
-	creds, source, err := auth.Load(apiURL)
+	creds, err := auth.Load(apiURL)
 	if err != nil {
 		return nil, err
 	}
@@ -60,16 +60,14 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 		return nil, err
 	}
 	if refreshed {
-		// Rotated sessions persist to the store they were loaded from —
-		// refresh never migrates credentials between stores.
-		if err := auth.Save(creds, source); err != nil {
+		if err := auth.Save(creds); err != nil {
 			return nil, fmt.Errorf("storing refreshed credentials: %w", err)
 		}
 	}
 	cred := &activeCredential{
 		kind:    creds.EffectiveKind(),
 		token:   creds.Token(),
-		source:  source,
+		source:  auth.SourceKeychain,
 		expires: creds.ExpiresAt,
 	}
 	if cred.kind == auth.KindMaster {
@@ -78,15 +76,6 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 		cred.auth = api.Bearer(cred.token)
 	}
 	return cred, nil
-}
-
-// sourceLabel renders a credential source for humans; the plaintext file
-// store is always labelled as such.
-func sourceLabel(source string) string {
-	if source == auth.SourceFile {
-		return "file (plaintext)"
-	}
-	return source
 }
 
 // rememberOrganisations opportunistically seeds the name cache.
@@ -104,19 +93,6 @@ func orgList(orgs []api.Organisation) string {
 		parts[i] = fmt.Sprintf("%s (%d)", o.Name, o.ID)
 	}
 	return strings.Join(parts, ", ")
-}
-
-// warnPlaintext reminds the user that the opt-in file store is plaintext.
-func warnPlaintext(cmd *cobra.Command, source string) {
-	if source != auth.SourceFile {
-		return
-	}
-	path, err := auth.CredentialsFilePath()
-	if err != nil {
-		path = "the credentials file"
-	}
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"Warning: credentials stored in plaintext at %s\n", path)
 }
 
 var authStatusCmd = &cobra.Command{
@@ -151,7 +127,7 @@ var authStatusCmd = &cobra.Command{
 			Organisations []api.Organisation `json:"organisations"`
 			Source        string             `json:"credentialSource"`
 			ExpiresAt     string             `json:"expiresAt,omitempty"`
-		}{APIURL: apiURL, Kind: cred.kind, Email: email, Organisations: orgs, Source: sourceLabel(cred.source)}
+		}{APIURL: apiURL, Kind: cred.kind, Email: email, Organisations: orgs, Source: cred.source}
 		if !cred.expires.IsZero() {
 			status.ExpiresAt = cred.expires.Format(time.RFC3339)
 		}
@@ -165,7 +141,7 @@ var authStatusCmd = &cobra.Command{
 				{Label: "Instance", Value: apiURL},
 				{Label: "Identity", Value: identity},
 				{Label: "Organisations", Value: orgList(orgs)},
-				{Label: "Credential source", Value: sourceLabel(cred.source)},
+				{Label: "Credential source", Value: cred.source},
 			}
 			if !cred.expires.IsZero() {
 				fields = append(fields, output.Field{

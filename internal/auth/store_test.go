@@ -2,9 +2,7 @@ package auth
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -16,9 +14,8 @@ const (
 	selfURL = "https://flagsmith.acme.internal"
 )
 
-// isolateStorage points both storage backends at test-owned locations:
-// the keychain at go-keyring's in-memory mock, and the fallback file at a
-// temp directory (via the env vars os.UserConfigDir derives from).
+// isolateStorage points the keychain at go-keyring's in-memory mock and
+// gives HOME a temp directory.
 func isolateStorage(t *testing.T) {
 	t.Helper()
 	keyring.MockInit()
@@ -56,17 +53,14 @@ func TestStoreKeychainRoundTrip(t *testing.T) {
 	want := oauthCredentials(saasURL)
 
 	// When
-	if err := Save(want, SourceKeychain); err != nil {
+	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
-	got, source, err := Load(saasURL)
+	got, err := Load(saasURL)
 
 	// Then
 	if err != nil {
 		t.Fatal(err)
-	}
-	if source != SourceKeychain {
-		t.Errorf("Load source = %q, want %q", source, SourceKeychain)
 	}
 	assertCredentialsEqual(t, got, want)
 
@@ -76,7 +70,7 @@ func TestStoreKeychainRoundTrip(t *testing.T) {
 	}
 
 	// Then
-	if _, _, err := Load(saasURL); !errors.Is(err, ErrNotLoggedIn) {
+	if _, err := Load(saasURL); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load after Delete = %v, want ErrNotLoggedIn", err)
 	}
 }
@@ -85,36 +79,28 @@ func TestStoreKeysByInstance(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	saas := oauthCredentials(saasURL)
-	self := &Credentials{Kind: KindMaster, APIURL: selfURL, MasterKey: "AbCd1234.secret"}
-	if err := Save(saas, SourceKeychain); err != nil {
+	self := oauthCredentials(selfURL)
+	if err := Save(saas); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(self, SourceKeychain); err != nil {
+	if err := Save(self); err != nil {
 		t.Fatal(err)
 	}
 
-	// When / Then
-	gotSaas, _, err := Load(saasURL)
+	// When / Then — each instance is stored independently
+	gotSaas, err := Load(saasURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertCredentialsEqual(t, gotSaas, saas)
-	gotSelf, _, err := Load(selfURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertCredentialsEqual(t, gotSelf, self)
 
-	// When
 	if err := Delete(selfURL); err != nil {
 		t.Fatal(err)
 	}
-
-	// Then
-	if _, _, err := Load(selfURL); !errors.Is(err, ErrNotLoggedIn) {
+	if _, err := Load(selfURL); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load(self) after Delete(self) = %v, want ErrNotLoggedIn", err)
 	}
-	if _, _, err := Load(saasURL); err != nil {
+	if _, err := Load(saasURL); err != nil {
 		t.Errorf("Load(saas) after Delete(self) = %v, want untouched", err)
 	}
 }
@@ -123,12 +109,12 @@ func TestStoreNormalizesInstanceURL(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	want := oauthCredentials(saasURL)
-	if err := Save(want, SourceKeychain); err != nil {
+	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
 
-	// When
-	got, _, err := Load(saasURL + "/")
+	// When — a trailing slash resolves to the same entry
+	got, err := Load(saasURL + "/")
 
 	// Then
 	if err != nil {
@@ -137,85 +123,15 @@ func TestStoreNormalizesInstanceURL(t *testing.T) {
 	assertCredentialsEqual(t, got, want)
 }
 
-func TestStoreFileIsExplicitOptIn(t *testing.T) {
-	// Given a WORKING keychain — the file store must never be a silent fallback
-	isolateStorage(t)
-	want := oauthCredentials(saasURL)
-	other := oauthCredentials(selfURL)
-
-	// When
-	if err := Save(want, SourceFile); err != nil {
-		t.Fatal(err)
-	}
-	if err := Save(other, SourceFile); err != nil {
-		t.Fatal(err)
-	}
-
-	// Then
-	path, err := CredentialsFilePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS != "windows" {
-		fi, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if fi.Mode().Perm() != 0o600 {
-			t.Errorf("credentials file mode = %o, want 0600", fi.Mode().Perm())
-		}
-	}
-
-	// When
-	got, source, err := Load(saasURL)
-
-	// Then
-	if err != nil {
-		t.Fatal(err)
-	}
-	if source != SourceFile {
-		t.Errorf("Load source = %q, want %q", source, SourceFile)
-	}
-	assertCredentialsEqual(t, got, want)
-
-	// When
-	if err := Delete(saasURL); err != nil {
-		t.Fatal(err)
-	}
-
-	// Then
-	if _, _, err := Load(saasURL); !errors.Is(err, ErrNotLoggedIn) {
-		t.Errorf("Load after Delete = %v, want ErrNotLoggedIn", err)
-	}
-	if _, _, err := Load(selfURL); err != nil {
-		t.Errorf("Load(other) after Delete(saas) = %v, want untouched", err)
-	}
-}
-
-func TestSaveKeychainUnavailableFailsClosed(t *testing.T) {
+func TestSaveFailsWithoutKeychain(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	keyring.MockInitWithError(errors.New("keychain locked"))
 
-	// When
-	err := Save(oauthCredentials(saasURL), SourceKeychain)
-
-	// Then
-	if !errors.Is(err, ErrKeychainUnavailable) {
-		t.Errorf("err = %v, want ErrKeychainUnavailable — never a silent file fallback", err)
+	// When / Then — no silent fallback; login must fail closed
+	if err := Save(oauthCredentials(saasURL)); !errors.Is(err, ErrKeychainUnavailable) {
+		t.Errorf("err = %v, want ErrKeychainUnavailable", err)
 	}
-	if _, statErr := os.Stat(mustCredentialsPath(t)); !os.IsNotExist(statErr) {
-		t.Error("a credentials file was written without opt-in")
-	}
-}
-
-func mustCredentialsPath(t *testing.T) string {
-	t.Helper()
-	path, err := CredentialsFilePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 func TestKeychainAvailable(t *testing.T) {
@@ -246,28 +162,8 @@ func TestLoadNotLoggedIn(t *testing.T) {
 	isolateStorage(t)
 
 	// When / Then
-	if _, _, err := Load(saasURL); !errors.Is(err, ErrNotLoggedIn) {
+	if _, err := Load(saasURL); !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("Load = %v, want ErrNotLoggedIn", err)
-	}
-}
-
-func TestLoadCorruptFile(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	path, err := CredentialsFilePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	// When / Then
-	if _, _, err := Load(saasURL); err == nil || errors.Is(err, ErrNotLoggedIn) {
-		t.Errorf("Load with corrupt file = %v, want a corruption error", err)
 	}
 }
 

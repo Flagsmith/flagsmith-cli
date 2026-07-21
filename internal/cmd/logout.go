@@ -22,7 +22,7 @@ func runLogout(cmd *cobra.Command, args []string) error {
 	if _, err := applyContext(cmd); err != nil {
 		return err
 	}
-	creds, _, err := auth.Load(apiURL)
+	creds, err := auth.Load(apiURL)
 	if errors.Is(err, auth.ErrNotLoggedIn) {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Not logged in.")
 		return nil

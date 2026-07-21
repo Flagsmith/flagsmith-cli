@@ -74,9 +74,6 @@ func resetFlags() {
 	}
 	resetAll(rootCmd)
 	noBrowser = false
-	loginToken = false
-	loginTokenStdin = false
-	insecureStorage = false
 }
 
 func run(stdin string, args ...string) (string, error) {
@@ -1237,7 +1234,7 @@ func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
 		Kind: auth.KindOAuth, APIURL: "http://127.0.0.1:1",
 		AccessToken: "x", RefreshToken: "y",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
-	}, auth.SourceKeychain); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1317,8 +1314,8 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	_, err := run("", "login", "--api-url", f.srv.URL, "--yes")
 
 	// Then
-	if err == nil || !strings.Contains(err.Error(), "--token-stdin") {
-		t.Errorf("err = %v, want a refusal pointing at the non-interactive options", err)
+	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_API_KEY") {
+		t.Errorf("err = %v, want a refusal pointing at FLAGSMITH_API_KEY", err)
 	}
 }
 
@@ -1551,7 +1548,7 @@ func TestEnvBeatsKeychain(t *testing.T) {
 		Kind: auth.KindOAuth, APIURL: f.srv.URL,
 		AccessToken: oauthAccess, RefreshToken: "cmd-refresh",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
-	}, auth.SourceKeychain); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FLAGSMITH_API_KEY", masterKey)
@@ -1568,200 +1565,48 @@ func TestEnvBeatsKeychain(t *testing.T) {
 	}
 }
 
-func TestLoginTokenStdin(t *testing.T) {
-	for _, shape := range commandShapes {
-		t.Run(shape.name, func(t *testing.T) {
-			testLoginTokenStdin(t, shape.prefix)
-		})
-	}
-}
-
-func testLoginTokenStdin(t *testing.T, prefix []string) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-
-	// When
-	loginOut, err := run(masterKey+"\n", shapeArgs(prefix, "login", "--api", f.srv.URL, "--token-stdin")...)
-
-	// Then
-	if err != nil {
-		t.Fatalf("login --token-stdin: %v", err)
-	}
-	for _, want := range []string{"Master API key", "Acme", "keychain"} {
-		if !strings.Contains(loginOut, want) {
-			t.Errorf("login output = %q, want it to contain %q", loginOut, want)
-		}
-	}
-
-	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	for _, want := range []string{"Master API key", "Acme", "keychain"} {
-		if !strings.Contains(statusOut, want) {
-			t.Errorf("auth status output = %q, want it to contain %q", statusOut, want)
-		}
-	}
-
-	// When
-	logoutOut, err := run("", shapeArgs(prefix, "logout", "--api", f.srv.URL)...)
-
-	// Then
-	if err != nil {
-		t.Fatalf("logout: %v", err)
-	}
-	if !strings.Contains(logoutOut, "Logged out of "+f.srv.URL) {
-		t.Errorf("logout output = %q", logoutOut)
-	}
-	if f.revokeCount() != 0 {
-		t.Errorf("revocations = %d, want 0 — master keys have nothing to revoke", f.revokeCount())
-	}
-	if _, err := run("", "auth", "status", "--api", f.srv.URL); !errors.Is(err, auth.ErrNotLoggedIn) {
-		t.Errorf("auth status after logout = %v, want ErrNotLoggedIn", err)
-	}
-}
-
-func TestLoginTokenStdinRejectsServerKey(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-
-	// When
-	_, err := run("ser.AbCdEf1234\n", "login", "--api", f.srv.URL, "--token-stdin")
-
-	// Then
-	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
-		t.Errorf("err = %v, want mention of FLAGSMITH_ENVIRONMENT_KEY", err)
-	}
-}
-
-func TestLoginTokenStdinRejectsNonMasterKey(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-
-	// When
-	_, err := run(bearerToken+"\n", "login", "--api", f.srv.URL, "--token-stdin")
-
-	// Then
-	if err == nil || !strings.Contains(err.Error(), "Master API key") {
-		t.Errorf("err = %v, want a not-a-master-key error", err)
-	}
-}
-
 func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
-	// Given
+	// Given — no keychain
 	isolateStorage(t)
 	keyring.MockInitWithError(errors.New("keychain locked"))
 	f := newFakeInstance(t)
 
-	// When
-	out, err := run(masterKey+"\n", "login", "--api", f.srv.URL, "--token-stdin")
+	// When — login probes the keychain before starting the flow
+	out, err := run("", "login", "--api-url", f.srv.URL, "--no-browser")
 
-	// Then
+	// Then — it fails closed toward FLAGSMITH_API_KEY, starting no OAuth flow
 	if err == nil {
 		t.Fatalf("expected fail-closed error, got success: %q", out)
 	}
-	for _, want := range []string{"--insecure-storage", "FLAGSMITH_API_KEY"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("err = %v, want it to mention %q", err, want)
-		}
-	}
-	if _, statErr := os.Stat(credentialsPath(t)); !os.IsNotExist(statErr) {
-		t.Error("a credentials file was written without opt-in")
-	}
-
-	// When / Then — browser login probes the keychain before starting any flow
-	out, err = run("", "login", "--api", f.srv.URL, "--no-browser")
-	if err == nil || !strings.Contains(err.Error(), "--insecure-storage") {
-		t.Errorf("browser login err = %v, want fail-closed before the flow", err)
+	if !strings.Contains(err.Error(), "FLAGSMITH_API_KEY") {
+		t.Errorf("err = %v, want it to point at FLAGSMITH_API_KEY", err)
 	}
 	if strings.Contains(out, "oauth/authorize") {
-		t.Errorf("output = %q — the OAuth flow started despite no storage for its result", out)
+		t.Errorf("output = %q — the OAuth flow started despite no keychain", out)
 	}
 }
 
-func credentialsPath(t *testing.T) string {
-	t.Helper()
-	path, err := auth.CredentialsFilePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func TestInsecureStorageOptIn(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	keyring.MockInitWithError(errors.New("keychain locked"))
-	f := newFakeInstance(t)
-
-	// When
-	loginOut, err := run(masterKey+"\n", "login", "--api", f.srv.URL, "--token-stdin", "--insecure-storage")
-
-	// Then
-	if err != nil {
-		t.Fatalf("login --insecure-storage: %v", err)
-	}
-	if !strings.Contains(loginOut, "plaintext") {
-		t.Errorf("login output = %q, want a plaintext-storage warning", loginOut)
-	}
-
-	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	if !strings.Contains(statusOut, "file (plaintext)") {
-		t.Errorf("auth status output = %q, want the file (plaintext) source", statusOut)
-	}
-
-	// When
-	logoutOut, err := run("", "logout", "--api", f.srv.URL)
-
-	// Then
-	if err != nil || !strings.Contains(logoutOut, "Logged out") {
-		t.Errorf("logout = (%q, %v)", logoutOut, err)
-	}
-}
-
-func TestRefreshPersistsToSameStore(t *testing.T) {
-	// Given a working keychain but credentials living in the opt-in file store
+func TestRefreshPersistsToKeychain(t *testing.T) {
+	// Given a stale OAuth session in the keychain
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	if err := auth.Save(&auth.Credentials{
 		Kind: auth.KindOAuth, APIURL: f.srv.URL,
 		AccessToken: "stale-access", RefreshToken: "cmd-refresh",
 		ExpiresAt: time.Now().Add(-time.Minute),
-	}, auth.SourceFile); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
+	if _, err := run("", "auth", "status", "--api-url", f.srv.URL); err != nil {
 		t.Fatalf("auth status: %v", err)
 	}
-	if !strings.Contains(statusOut, "file (plaintext)") {
-		t.Errorf("auth status output = %q, want the file (plaintext) source", statusOut)
-	}
-	if _, kerr := keyring.Get("flagsmith-cli", f.srv.URL); kerr == nil {
-		t.Error("refresh migrated credentials into the keychain — must persist to the same store")
-	}
-	creds, source, err := auth.Load(f.srv.URL)
+
+	// Then — the rotated token is written back to the keychain
+	creds, err := auth.Load(f.srv.URL)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if source != auth.SourceFile {
-		t.Errorf("Load source = %q, want %q", source, auth.SourceFile)
 	}
 	if creds.AccessToken != oauthAccess {
 		t.Errorf("AccessToken = %q, want the refreshed token persisted", creds.AccessToken)

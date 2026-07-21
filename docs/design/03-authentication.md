@@ -36,12 +36,9 @@ Browser-based authorization-code + PKCE on a loopback redirect a-la `gh auth log
 
 Re-auth after 30 days of inactivity.
 
-Browserless options:
+`flagsmith login` is browser-only. Static credentials are supplied through `FLAGSMITH_API_KEY` expecting a Master API key, never stored by `login`.
 
-- `flagsmith login --token` to paste a Master API key interactively.
-- `flagsmith login --token-stdin` to pipe the key to the CLI.
-
-Legacy user authtokens (40-char hex, `Authorization: Token …`) are **not supported** — the CLI never sends the `Token` header. Master API keys are the only long-lived pasteable credential until personal access tokens exist (phase 2).
+Legacy user authtokens (40-char hex, `Authorization: Token …`) are **not supported** — the CLI never sends the `Token` header. Master API keys are the only long-lived credential until personal access tokens exist (phase 2).
 
 ## 4. CI: OIDC federation
 
@@ -96,18 +93,18 @@ SDK API (sent as `X-Environment-Key`):
 
 ## 7. Storage
 
-All credentials are stored in the OS keychain, one entry per instance, keyed by API URL.
+The login session is stored in the OS keychain, one entry per instance, keyed by API URL — nowhere else.
 
-When no keychain is available (headless Linux, containers, SSH), `flagsmith login` **fails closed** before starting any flow, naming the two ways out: set `FLAGSMITH_API_KEY`, or re-run with `--insecure-storage` to opt into a plaintext `0600` file (`~/.config/flagsmith/credentials.json`). The plaintext store is never chosen silently; `auth status` reports its credentials as `file (plaintext)`. Refreshed sessions persist to whichever store they were loaded from. CI never touches disk — env vars/OIDC only.
+When no keychain is available (headless Linux, containers, SSH), `flagsmith login` **fails closed** before starting any flow and points at `FLAGSMITH_API_KEY` (a Master API key) instead. This is rarely a real loss: those machines can't complete the loopback browser flow anyway. CI never touches disk — env vars/OIDC only.
 
-The phase 2 device-authorization grant makes headless *OAuth* sessions possible; those use the same opt-in store, since rotating refresh tokens must be persisted somewhere.
+The phase 2 device-authorization grant makes headless *OAuth* sessions genuinely possible, and will introduce a persistent store for the refresh token at that point.
 
 If a non-SaaS API URL provided via `--api-url`, it is stored in flagsmith.json (see 04-project-config.md).
 
 ## 8. Command surface (auth slice)
 
 ```
-flagsmith login [--api-url URL] [--token] [--token-stdin] [--insecure-storage]
+flagsmith login [--api-url URL]
 flagsmith logout [--api-url URL]
 flagsmith auth status        # identity, credential source, expiry, org
 flagsmith auth token         # print a current access token for curl/scripts
