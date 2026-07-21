@@ -153,70 +153,87 @@ func TestEnvironments(t *testing.T) {
 	}
 }
 
-func TestFlags(t *testing.T) {
-	t.Run("happy path", func(t *testing.T) {
+func TestFeatures(t *testing.T) {
+	t.Run("happy path with embedded environment state", func(t *testing.T) {
 		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/flags/" {
+			if r.URL.Path != "/api/v1/projects/101/features/" {
 				t.Errorf("path = %q", r.URL.Path)
 			}
-			if got := r.Header.Get("X-Environment-Key"); got != "envkey123" {
-				t.Errorf("X-Environment-Key = %q", got)
+			if got := r.URL.Query().Get("environment"); got != "1" {
+				t.Errorf("environment = %q, want 1", got)
 			}
-			fmt.Fprint(w, `[
-				{"enabled":true,"feature_state_value":null,"feature":{"name":"onboarding_banner","type":"STANDARD"}},
-				{"enabled":false,"feature_state_value":25,"feature":{"name":"max_items","type":"STANDARD"}}
-			]`)
+			fmt.Fprint(w, `{"count":2,"next":null,"previous":null,"results":[
+				{"id":1,"name":"onboarding_banner","type":"STANDARD","lifecycle_stage":"live",
+				 "num_segment_overrides":0,"num_identity_overrides":0,"code_references_counts":[],
+				 "environment_feature_state":{"enabled":true,"feature_state_value":null}},
+				{"id":2,"name":"max_items","type":"STANDARD",
+				 "num_segment_overrides":1,"num_identity_overrides":2,
+				 "code_references_counts":[{"count":3}],
+				 "environment_feature_state":{"enabled":false,"feature_state_value":25}}
+			]}`)
 		}))
 		defer srv.Close()
 
 		// When
-		flags, err := Flags(context.Background(), srv.URL, "envkey123")
+		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1)
 
 		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(flags) != 2 {
-			t.Fatalf("flags = %+v", flags)
+		if len(features) != 2 {
+			t.Fatalf("features = %+v", features)
 		}
-		if flags[0].Feature.Name != "onboarding_banner" || !flags[0].Enabled || flags[0].Value != nil {
-			t.Errorf("flags[0] = %+v", flags[0])
+		if features[0].Name != "onboarding_banner" || !features[0].EnvironmentState.Enabled ||
+			features[0].EnvironmentState.Value != nil || features[0].LifecycleStage != "live" {
+			t.Errorf("features[0] = %+v", features[0])
 		}
-		if flags[1].Value != float64(25) || flags[1].Enabled {
-			t.Errorf("flags[1] = %+v", flags[1])
+		if features[1].EnvironmentState.Value != float64(25) || features[1].EnvironmentState.Enabled ||
+			features[1].NumSegmentOverrides != 1 || *features[1].NumIdentityOverrides != 2 ||
+			features[1].CodeReferences() != 3 {
+			t.Errorf("features[1] = %+v", features[1])
 		}
 	})
 
-	t.Run("empty", func(t *testing.T) {
+	t.Run("json output preserves the raw item shape", func(t *testing.T) {
 		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `[]`)
+			fmt.Fprint(w, `{"count":1,"results":[
+				{"id":9,"name":"x","type":"STANDARD","extra_server_field":"kept",
+				 "environment_feature_state":{"enabled":true,"feature_state_value":"v"}}]}`)
 		}))
 		defer srv.Close()
 
 		// When
-		flags, err := Flags(context.Background(), srv.URL, "k")
+		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(features[0])
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		// Then
-		if err != nil || len(flags) != 0 {
-			t.Errorf("(flags, err) = (%+v, %v)", flags, err)
+		// Then — fields the struct does not model survive round-trip
+		if !strings.Contains(string(b), "extra_server_field") {
+			t.Errorf("marshalled = %s, want the raw item preserved", b)
 		}
 	})
 
-	t.Run("bad key", func(t *testing.T) {
+	t.Run("bad request", func(t *testing.T) {
 		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusUnauthorized)
+			w.WriteHeader(http.StatusForbidden)
 		}))
 		defer srv.Close()
 
 		// When
-		_, err := Flags(context.Background(), srv.URL, "nope")
+		_, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1)
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "401") {
-			t.Errorf("err = %v, want 401", err)
+		if err == nil || !strings.Contains(err.Error(), "403") {
+			t.Errorf("err = %v, want 403", err)
 		}
 	})
 }

@@ -138,39 +138,72 @@ func CreateProject(ctx context.Context, apiURL string, auth Auth, name string, o
 	return project, nil
 }
 
-// Flag is a feature's state in an environment, as the SDK resolves it.
-type Flag struct {
+// FeatureState is a feature's state in one environment: its on/off and typed
+// value. In the project features list, feature_state_value is a bare scalar.
+type FeatureState struct {
 	Enabled bool `json:"enabled"`
 	Value   any  `json:"feature_state_value"`
-	Feature struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
-	} `json:"feature"`
 }
 
-// Flags lists every flag in an environment via the SDK API, authenticating
-// with an environment key (X-Environment-Key) rather than an Admin
-// credential. The response is a bare array.
-func Flags(ctx context.Context, sdkURL, environmentKey string) ([]Flag, error) {
-	u := strings.TrimRight(sdkURL, "/") + "/api/v1/flags/"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
+// CodeReferenceCount is a per-repository count of code references to a feature.
+type CodeReferenceCount struct {
+	Count int `json:"count"`
+}
+
+// Feature is a project feature with its state in the requested environment.
+// It preserves the raw API item so JSON output mirrors the server shape while
+// the parsed fields drive the human views.
+type Feature struct {
+	ID                   int                  `json:"id"`
+	Name                 string               `json:"name"`
+	Type                 string               `json:"type"`
+	Description          string               `json:"description"`
+	NumSegmentOverrides  int                  `json:"num_segment_overrides"`
+	NumIdentityOverrides *int                 `json:"num_identity_overrides"`
+	LifecycleStage       string               `json:"lifecycle_stage"`
+	CodeReferencesCounts []CodeReferenceCount `json:"code_references_counts"`
+	EnvironmentState     *FeatureState        `json:"environment_feature_state"`
+
+	raw json.RawMessage
+}
+
+func (f *Feature) UnmarshalJSON(b []byte) error {
+	type alias Feature
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*f = Feature(a)
+	f.raw = append([]byte(nil), b...)
+	return nil
+}
+
+func (f Feature) MarshalJSON() ([]byte, error) {
+	if len(f.raw) > 0 {
+		return f.raw, nil
+	}
+	type alias Feature
+	return json.Marshal(alias(f))
+}
+
+// CodeReferences totals the per-repository code reference counts.
+func (f Feature) CodeReferences() int {
+	total := 0
+	for _, c := range f.CodeReferencesCounts {
+		total += c.Count
+	}
+	return total
+}
+
+// Features lists a project's features with their state in one environment, via
+// the Admin API. The environment is identified by its numeric ID.
+func Features(ctx context.Context, apiURL string, auth Auth, projectID, environmentID int) ([]Feature, error) {
+	var features []Feature
+	path := fmt.Sprintf("/api/v1/projects/%d/features/?environment=%d", projectID, environmentID)
+	if err := getList(ctx, apiURL, path, auth, &features); err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-Environment-Key", environmentKey)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s returned %s", u, resp.Status)
-	}
-	var flags []Flag
-	if err := json.NewDecoder(resp.Body).Decode(&flags); err != nil {
-		return nil, err
-	}
-	return flags, nil
+	return features, nil
 }
 
 // Environment is the subset of the environments API the CLI uses.

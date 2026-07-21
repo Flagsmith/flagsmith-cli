@@ -104,9 +104,9 @@ type fakeInstance struct {
 	envs        map[string][]map[string]any // projectID -> environments
 	created     []string
 	createdEnvs []string
-	flags       []map[string]any // SDK /flags/ response; nil → default two
-	lastEnvKey  string           // last X-Environment-Key seen by /flags/
-	tokenPosts  int              // count of POST /o/token/ (refresh) calls
+	features    map[string][]map[string]any // projectID -> features list; nil → default
+	lastFeatEnv string                      // last ?environment= seen by /features/
+	tokenPosts  int                         // count of POST /o/token/ (refresh) calls
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -125,6 +125,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 				{"id": 3, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN"},
 			},
 		},
+		features: map[string][]map[string]any{"101": defaultFeatures()},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -235,23 +236,18 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{"id": 42, "name": body.Name, "api_key": "createdEnvKey00000000"})
 	})
-	mux.HandleFunc("GET /api/v1/flags/", func(w http.ResponseWriter, r *http.Request) {
-		key := r.Header.Get("X-Environment-Key")
-		if key == "" {
+	mux.HandleFunc("GET /api/v1/projects/{project}/features/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		f.mu.Lock()
-		f.lastEnvKey = key
-		flags := f.flags
+		f.lastFeatEnv = r.URL.Query().Get("environment")
+		items := f.features[r.PathValue("project")]
 		f.mu.Unlock()
-		if flags == nil {
-			flags = []map[string]any{
-				{"enabled": true, "feature_state_value": nil, "feature": map[string]any{"name": "onboarding_banner", "type": "STANDARD"}},
-				{"enabled": false, "feature_state_value": 25, "feature": map[string]any{"name": "max_items", "type": "STANDARD"}},
-			}
-		}
-		json.NewEncoder(w).Encode(flags)
+		json.NewEncoder(w).Encode(map[string]any{
+			"count": len(items), "next": nil, "previous": nil, "results": items,
+		})
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -264,10 +260,31 @@ func (f *fakeInstance) revokeCount() int {
 	return len(f.revoked)
 }
 
-func (f *fakeInstance) environmentKey() string {
+// featuresEnv returns the ?environment= value the /features/ endpoint last saw.
+func (f *fakeInstance) featuresEnv() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.lastEnvKey
+	return f.lastFeatEnv
+}
+
+// defaultFeatures is the stock project features list (with per-environment
+// state embedded) returned by the fake /features/ endpoint.
+func defaultFeatures() []map[string]any {
+	return []map[string]any{
+		{
+			"id": 1, "name": "onboarding_banner", "type": "STANDARD",
+			"description": "Welcome banner", "lifecycle_stage": "live",
+			"num_segment_overrides": 0, "num_identity_overrides": 0,
+			"code_references_counts":    []any{},
+			"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": nil},
+		},
+		{
+			"id": 2, "name": "max_items", "type": "STANDARD",
+			"num_segment_overrides": 1, "num_identity_overrides": 2,
+			"code_references_counts":    []any{map[string]any{"count": 3}},
+			"environment_feature_state": map[string]any{"enabled": false, "feature_state_value": 25},
+		},
+	}
 }
 
 func (f *fakeInstance) refreshCount() int {
@@ -277,7 +294,7 @@ func (f *fakeInstance) refreshCount() int {
 }
 
 func TestFlagListResolvesEnvironmentName(t *testing.T) {
-	t.Run("name resolved to a key via the Admin API", func(t *testing.T) {
+	t.Run("name resolved to its id for the features query", func(t *testing.T) {
 		// Given a config naming the environment, with admin credentials
 		isolateStorage(t)
 		f := newFakeInstance(t)
@@ -288,30 +305,25 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list")
 
-		// Then — "Development" resolved to that environment's key for the SDK read
+		// Then — "Development" (id 1) drives the features environment filter
 		if err != nil {
 			t.Fatalf("flag list: %v\noutput: %s", err, out)
 		}
-		if got := f.environmentKey(); got != "WqXhZk8sVY3dGgTqZ9pJmN" {
-			t.Errorf("SDK key = %q, want the resolved Development key", got)
+		if got := f.featuresEnv(); got != "1" {
+			t.Errorf("features environment = %q, want the resolved Development id (1)", got)
 		}
 	})
 
-	t.Run("without admin credentials the reference is assumed a key", func(t *testing.T) {
-		// Given a name but no admin credentials
+	t.Run("without credentials the command errors", func(t *testing.T) {
+		// Given a name but no admin credentials — flag list is Admin-only now
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
 
-		// When
-		if _, err := run("", "flag", "list"); err != nil {
-			t.Fatalf("flag list: %v", err)
-		}
-
-		// Then — used verbatim as the key (credless path, no resolution)
-		if got := f.environmentKey(); got != "Development" {
-			t.Errorf("SDK key = %q, want the reference assumed as a key", got)
+		// When / Then
+		if _, err := run("", "flag", "list"); !errors.Is(err, auth.ErrNotLoggedIn) {
+			t.Errorf("err = %v, want ErrNotLoggedIn", err)
 		}
 	})
 
@@ -335,15 +347,10 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		}
 	})
 
-	t.Run("a known key is used directly, no resolution", func(t *testing.T) {
-		// Given the reference is a key (in the cache), with admin credentials
+	t.Run("a key reference resolves to its environment", func(t *testing.T) {
+		// Given the reference is a client-side key present in the project
 		isolateStorage(t)
 		f := newFakeInstance(t)
-		if err := cache.Merge(f.srv.URL, &cache.Names{
-			Environments: map[string]string{"K2mVsGdXhZ8kQqZ9pJmNbJ": "Production"},
-		}); err != nil {
-			t.Fatal(err)
-		}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ", "apiUrl": "`+f.srv.URL+`"}`)
 		t.Setenv("FLAGSMITH_API_KEY", masterKey)
@@ -353,9 +360,9 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 			t.Fatalf("flag list: %v", err)
 		}
 
-		// Then — the key passed straight through to the SDK read
-		if got := f.environmentKey(); got != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
-			t.Errorf("SDK key = %q, want the key used directly", got)
+		// Then — the key mapped to Production (id 2) for the features query
+		if got := f.featuresEnv(); got != "2" {
+			t.Errorf("features environment = %q, want the Production id (2)", got)
 		}
 	})
 }
@@ -1492,12 +1499,12 @@ func TestProjectNameResolvesForEnvironmentLookup(t *testing.T) {
 	// When — flag list needs the project ID to list environments by name
 	out, err := run("", "flag", "list")
 
-	// Then — "acme-api" resolved to project 101, "Development" to its key
+	// Then — "acme-api" resolved to project 101, "Development" to env id 1
 	if err != nil {
 		t.Fatalf("flag list: %v\noutput: %s", err, out)
 	}
-	if got := f.environmentKey(); got != "WqXhZk8sVY3dGgTqZ9pJmN" {
-		t.Errorf("SDK key = %q, want the key resolved via the named project", got)
+	if got := f.featuresEnv(); got != "1" {
+		t.Errorf("features environment = %q, want env id resolved via the named project", got)
 	}
 }
 
@@ -1518,37 +1525,43 @@ func TestUnknownProjectNameErrors(t *testing.T) {
 
 func TestFlagsList(t *testing.T) {
 	t.Run("human table with count", func(t *testing.T) {
-		// Given — a repo config carrying an environment key (SDK reads need it)
+		// Given — admin credentials, project and environment in config
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
 
-		// When — no credentials at all, only the environment key
+		// When
 		out, err := run("", "flag", "list")
 
-		// Then
+		// Then — the richer Admin columns, values, and count
 		if err != nil {
 			t.Fatalf("flags list: %v\noutput: %s", err, out)
 		}
-		for _, want := range []string{"NAME", "ENABLED", "VALUE", "onboarding_banner", "true", "max_items", "25", "2 flags"} {
+		for _, want := range []string{
+			"NAME", "TYPE", "ENABLED", "VALUE", "LIFECYCLE",
+			"onboarding_banner", "STANDARD", "true", "live",
+			"max_items", "25", "2 flags",
+		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want it to contain %q", out, want)
 			}
 		}
 	})
 
-	t.Run("json is a bare array", func(t *testing.T) {
+	t.Run("json mirrors the features items", func(t *testing.T) {
 		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
 
 		// When
 		out, err := run("", "flag", "list", "--json")
 
-		// Then
+		// Then — a bare array (pagination envelope stripped), full item shape
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1557,7 +1570,10 @@ func TestFlagsList(t *testing.T) {
 			t.Fatalf("parsing %q: %v", out, err)
 		}
 		if len(flags) != 2 {
-			t.Errorf("flags = %+v", flags)
+			t.Fatalf("flags = %+v", flags)
+		}
+		if _, ok := flags[0]["environment_feature_state"]; !ok {
+			t.Errorf("item = %+v, want the raw features shape preserved", flags[0])
 		}
 	})
 
@@ -1565,9 +1581,10 @@ func TestFlagsList(t *testing.T) {
 		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
-		f.flags = []map[string]any{}
+		f.features["101"] = []map[string]any{}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
 
 		// When
 		out, err := run("", "flag", "list")
@@ -1581,13 +1598,14 @@ func TestFlagsList(t *testing.T) {
 		}
 	})
 
-	t.Run("environment key from FLAGSMITH_ENVIRONMENT_KEY", func(t *testing.T) {
-		// Given — no config environment; a server-side key via the env var
+	t.Run("environment from FLAGSMITH_ENVIRONMENT_KEY fallback", func(t *testing.T) {
+		// Given — no config environment; a client-side key via the env var
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "ser.someServerKey")
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "WqXhZk8sVY3dGgTqZ9pJmN")
 
 		// When
 		out, err := run("", "flag", "list")
@@ -1601,19 +1619,88 @@ func TestFlagsList(t *testing.T) {
 		}
 	})
 
-	t.Run("no environment key errors", func(t *testing.T) {
+	t.Run("no environment errors", func(t *testing.T) {
 		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
 
 		// When
 		_, err := run("", "flag", "list")
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "environment") {
-			t.Errorf("err = %v, want a missing-environment-key error", err)
+			t.Errorf("err = %v, want a missing-environment error", err)
+		}
+	})
+}
+
+func TestFlagGet(t *testing.T) {
+	t.Run("detail view for a named feature", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "get", "max_items")
+
+		// Then — the detail fields for that one feature
+		if err != nil {
+			t.Fatalf("flag get: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"max_items", "Value", "25", "Segment overrides", "Identity overrides", "Code references", "3"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want it to contain %q", out, want)
+			}
+		}
+	})
+
+	t.Run("case-insensitive exact match, not a contains match", func(t *testing.T) {
+		// Given features whose names share a prefix
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		f.features["101"] = []map[string]any{
+			{"id": 1, "name": "checkout", "type": "STANDARD",
+				"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": "a"}},
+			{"id": 2, "name": "checkout-v2", "type": "STANDARD",
+				"environment_feature_state": map[string]any{"enabled": false, "feature_state_value": "b"}},
+		}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "get", "CheckOut")
+
+		// Then — resolves to "checkout" (value "a"), never "checkout-v2"
+		if err != nil {
+			t.Fatalf("flag get: %v", err)
+		}
+		if strings.Contains(out, "checkout-v2") {
+			t.Errorf("output = %q, matched the contains sibling instead of the exact name", out)
+		}
+		if !strings.Contains(out, "a") {
+			t.Errorf("output = %q, want checkout's value", out)
+		}
+	})
+
+	t.Run("unknown feature errors", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When / Then
+		_, err := run("", "flag", "get", "ghost")
+		if err == nil || !strings.Contains(err.Error(), "ghost") {
+			t.Errorf("err = %v, want a not-found error naming the feature", err)
 		}
 	})
 }

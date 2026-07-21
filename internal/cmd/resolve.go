@@ -48,40 +48,23 @@ func pickCandidate(cmd *cobra.Command, entity, ref string, candidates []string, 
 	return candidates[idx], nil
 }
 
-// resolveEnvironmentKey turns the environment context reference (a key or a
-// name) into a client-side key for SDK reads. FLAGSMITH_ENVIRONMENT_KEY is
-// the SDK credential and is always a key.
-func resolveEnvironmentKey(cmd *cobra.Command, pc *projectContext) (string, error) {
-	if v := os.Getenv("FLAGSMITH_ENVIRONMENT_KEY"); v != "" {
-		return v, nil
-	}
+// resolveEnvironment turns the environment context reference (a client-side
+// key or a name) into the full environment within a project, over the Admin
+// API. Flag commands need the numeric id (features query) and the key
+// (update-flag mutations), so both come from one lookup.
+func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCredential, projectID int) (api.Environment, error) {
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
-		return "", errors.New(
-			"no environment — set FLAGSMITH_ENVIRONMENT_KEY, pass -e, or run `flagsmith init`")
+		ref = os.Getenv("FLAGSMITH_ENVIRONMENT_KEY")
+	}
+	if ref == "" {
+		return api.Environment{}, errors.New(
+			"no environment — pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`")
 	}
 
-	// A known key is used directly — keys are globally unique. Environment
-	// *names*, however, are unique only within a project, so the flat
-	// instance cache cannot resolve them; that goes through the project-scoped
-	// Admin list below.
-	if _, ok := cache.Load(apiURL).Environments[ref]; ok {
-		return ref, nil
-	}
-
-	// Resolve over the Admin API when credentials allow; otherwise assume the
-	// reference already is a key (credless path — the SDK validates it).
-	cred, err := resolveCredential(cmd.Context())
-	if err != nil {
-		return ref, nil
-	}
-	projectID, err := resolveProjectID(cmd, pc, cred)
-	if err != nil {
-		return "", err
-	}
 	envs, err := api.Environments(cmd.Context(), apiURL, cred.auth, projectID)
 	if err != nil {
-		return "", err
+		return api.Environment{}, err
 	}
 	byKey := make(map[string]string, len(envs))
 	for _, e := range envs {
@@ -89,13 +72,25 @@ func resolveEnvironmentKey(cmd *cobra.Command, pc *projectContext) (string, erro
 	}
 	_ = cache.Merge(apiURL, &cache.Names{Environments: byKey})
 
-	if _, ok := byKey[ref]; ok {
-		return ref, nil
+	for _, e := range envs {
+		if e.APIKey == ref {
+			return e, nil
+		}
 	}
-	if hits := matchByName(byKey, ref); len(hits) > 0 {
-		return pickCandidate(cmd, "environment", ref, hits, byKey)
+	hits := matchByName(byKey, ref)
+	if len(hits) == 0 {
+		return api.Environment{}, fmt.Errorf("environment %q not found in project %d", ref, projectID)
 	}
-	return "", fmt.Errorf("environment %q not found in project %d", ref, projectID)
+	chosen, err := pickCandidate(cmd, "environment", ref, hits, byKey)
+	if err != nil {
+		return api.Environment{}, err
+	}
+	for _, e := range envs {
+		if e.APIKey == chosen {
+			return e, nil
+		}
+	}
+	return api.Environment{}, fmt.Errorf("environment %q not found in project %d", ref, projectID)
 }
 
 // resolveProjectID turns the project reference (an id or a name) into an id.
