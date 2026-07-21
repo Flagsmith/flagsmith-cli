@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -16,20 +14,6 @@ import (
 var flagCmd = &cobra.Command{
 	Use:   "flag",
 	Short: "Inspect feature flags in the current environment",
-}
-
-// resolveEnvironmentKey returns the SDK environment key for flag reads:
-// FLAGSMITH_ENVIRONMENT_KEY (which may be a server-side key) wins, else the
-// client-side key from context (-e / FLAGSMITH_ENVIRONMENT / flagsmith.json).
-func resolveEnvironmentKey(pc *projectContext) (string, error) {
-	if v := os.Getenv("FLAGSMITH_ENVIRONMENT_KEY"); v != "" {
-		return v, nil
-	}
-	if v, ok := pc.Environment.Value.(string); ok && v != "" {
-		return v, nil
-	}
-	return "", errors.New(
-		"no environment key — set FLAGSMITH_ENVIRONMENT_KEY, or run `flagsmith init` to record one")
 }
 
 func flagValue(v any) string {
@@ -47,7 +31,7 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		envKey, err := resolveEnvironmentKey(pc)
+		envKey, err := resolveEnvironmentKey(cmd, pc)
 		if err != nil {
 			return err
 		}

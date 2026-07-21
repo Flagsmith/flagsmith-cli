@@ -104,6 +104,7 @@ type fakeInstance struct {
 	created     []string
 	createdEnvs []string
 	flags       []map[string]any // SDK /flags/ response; nil → default two
+	lastEnvKey  string           // last X-Environment-Key seen by /flags/
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -230,11 +231,13 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		json.NewEncoder(w).Encode(map[string]any{"id": 42, "name": body.Name, "api_key": "createdEnvKey00000000"})
 	})
 	mux.HandleFunc("GET /api/v1/flags/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Environment-Key") == "" {
+		key := r.Header.Get("X-Environment-Key")
+		if key == "" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		f.mu.Lock()
+		f.lastEnvKey = key
 		flags := f.flags
 		f.mu.Unlock()
 		if flags == nil {
@@ -254,6 +257,96 @@ func (f *fakeInstance) revokeCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.revoked)
+}
+
+func (f *fakeInstance) environmentKey() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastEnvKey
+}
+
+func TestFlagListResolvesEnvironmentName(t *testing.T) {
+	t.Run("name resolved to a key via the Admin API", func(t *testing.T) {
+		// Given a config naming the environment, with admin credentials
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "list")
+
+		// Then — "Development" resolved to that environment's key for the SDK read
+		if err != nil {
+			t.Fatalf("flag list: %v\noutput: %s", err, out)
+		}
+		if got := f.environmentKey(); got != "WqXhZk8sVY3dGgTqZ9pJmN" {
+			t.Errorf("SDK key = %q, want the resolved Development key", got)
+		}
+	})
+
+	t.Run("without admin credentials the reference is assumed a key", func(t *testing.T) {
+		// Given a name but no admin credentials
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
+
+		// When
+		if _, err := run("", "flag", "list"); err != nil {
+			t.Fatalf("flag list: %v", err)
+		}
+
+		// Then — used verbatim as the key (credless path, no resolution)
+		if got := f.environmentKey(); got != "Development" {
+			t.Errorf("SDK key = %q, want the reference assumed as a key", got)
+		}
+	})
+
+	t.Run("ambiguous name exits 2 without a TTY", func(t *testing.T) {
+		// Given two environments sharing a name
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		f.envs["101"] = []map[string]any{
+			{"id": 1, "name": "Staging", "api_key": "stagingKeyA0000000000"},
+			{"id": 2, "name": "Staging", "api_key": "stagingKeyB0000000000"},
+		}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "Staging", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When / Then
+		_, err := run("", "flag", "list")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "ambiguous") {
+			t.Errorf("err = %v, want an ambiguity usage error (exit 2)", err)
+		}
+	})
+
+	t.Run("a known key is used directly, no resolution", func(t *testing.T) {
+		// Given the reference is a key (in the cache), with admin credentials
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		if err := cache.Merge(f.srv.URL, &cache.Names{
+			Environments: map[string]string{"K2mVsGdXhZ8kQqZ9pJmNbJ": "Production"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		if _, err := run("", "flag", "list"); err != nil {
+			t.Fatalf("flag list: %v", err)
+		}
+
+		// Then — the key passed straight through to the SDK read
+		if got := f.environmentKey(); got != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
+			t.Errorf("SDK key = %q, want the key used directly", got)
+		}
+	})
 }
 
 // commandShapes are the two supported spellings of login/logout:
