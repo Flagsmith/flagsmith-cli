@@ -104,10 +104,14 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// flagCreateCmd is hidden: it exists only to intercept `flag create` with a
+// redirect, not to advertise a command (flags have no create — they exist per
+// environment).
 var flagCreateCmd = &cobra.Command{
-	Use:   "create <feature>",
-	Short: "Not applicable — flags exist per environment (see `feature create`)",
-	Args:  cobra.ArbitraryArgs,
+	Use:    "create <feature>",
+	Short:  "Not applicable — flags exist per environment (see `feature create`)",
+	Hidden: true,
+	Args:   cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := "<feature>"
 		if len(args) > 0 {
