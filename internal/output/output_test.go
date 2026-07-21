@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -160,6 +161,50 @@ func TestTable(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("table = %q, want %q", out, want)
 		}
+	}
+}
+
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func TestTableBoldHeaderKeepsAlignment(t *testing.T) {
+	// Given the same table rendered with color off and on
+	headers := []string{"NAME", "ENABLED", "VALUE"}
+	rows := [][]string{{"example_mv_feature", "false", "control"}, {"x", "true", "-"}}
+
+	render := func() string {
+		var b bytes.Buffer
+		if err := Table(&b, headers, rows); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+
+	color.NoColor = true
+	plain := render()
+	color.NoColor = false
+	colored := render()
+	color.NoColor = true
+
+	// Then the header is bold when colour is on...
+	if !strings.Contains(colored, "\x1b[1m") {
+		t.Error("expected a bold header when colour is on")
+	}
+	// ...the tabwriter escape byte never leaks...
+	if strings.ContainsRune(colored, '\xff') {
+		t.Errorf("escape byte leaked: %q", colored)
+	}
+	// ...and stripping the ANSI yields exactly the plain layout: colour is
+	// applied after alignment, so it can't move columns.
+	if got := ansiPattern.ReplaceAllString(colored, ""); got != plain {
+		t.Errorf("colour changed alignment:\nstripped = %q\nplain    = %q", got, plain)
+	}
+	// Plain output has no escapes and aligns.
+	if strings.ContainsAny(plain, "\x1b\xff") {
+		t.Errorf("plain table contains escape bytes: %q", plain)
+	}
+	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
+	if strings.Index(lines[0], "ENABLED") != strings.Index(lines[1], "false") {
+		t.Errorf("columns not aligned:\n%q\n%q", lines[0], lines[1])
 	}
 }
 

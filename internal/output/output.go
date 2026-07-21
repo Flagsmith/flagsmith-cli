@@ -4,9 +4,11 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/fatih/color"
@@ -21,11 +23,29 @@ type Options struct {
 
 func (o Options) jsonMode() bool { return o.JSON || o.JQ != "" }
 
-var (
-	headerColor = color.New(color.Bold)
-	labelColor  = color.New(color.FgCyan)
-	tickColor   = color.New(color.FgGreen, color.Bold)
+var tickColor = color.New(color.FgGreen, color.Bold)
+
+// SGR codes applied after tabwriter alignment (see paint).
+const (
+	sgrBold = "1"
+	sgrCyan = "36"
 )
+
+// paint wraps s in an ANSI SGR sequence, or returns it unchanged when colour
+// is disabled. It is applied to already-aligned tabwriter output — never to a
+// cell before alignment — so the escape bytes cannot affect column widths.
+func paint(code, s string) string {
+	if color.NoColor {
+		return s
+	}
+	return "\x1b[" + code + "m" + s + "\x1b[0m"
+}
+
+// splitLines splits tabwriter output into its lines, dropping the trailing
+// newline so callers can restyle and rejoin without adding a blank line.
+func splitLines(s string) []string {
+	return strings.Split(strings.TrimRight(s, "\n"), "\n")
+}
 
 // Render writes data as JSON (applying JQ) when JSON output is requested,
 // otherwise delegates to human. human may be nil when only JSON is expected.
@@ -85,14 +105,23 @@ func renderJQ(w io.Writer, data any, expr string) error {
 	return nil
 }
 
-// Table writes a borderless, aligned table with bold headers.
+// Table writes a borderless, aligned table with a bold header. tabwriter
+// aligns on the plain text first; the header is bolded afterwards so its
+// escape bytes never count toward column width.
 func Table(w io.Writer, headers []string, rows [][]string) error {
-	tw := tabwriter.NewWriter(w, 2, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, joinTabs(headers, headerColor.Sprint))
+	var buf bytes.Buffer
+	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
+	fmt.Fprintln(tw, strings.Join(headers, "\t"))
 	for _, row := range rows {
-		fmt.Fprintln(tw, joinTabs(row, nil))
+		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	lines := splitLines(buf.String())
+	lines[0] = paint(sgrBold, lines[0])
+	_, err := fmt.Fprintln(w, strings.Join(lines, "\n"))
+	return err
 }
 
 // Field is one label/value pair in a detail view.
@@ -101,31 +130,32 @@ type Field struct {
 	Value string
 }
 
-// Detail writes an aligned key/value view of a single resource.
+// Detail writes an aligned key/value view of a single resource, with the
+// labels coloured. As with Table, alignment happens on plain text first and
+// the colour is applied to the label column afterwards.
 func Detail(w io.Writer, fields []Field) error {
-	tw := tabwriter.NewWriter(w, 2, 0, 3, ' ', 0)
+	var buf bytes.Buffer
+	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
 	for _, f := range fields {
-		fmt.Fprintf(tw, "%s\t%s\n", labelColor.Sprint(f.Label), f.Value)
+		fmt.Fprintf(tw, "%s\t%s\n", f.Label, f.Value)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, line := range splitLines(buf.String()) {
+		// The label ends at the first column gap (two or more spaces);
+		// intra-label spaces are single, so this never splits a label.
+		gap := strings.Index(line, "  ")
+		if gap < 0 {
+			fmt.Fprintln(w, line)
+			continue
+		}
+		fmt.Fprintln(w, paint(sgrCyan, line[:gap])+line[gap:])
+	}
+	return nil
 }
 
 // Success writes a ✓-prefixed confirmation line (callers pass stderr).
 func Success(w io.Writer, format string, a ...any) {
 	fmt.Fprintf(w, "%s %s\n", tickColor.Sprint("✓"), fmt.Sprintf(format, a...))
-}
-
-func joinTabs(cells []string, style func(...any) string) string {
-	out := ""
-	for i, c := range cells {
-		if i > 0 {
-			out += "\t"
-		}
-		if style != nil {
-			out += style(c)
-		} else {
-			out += c
-		}
-	}
-	return out
 }
