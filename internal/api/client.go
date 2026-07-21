@@ -138,6 +138,41 @@ func CreateProject(ctx context.Context, apiURL string, auth Auth, name string, o
 	return project, nil
 }
 
+// Flag is a feature's state in an environment, as the SDK resolves it.
+type Flag struct {
+	Enabled bool `json:"enabled"`
+	Value   any  `json:"feature_state_value"`
+	Feature struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"feature"`
+}
+
+// Flags lists every flag in an environment via the SDK API, authenticating
+// with an environment key (X-Environment-Key) rather than an Admin
+// credential. The response is a bare array.
+func Flags(ctx context.Context, sdkURL, environmentKey string) ([]Flag, error) {
+	u := strings.TrimRight(sdkURL, "/") + "/api/v1/flags/"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Environment-Key", environmentKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s returned %s", u, resp.Status)
+	}
+	var flags []Flag
+	if err := json.NewDecoder(resp.Body).Decode(&flags); err != nil {
+		return nil, err
+	}
+	return flags, nil
+}
+
 // Environment is the subset of the environments API the CLI uses.
 type Environment struct {
 	ID     int    `json:"id"`

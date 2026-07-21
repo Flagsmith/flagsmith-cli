@@ -106,6 +106,7 @@ type fakeInstance struct {
 	envs        map[string][]map[string]any // projectID -> environments
 	created     []string
 	createdEnvs []string
+	flags       []map[string]any // SDK /flags/ response; nil → default two
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -230,6 +231,22 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{"id": 42, "name": body.Name, "api_key": "createdEnvKey00000000"})
+	})
+	mux.HandleFunc("GET /api/v1/flags/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Environment-Key") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		flags := f.flags
+		f.mu.Unlock()
+		if flags == nil {
+			flags = []map[string]any{
+				{"enabled": true, "feature_state_value": nil, "feature": map[string]any{"name": "onboarding_banner", "type": "STANDARD"}},
+				{"enabled": false, "feature_state_value": 25, "feature": map[string]any{"name": "max_items", "type": "STANDARD"}},
+			}
+		}
+		json.NewEncoder(w).Encode(flags)
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -1319,6 +1336,108 @@ func TestInvalidEnvProjectIsUsageError(t *testing.T) {
 	if !errors.As(err, &usage) {
 		t.Errorf("err = %v, want a usage error (exit 2) for invalid promptable input", err)
 	}
+}
+
+func TestFlagsList(t *testing.T) {
+	t.Run("human table with count", func(t *testing.T) {
+		// Given — a repo config carrying an environment key (SDK reads need it)
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+
+		// When — no credentials at all, only the environment key
+		out, err := run("", "flags", "list")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flags list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"NAME", "ENABLED", "VALUE", "onboarding_banner", "true", "max_items", "25", "2 flags"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want it to contain %q", out, want)
+			}
+		}
+	})
+
+	t.Run("json is a bare array", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+
+		// When
+		out, err := run("", "flags", "list", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		var flags []map[string]any
+		if err := json.Unmarshal([]byte(out), &flags); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if len(flags) != 2 {
+			t.Errorf("flags = %+v", flags)
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		f.flags = []map[string]any{}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+
+		// When
+		out, err := run("", "flags", "list")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "No flags") {
+			t.Errorf("output = %q, want a no-flags message", out)
+		}
+	})
+
+	t.Run("environment key from FLAGSMITH_ENVIRONMENT_KEY", func(t *testing.T) {
+		// Given — no config environment; a server-side key via the env var
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "ser.someServerKey")
+
+		// When
+		out, err := run("", "flags", "list")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flags list: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "onboarding_banner") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("no environment key errors", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
+
+		// When
+		_, err := run("", "flags", "list")
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "environment") {
+			t.Errorf("err = %v, want a missing-environment-key error", err)
+		}
+	})
 }
 
 func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {

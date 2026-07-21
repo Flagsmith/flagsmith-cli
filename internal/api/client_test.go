@@ -153,6 +153,74 @@ func TestEnvironments(t *testing.T) {
 	}
 }
 
+func TestFlags(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		// Given
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/flags/" {
+				t.Errorf("path = %q", r.URL.Path)
+			}
+			if got := r.Header.Get("X-Environment-Key"); got != "envkey123" {
+				t.Errorf("X-Environment-Key = %q", got)
+			}
+			fmt.Fprint(w, `[
+				{"enabled":true,"feature_state_value":null,"feature":{"name":"onboarding_banner","type":"STANDARD"}},
+				{"enabled":false,"feature_state_value":25,"feature":{"name":"max_items","type":"STANDARD"}}
+			]`)
+		}))
+		defer srv.Close()
+
+		// When
+		flags, err := Flags(context.Background(), srv.URL, "envkey123")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(flags) != 2 {
+			t.Fatalf("flags = %+v", flags)
+		}
+		if flags[0].Feature.Name != "onboarding_banner" || !flags[0].Enabled || flags[0].Value != nil {
+			t.Errorf("flags[0] = %+v", flags[0])
+		}
+		if flags[1].Value != float64(25) || flags[1].Enabled {
+			t.Errorf("flags[1] = %+v", flags[1])
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		// Given
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `[]`)
+		}))
+		defer srv.Close()
+
+		// When
+		flags, err := Flags(context.Background(), srv.URL, "k")
+
+		// Then
+		if err != nil || len(flags) != 0 {
+			t.Errorf("(flags, err) = (%+v, %v)", flags, err)
+		}
+	})
+
+	t.Run("bad key", func(t *testing.T) {
+		// Given
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer srv.Close()
+
+		// When
+		_, err := Flags(context.Background(), srv.URL, "nope")
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "401") {
+			t.Errorf("err = %v, want 401", err)
+		}
+	})
+}
+
 func TestCreateEnvironment(t *testing.T) {
 	// Given
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
