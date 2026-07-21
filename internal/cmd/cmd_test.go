@@ -1637,8 +1637,8 @@ func TestFlagsList(t *testing.T) {
 			t.Fatalf("flags list: %v\noutput: %s", err, out)
 		}
 		for _, want := range []string{
-			"NAME", "TYPE", "ENABLED", "VALUE", "LIFECYCLE",
-			"onboarding_banner", "STANDARD", "true", "live",
+			"NAME", "TYPE", "STATE", "VALUE", "LIFECYCLE",
+			"onboarding_banner", "standard", "on", "live",
 			"max_items", "25", "2 flags",
 		} {
 			if !strings.Contains(out, want) {
@@ -1732,6 +1732,34 @@ func TestFlagsList(t *testing.T) {
 			t.Errorf("err = %v, want a missing-environment error", err)
 		}
 	})
+
+	t.Run("off state and a truncated long value", func(t *testing.T) {
+		// Given a disabled flag with a very long value
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		long := strings.Repeat("x", 200)
+		f.features["101"] = []map[string]any{{
+			"id": 1, "name": "blob", "type": "MULTIVARIATE",
+			"environment_feature_state": map[string]any{"enabled": false, "feature_state_value": long},
+		}}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "list")
+
+		// Then — off, lower-case type, and no full 200-char value
+		if err != nil {
+			t.Fatalf("flags list: %v", err)
+		}
+		if !strings.Contains(out, "off") || !strings.Contains(out, "multivariate") || !strings.Contains(out, "…") {
+			t.Errorf("output = %q, want off/multivariate/truncation", out)
+		}
+		if strings.Contains(out, long) {
+			t.Errorf("output = %q, want the long value truncated", out)
+		}
+	})
 }
 
 func TestFlagGet(t *testing.T) {
@@ -1798,6 +1826,31 @@ func TestFlagGet(t *testing.T) {
 		_, err := run("", "flag", "get", "ghost")
 		if err == nil || !strings.Contains(err.Error(), "ghost") {
 			t.Errorf("err = %v, want a not-found error naming the feature", err)
+		}
+	})
+
+	t.Run("a null identity-override count shows 0", func(t *testing.T) {
+		// Given num_identity_overrides is null (Edge/Dynamo projects)
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		f.features["101"] = []map[string]any{{
+			"id": 1, "name": "edgeflag", "type": "STANDARD",
+			"num_segment_overrides": 0, "num_identity_overrides": nil,
+			"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": "x"},
+		}}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "get", "edgeflag")
+
+		// Then — shown as 0, not "-"
+		if err != nil {
+			t.Fatalf("flag get: %v", err)
+		}
+		if !strings.Contains(out, "Identity overrides") || !strings.Contains(out, "0") {
+			t.Errorf("output = %q, want Identity overrides 0", out)
 		}
 	})
 }
@@ -1959,7 +2012,7 @@ func TestFlagGetSegment(t *testing.T) {
 		if got := f.featuresSeg(); got != "12" {
 			t.Errorf("features segment = %q, want 12", got)
 		}
-		for _, want := range []string{"Segment", "12", "special", "true"} {
+		for _, want := range []string{"Segment", "12", "special", "on"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want %q", out, want)
 			}

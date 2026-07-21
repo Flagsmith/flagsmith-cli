@@ -28,6 +28,33 @@ func flagEnabled(fs *api.FeatureState) bool {
 	return fs != nil && fs.Enabled
 }
 
+// stateLabel renders a flag's on/off state.
+func stateLabel(fs *api.FeatureState) string {
+	if flagEnabled(fs) {
+		return "on"
+	}
+	return "off"
+}
+
+// featureTypeLabel lower-cases the feature type for display (the API returns
+// e.g. STANDARD / MULTIVARIATE).
+func featureTypeLabel(t string) string {
+	return strings.ToLower(t)
+}
+
+// valueDisplayMax bounds how wide a flag value is shown in the list table;
+// values can be very large (JSON blobs, long strings).
+const valueDisplayMax = 40
+
+// truncateValue shortens an over-long value for table display, marking the cut.
+func truncateValue(s string) string {
+	r := []rune(s)
+	if len(r) <= valueDisplayMax {
+		return s
+	}
+	return string(r[:valueDisplayMax-1]) + "…"
+}
+
 // flagContext resolves the credential, project, and environment every flag
 // command needs.
 func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, api.Environment, error) {
@@ -71,13 +98,13 @@ var flagListCmd = &cobra.Command{
 			for i, f := range features {
 				rows[i] = []string{
 					f.Name,
-					f.Type,
-					strconv.FormatBool(flagEnabled(f.EnvironmentState)),
-					flagValue(f.EnvironmentState),
+					featureTypeLabel(f.Type),
+					stateLabel(f.EnvironmentState),
+					truncateValue(flagValue(f.EnvironmentState)),
 					lifecycleOrDash(f.LifecycleStage),
 				}
 			}
-			if err := output.Table(w, []string{"NAME", "TYPE", "ENABLED", "VALUE", "LIFECYCLE"}, rows); err != nil {
+			if err := output.Table(w, []string{"NAME", "TYPE", "STATE", "VALUE", "LIFECYCLE"}, rows); err != nil {
 				return err
 			}
 			fmt.Fprintf(w, "\n%d %s\n", len(features), plural(len(features), "flag", "flags"))
@@ -134,9 +161,9 @@ func renderSegmentDetail(cmd *cobra.Command, feature *api.Feature, segmentID int
 	return output.Render(cmd.OutOrStdout(), feature, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
 			{Label: "Feature", Value: feature.Name},
-			{Label: "Type", Value: feature.Type},
+			{Label: "Type", Value: featureTypeLabel(feature.Type)},
 			{Label: "Segment", Value: strconv.Itoa(segmentID)},
-			{Label: "Enabled", Value: strconv.FormatBool(flagEnabled(feature.SegmentState))},
+			{Label: "State", Value: stateLabel(feature.SegmentState)},
 			{Label: "Value", Value: flagValue(feature.SegmentState)},
 		})
 	})
@@ -148,8 +175,8 @@ func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
 		return output.Detail(w, []output.Field{
 			{Label: "Feature", Value: feature.Name},
 			{Label: "Description", Value: feature.Description},
-			{Label: "Type", Value: feature.Type},
-			{Label: "Enabled", Value: strconv.FormatBool(flagEnabled(feature.EnvironmentState))},
+			{Label: "Type", Value: featureTypeLabel(feature.Type)},
+			{Label: "State", Value: stateLabel(feature.EnvironmentState)},
 			{Label: "Value", Value: flagValue(feature.EnvironmentState)},
 			{Label: "Segment overrides", Value: strconv.Itoa(feature.NumSegmentOverrides)},
 			{Label: "Identity overrides", Value: identityOverrides(feature.NumIdentityOverrides)},
@@ -168,7 +195,7 @@ func lifecycleOrDash(stage string) string {
 
 func identityOverrides(n *int) string {
 	if n == nil {
-		return "-" // Edge/Dynamo projects do not report this
+		return "0" // Edge/Dynamo projects do not report a count
 	}
 	return strconv.Itoa(*n)
 }
