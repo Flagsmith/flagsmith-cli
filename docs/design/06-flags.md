@@ -2,7 +2,7 @@
 
 Status: draft
 
-A flag is a feature's state in the current environment: its on/off and value, as the SDK resolves it.
+A flag is a feature's state in the current environment: its on/off and value for a given environment, segment, or identity.
 
 ## 1. Resource
 
@@ -11,6 +11,26 @@ The natural human identifier for `flag` is the feature name:
 ```
 $ flagsmith flag get checkout-v2
 ```
+
+To get a segment/identity override, use flags:
+
+```
+$ flagsmith flag get checkout-v2 --identifier id123
+$ flagsmith flag get checkout-v2 --segment 12
+```
+
+A detail human result view includes:
+- Feature name
+- Feature description
+- Feature type (standard/multivariate)
+- Flag state (on/off)
+- Flag value
+- Number of segment overrides
+- Number of identity overrides
+- Number of code references
+- Lifecycle stage
+
+JSON outputs mirrors a single item shape from `/api/v1/projects/<project>/features/` response schema.
 
 ## 2. Mutation
 
@@ -29,52 +49,52 @@ $ flagsmith flag delete checkout-v2
 Error: provide either one of --segment, --identifier.
 ```
 
+Toggling the state, setting the value, and managing segment/identity overrides is handled by `flagsmith flag update`.
+
 Toggle the environment default:
 
 ```
-$ flagsmith flag enable checkout-v2
+$ flagsmith flag update --enable checkout-v2 --yes
 ✓ Enabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
-$ flagsmith flag disable checkout-v2
+<INSERT FLAG OUTPUT HERE>
+$ flagsmith flag update --disable checkout-v2 --yes
 ✓ Disabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
-$ flagsmith flag toggle checkout-v2
-✓ Enabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
-$ flagsmith flag toggle checkout-v2
-✓ Disabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+<INSERT FLAG OUTPUT HERE>
 ```
 
- Set environment default value:
+Set environment default value:
 
- ```
- $ flagsmith flag set-value checkout-v2 green
+```
+$ flagsmith flag update checkout-v2 --value green --yes
  ✓ Set checkout-v2 to "green" in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
- ```
+<INSERT FLAG OUTPUT HERE>
+```
 
 Set an identity override and enable its flag:
 
 ```
-$ flagsmith flag set-value checkout-v2 orange --identifier id123 --enable
+$ flagsmith flag update checkout-v2 --value orange --identifier id123 --enable --yes
  ✓ Set checkout-v2 to "orange" for identifier id123 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
  ✓ Enabled checkout-v2 for identifier id123 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+ <INSERT FLAG OUTPUT HERE>
 ```
 
+Delete a segment override:
 
+```
+$ flagsmith flag delete checkout-v2 --segment 12 --yes
+ ✓ Deleted checkout-v2 override for segment Premium users (12) in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+```
 
-Flags are read from the SDK API (`sdkApiUrl` + environment key, resolved per [04-project-config.md](04-project-config.md)), so `flag` read commands need only an environment key — no Admin API credentials. Note: this will break server-side only features.
+All flag mutations are powered by `/api/experiments/environments/{environment_key}/update-flag-v2/`. 
 
-| Field | Meaning |
-|---|---|
-| `name` | Feature name; the identifier. Unique per project, case-insensitive. |
-| `enabled` | On/off in the environment. |
-| `value` | The feature-state value: a string, number, boolean, or null. |
-| `type` | `STANDARD` or `MULTIVARIATE`. |
+## 3. `flag list`
 
-## 2. `flag list`
+A list human result view includes:
+- Feature name
+- Feature type (standard/multivariate)
+- Flag state (on/off)
+- Flag value
+- Lifecycle stage
 
-`GET {sdkApiUrl}/api/v1/flags/` with `X-Environment-Key`, returning every flag as a bare array.
-
-Human output is a `NAME` / `ENABLED` / `VALUE` table with a count; JSON is the array as returned. This is the minimum viable command to make the nudge from `flagsmith init` real.
-
-## 3. Later
-
-- `flag get <name>`.
-- `flag enable`/`disable`/`set <name> <value>` — mutate a feature state. Should consume the experimental endpoint.
+JSON outputs mirrors `/api/v1/projects/<project>/features/` response shape, bar the pagination envelope. 
