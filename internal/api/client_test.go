@@ -55,13 +55,23 @@ func TestUsersMe(t *testing.T) {
 }
 
 func TestProjects(t *testing.T) {
-	t.Run("paginated response", func(t *testing.T) {
-		// Given
+	t.Run("follows pagination across pages", func(t *testing.T) {
+		// Given two pages: page 1's "next" points at a bogus host to prove
+		// getList reuses apiURL and only carries over next's path + query.
+		var hits int
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
 			if r.URL.Path != "/api/v1/projects/" || r.URL.Query().Get("organisation") != "3" {
 				t.Errorf("request = %s %s", r.URL.Path, r.URL.RawQuery)
 			}
-			fmt.Fprint(w, `{"count":1,"results":[{"id":101,"name":"acme-api"}]}`)
+			switch r.URL.Query().Get("page") {
+			case "", "1":
+				fmt.Fprint(w, `{"count":2,"next":"http://pagination.invalid/api/v1/projects/?organisation=3&page=2","results":[{"id":101,"name":"acme-api"}]}`)
+			case "2":
+				fmt.Fprint(w, `{"count":2,"next":null,"results":[{"id":202,"name":"beta"}]}`)
+			default:
+				t.Errorf("unexpected page = %q", r.URL.Query().Get("page"))
+			}
 		}))
 		defer srv.Close()
 
@@ -72,7 +82,14 @@ func TestProjects(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(projects) != 1 || projects[0].ID != 101 || projects[0].Name != "acme-api" {
+		if hits != 2 {
+			t.Errorf("server hits = %d, want 2 (both pages fetched)", hits)
+		}
+		if len(projects) != 2 {
+			t.Fatalf("projects = %+v, want 2 items across both pages", projects)
+		}
+		if projects[0].ID != 101 || projects[0].Name != "acme-api" ||
+			projects[1].ID != 202 || projects[1].Name != "beta" {
 			t.Errorf("projects = %+v", projects)
 		}
 	})
@@ -554,4 +571,50 @@ func TestUpdateMVOption(t *testing.T) {
 	if body.Feature != 5 {
 		t.Errorf("body.feature = %d, want 5 (must be sent to avoid the backend KeyError)", body.Feature)
 	}
+}
+
+func TestEdgeIdentityUUID(t *testing.T) {
+	// Edge (DynamoDB) identities paginate differently from page-number
+	// endpoints: no "count", and "next" carries a base64 last_evaluated_key
+	// cursor rather than a page number. getList must follow it the same way.
+	// The wanted identity sits on page two — the exact case that used to
+	// report "not found".
+	t.Run("follows last_evaluated_key pagination to a match on page two", func(t *testing.T) {
+		// Given
+		var hits int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
+			if r.URL.Path != "/api/v1/environments/env.key/edge-identities/" {
+				t.Errorf("path = %q", r.URL.Path)
+			}
+			if got := r.URL.Query().Get("q"); got != `"user@acme.io"` {
+				t.Errorf("q = %q, want the quoted exact-match query", got)
+			}
+			switch r.URL.Query().Get("last_evaluated_key") {
+			case "":
+				// First page: no count, cursor points at a bogus host to
+				// prove getList reuses apiURL and only carries path + query.
+				fmt.Fprint(w, `{"next":"http://edge.invalid/api/v1/environments/env.key/edge-identities/?q=%22user%40acme.io%22&last_evaluated_key=eyJpZCI6MX0=","previous":null,"results":[{"identity_uuid":"uuid-1","identifier":"someone-else"}]}`)
+			case "eyJpZCI6MX0=":
+				fmt.Fprint(w, `{"next":null,"previous":null,"results":[{"identity_uuid":"uuid-2","identifier":"user@acme.io"}]}`)
+			default:
+				t.Errorf("unexpected last_evaluated_key = %q", r.URL.Query().Get("last_evaluated_key"))
+			}
+		}))
+		defer srv.Close()
+
+		// When
+		uuid, found, err := EdgeIdentityUUID(context.Background(), srv.URL, APIKey("k.s"), "env.key", "user@acme.io")
+
+		// Then
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hits != 2 {
+			t.Errorf("server hits = %d, want 2 (cursor followed to page two)", hits)
+		}
+		if !found || uuid != "uuid-2" {
+			t.Errorf("uuid = %q, found = %v, want uuid-2, true", uuid, found)
+		}
+	})
 }

@@ -142,23 +142,49 @@ func DeleteOrganisation(ctx context.Context, apiURL string, auth Auth, orgID int
 }
 
 // getList decodes a list endpoint that may respond paginated
-// ({count, results}) or as a bare array.
+// ({count, next, results}) or as a bare array. Paginated responses are
+// followed across every page via the DRF "next" link, so callers always see
+// the full result set regardless of page size. The "next" URL's scheme and
+// host are discarded and only its path + query are reused against apiURL,
+// which keeps pagination working behind proxies that rewrite the host.
 func getList(ctx context.Context, apiURL, path string, auth Auth, out any) error {
-	var raw json.RawMessage
-	if err := get(ctx, apiURL, path, auth, &raw); err != nil {
+	var items []json.RawMessage
+	for path != "" {
+		var raw json.RawMessage
+		if err := get(ctx, apiURL, path, auth, &raw); err != nil {
+			return err
+		}
+		trimmed := bytes.TrimLeft(raw, " \t\r\n")
+		if len(trimmed) > 0 && trimmed[0] == '[' {
+			// Bare array: not paginated, decode directly.
+			return json.Unmarshal(raw, out)
+		}
+		var page struct {
+			Next    string            `json:"next"`
+			Results []json.RawMessage `json:"results"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil {
+			return err
+		}
+		items = append(items, page.Results...)
+
+		if page.Next == "" {
+			break
+		}
+		next, err := url.Parse(page.Next)
+		if err != nil {
+			return fmt.Errorf("parsing pagination next link %q: %w", page.Next, err)
+		}
+		path = next.Path
+		if next.RawQuery != "" {
+			path += "?" + next.RawQuery
+		}
+	}
+	combined, err := json.Marshal(items)
+	if err != nil {
 		return err
 	}
-	trimmed := bytes.TrimLeft(raw, " \t\r\n")
-	if len(trimmed) > 0 && trimmed[0] == '[' {
-		return json.Unmarshal(raw, out)
-	}
-	var page struct {
-		Results json.RawMessage `json:"results"`
-	}
-	if err := json.Unmarshal(raw, &page); err != nil {
-		return err
-	}
-	return json.Unmarshal(page.Results, out)
+	return json.Unmarshal(combined, out)
 }
 
 // responseError builds an error from a non-2xx response. It surfaces the API's
