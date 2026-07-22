@@ -10,9 +10,9 @@ A project-level definition for flags.
 
 ```
 $ flagsmith feature list
-NAME          ID   TYPE          VALUE   DESCRIPTION
-checkout-v2   88   standard      green   New checkout flow
-banner-copy   91   multivariate  hello   A/B banner text
+NAME          ID   TYPE          DEFAULT VALUE   DESCRIPTION
+checkout-v2   88   standard      green           New checkout flow
+banner-copy   91   multivariate  hello           A/B banner text
 
 2 features
 ```
@@ -21,21 +21,21 @@ Archived features are hidden by default; `--include-archived` shows them:
 
 ```
 $ flagsmith feature list --include-archived
-NAME          ID   TYPE          VALUE   DESCRIPTION
-checkout-v2   88   standard      green   New checkout flow
-banner-copy   91   multivariate  hello   A/B banner text
-legacy-copy   40   standard      old     Retired (archived)
+NAME          ID   TYPE          DEFAULT VALUE   DESCRIPTION
+checkout-v2   88   standard      green           New checkout flow
+banner-copy   91   multivariate  hello           A/B banner text
+legacy-copy   40   standard      old             Retired (archived)
 
 3 features
 ```
 
 ```
 $ flagsmith feature get banner-copy
-Feature      banner-copy (91)
-Description  A/B banner text
-Type         multivariate
-Value        hello
-Enabled      false
+Feature        banner-copy (91)
+Description    A/B banner text
+Type           multivariate
+Default value  hello
+Enabled        false
 
 Variants
   VALUE      WEIGHT  KEY   ID
@@ -50,7 +50,7 @@ $ flagsmith feature get banner-copy --json
   "name": "banner-copy",
   "description": "A/B banner text",
   "type": "multivariate",
-  "value": "hello",
+  "default_value": "hello",
   "enabled": false,
   "variants": [
     { "id": 201, "value": "headline", "weight": 30, "key": "hero" },
@@ -123,7 +123,7 @@ $ flagsmith feature delete checkout-v2 --yes
 - Referenced by name or numeric id (see 05-crud.md); project from context.
 - Archived features are hidden from `list` by default. `--include-archived` drops the filter to show them alongside active ones. Archive/unarchive a feature with `update --archive`/`--unarchive`.
 - Create/update asymmetry: `name`, `--value`, and `--enabled` are set at create and immutable afterwards. `update` changes description, tags, and archive only. Per-environment value/state changes go through `flag update` (07-flags.md).
-- Value typing: `--value` is the feature's default seed, stored as a plain string. Variant `--value` is typed. Variant type is inferred from provided value, overridable with `--type string|integer|boolean`.
+- Value typing: `--value` (alias `--default-value`) is the feature's default seed, stored as a plain string. Variant `--value` is typed. Variant type is inferred from provided value, overridable with `--type string|integer|boolean`.
 - Weights: variant weights are percentage allocations and must sum to ≤ 100; the remainder is the control (the feature's own `--value`).
 - Variants are managed granularly. `create` accepts inline `--variants` (keyless). Afterwards use `feature variant add|update|delete <feature> <id|key>`: a project-level variant's id anchors every environment/segment/identity weight override. `feature update` does not touch variants.
 - Type is automatic: a feature becomes `multivariate` when it has variants and reverts to `standard` when the last is removed.

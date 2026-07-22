@@ -3125,7 +3125,7 @@ func TestFeatureList(t *testing.T) {
 		if f.lastFeatArch != "false" {
 			t.Errorf("is_archived param = %q, want false", f.lastFeatArch)
 		}
-		for _, want := range []string{"NAME", "ID", "TYPE", "VALUE", "DESCRIPTION", "checkout-v2", "banner-copy", "multivariate", "green", "2 features"} {
+		for _, want := range []string{"NAME", "ID", "TYPE", "DEFAULT VALUE", "DESCRIPTION", "checkout-v2", "banner-copy", "multivariate", "green", "2 features"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want %q", out, want)
 			}
@@ -3193,7 +3193,7 @@ func TestFeatureGet(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &v); err != nil {
 			t.Fatalf("parsing %q: %v", out, err)
 		}
-		if v["type"] != "multivariate" || v["value"] != "hello" {
+		if v["type"] != "multivariate" || v["default_value"] != "hello" {
 			t.Errorf("feature = %+v", v)
 		}
 		variants := v["variants"].([]any)
@@ -3218,6 +3218,17 @@ func TestFeatureCreate(t *testing.T) {
 		}
 		if !strings.Contains(out, "Created feature checkout-3") {
 			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--default-value is an alias for --value", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "create", "aliased", "--default-value", "teal"); err != nil {
+			t.Fatalf("feature create --default-value: %v", err)
+		}
+		if f.lastFeatureBody["initial_value"] != "teal" {
+			t.Errorf("body = %+v, want initial_value teal", f.lastFeatureBody)
 		}
 	})
 

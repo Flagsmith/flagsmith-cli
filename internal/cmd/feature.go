@@ -35,7 +35,7 @@ type featureView struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description,omitempty"`
 	Type        string        `json:"type"`
-	Value       any           `json:"value"`
+	Value       any           `json:"default_value"`
 	Enabled     bool          `json:"enabled"`
 	Variants    []variantView `json:"variants,omitempty"`
 }
@@ -111,7 +111,7 @@ var featureListCmd = &cobra.Command{
 			for i, v := range views {
 				rows[i] = []string{v.Name, strconv.Itoa(v.ID), v.Type, truncateValue(valueDisplay(v.Value)), v.Description}
 			}
-			if err := output.Table(w, []string{"NAME", "ID", "TYPE", "VALUE", "DESCRIPTION"}, rows); err != nil {
+			if err := output.Table(w, []string{"NAME", "ID", "TYPE", "DEFAULT VALUE", "DESCRIPTION"}, rows); err != nil {
 				return err
 			}
 			fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "feature", "features"))
@@ -150,7 +150,7 @@ func renderFeature(cmd *cobra.Command, f *api.Feature) error {
 			{Label: "Feature", Value: fmt.Sprintf("%s (%d)", f.Name, f.ID)},
 			{Label: "Description", Value: f.Description},
 			{Label: "Type", Value: view.Type},
-			{Label: "Value", Value: valueDisplay(view.Value)},
+			{Label: "Default value", Value: valueDisplay(view.Value)},
 			{Label: "Enabled", Value: strconv.FormatBool(view.Enabled)},
 		}); err != nil {
 			return err
@@ -191,7 +191,7 @@ var featureCreateCmd = &cobra.Command{
 			return err
 		}
 		in := api.FeatureWrite{Name: args[0]}
-		if cmd.Flags().Changed("value") {
+		if cmd.Flags().Changed("value") || cmd.Flags().Changed("default-value") {
 			in.InitialValue = &featureValueFlag
 		}
 		if cmd.Flags().Changed("description") {
@@ -534,6 +534,8 @@ var featureVariantDeleteCmd = &cobra.Command{
 func init() {
 	featureListCmd.Flags().BoolVar(&featureIncludeArchived, "include-archived", false, "include archived features")
 	featureCreateCmd.Flags().StringVar(&featureValueFlag, "value", "", "the feature's default value")
+	featureCreateCmd.Flags().StringVar(&featureValueFlag, "default-value", "", "alias for --value")
+	_ = featureCreateCmd.Flags().MarkHidden("default-value")
 	featureCreateCmd.Flags().BoolVar(&featureEnabledFlag, "enabled", false, "enable the feature by default")
 	featureCreateCmd.Flags().StringVar(&featureDescriptionFlag, "description", "", "feature description")
 	featureCreateCmd.Flags().StringVar(&featureVariantsFlag, "variants", "", "multivariate variants: @file, -, or inline JSON")
