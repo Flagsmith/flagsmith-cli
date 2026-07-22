@@ -71,9 +71,21 @@ $ flagsmith environment key delete Production 14 --yes
 ✓ Deleted server-side key 14 from Production
 ```
 
+### Environment document
+
+The environment document is the offline-evaluation payload server-side SDKs consume (all flags, segments, and overrides for the environment). `document` outputs it as JSON, so it composes with `--jq`:
+
+```
+$ flagsmith environment document Production > env.json
+
+$ flagsmith environment document --jq '.feature_states | length'
+14
+```
+
 ## 2. Behaviour
 
 - Referenced by their client-side `api_key`, not an integer id. The CLI addresses them by key and resolves names to a key within the project. `list` is scoped to the project and shows the key; `--json` mirrors the API's fields.
 - Server-side keys are secret. `environment key create` returns a `ser.` key shown once; there is no rotate — replace by creating a new key and deleting the old, or disabling via its `active` field. These are the secrets for `FLAGSMITH_ENVIRONMENT_KEY` server-side use (see 03-authentication.md).
 - Settings are flat flags (`--description`, `--hide-disabled-flags`, `--allow-client-traits`, `--banner-text`, …).
+- `environment document <env>` fetches the full environment document via `GET .../{api_key}/document/` (admin auth, `VIEW_ENVIRONMENT`) and prints it verbatim as JSON — always JSON, since it is a document, not a table.
 - Permission errors are surfaced as-is.
