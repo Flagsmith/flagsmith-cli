@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -126,6 +127,90 @@ func TestCreateProject(t *testing.T) {
 	}
 	if p.ID != 999 || p.Name != "acme-web" {
 		t.Errorf("project = %+v", p)
+	}
+}
+
+func TestApiMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"detail", `{"detail":"You do not have permission to perform this action."}`, "You do not have permission to perform this action."},
+		{"field array", `{"project":["The project has reached the maximum allowed segments limit."]}`, "The project has reached the maximum allowed segments limit."},
+		{"field string", `{"project":"The Project has reached the maximum allowed features limit."}`, "The Project has reached the maximum allowed features limit."},
+		{"multiple fields sorted", `{"b":["two"],"a":["one"]}`, "one; two"},
+		{"empty", ``, ""},
+		{"non-object", `["nope"]`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := apiMessage([]byte(tt.body)); got != tt.want {
+				t.Errorf("apiMessage = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsPlanGated(t *testing.T) {
+	// The exact backend detail strings a plan limit surfaces (see the research
+	// in errors.go): if these stop matching, plan hints silently disappear.
+	gated := []string{
+		"Please upgrade your plan to add additional seats/users",
+		"The Project has reached the maximum allowed features limit.",
+		"The project has reached the maximum allowed segments limit.",
+		"The environment has reached the maximum allowed segments overrides limit.",
+		"Joining the organisation has failed due to a payment issue. Please contact your organisation's admin.",
+		"Organisation has no subscription",
+	}
+	for _, m := range gated {
+		if !isPlanGated(m) {
+			t.Errorf("isPlanGated(%q) = false, want true", m)
+		}
+	}
+	notGated := []string{
+		"You do not have permission to perform this action.",
+		"Not found.",
+		"",
+	}
+	for _, m := range notGated {
+		if isPlanGated(m) {
+			t.Errorf("isPlanGated(%q) = true, want false", m)
+		}
+	}
+}
+
+func TestResponseErrorPlanGated(t *testing.T) {
+	// A plan-limit 400 surfaces as ErrPlanGated carrying the API's own reason.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"project":["The project has reached the maximum allowed segments limit."]}`)
+	}))
+	defer srv.Close()
+
+	_, err := CreateProject(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "x", "organisation": 1})
+	if !errors.Is(err, ErrPlanGated) {
+		t.Fatalf("err = %v, want ErrPlanGated", err)
+	}
+	if !strings.Contains(err.Error(), "maximum allowed segments limit") {
+		t.Errorf("err = %q, want the API reason", err)
+	}
+}
+
+func TestResponseErrorSurfacesDetail(t *testing.T) {
+	// A non-plan error still surfaces the API's message rather than a bare status.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"detail":"Invalid organisation."}`)
+	}))
+	defer srv.Close()
+
+	_, err := CreateProject(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "x"})
+	if err == nil || errors.Is(err, ErrPlanGated) {
+		t.Fatalf("err = %v, want a plain error", err)
+	}
+	if !strings.Contains(err.Error(), "Invalid organisation.") {
+		t.Errorf("err = %q, want the API detail", err)
 	}
 }
 

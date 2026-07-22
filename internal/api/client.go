@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -43,7 +45,7 @@ func get(ctx context.Context, apiURL, path string, auth Auth, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s returned %s", u, resp.Status)
+		return responseError(http.MethodGet, u, resp)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
@@ -159,6 +161,85 @@ func getList(ctx context.Context, apiURL, path string, auth Auth, out any) error
 	return json.Unmarshal(page.Results, out)
 }
 
+// responseError builds an error from a non-2xx response. It surfaces the API's
+// own message (DRF returns {"detail": "..."} or {"field": ["..."]}) and
+// classifies plan/subscription limits as ErrPlanGated. Flagsmith ships no
+// machine-readable error code, so plan limits can only be told apart from RBAC
+// denials by their message text — see planGatedPhrases. As a result, 403 caps
+// (project count, experiment tier) are wire-identical to permission denials and
+// intentionally not classified here.
+func responseError(method, u string, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	msg := apiMessage(body)
+	if isPlanGated(msg) {
+		return &planGated{msg: msg}
+	}
+	if msg != "" {
+		return fmt.Errorf("%s %s returned %s: %s", method, u, resp.Status, msg)
+	}
+	return fmt.Errorf("%s %s returned %s", method, u, resp.Status)
+}
+
+// apiMessage extracts a human-readable message from a DRF error body, or "".
+func apiMessage(body []byte) string {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 || body[0] != '{' {
+		return ""
+	}
+	var detail struct {
+		Detail string `json:"detail"`
+	}
+	if json.Unmarshal(body, &detail) == nil && detail.Detail != "" {
+		return detail.Detail
+	}
+	// Field-keyed validation errors: {"field": ["msg"]} or {"field": "msg"}.
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(body, &fields) != nil {
+		return ""
+	}
+	var msgs []string
+	for _, raw := range fields {
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			msgs = append(msgs, s)
+			continue
+		}
+		var arr []string
+		if json.Unmarshal(raw, &arr) == nil {
+			msgs = append(msgs, arr...)
+		}
+	}
+	sort.Strings(msgs) // map order is random; keep the message stable
+	return strings.Join(msgs, "; ")
+}
+
+// planGatedPhrases are substrings (matched case-insensitively) that mark a
+// message as a plan/subscription limit rather than an RBAC denial. Derived from
+// the backend's exception detail strings; the only signal available on the wire.
+var planGatedPhrases = []string{
+	"upgrade your plan",   // seat limit
+	"maximum allowed",     // feature / segment / segment-override caps
+	"payment issue",       // Chargebee seat / API-usage upgrade failures
+	"has no subscription", // organisation with no paid subscription
+}
+
+func isPlanGated(msg string) bool {
+	msg = strings.ToLower(msg)
+	for _, p := range planGatedPhrases {
+		if strings.Contains(msg, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// planGated is an ErrPlanGated-matching error whose message is the API's own
+// reason, so the user sees the specific limit and the CLI adds a pricing hint.
+type planGated struct{ msg string }
+
+func (e *planGated) Error() string        { return e.msg }
+func (e *planGated) Is(target error) bool { return target == ErrPlanGated }
+
 // sendJSON issues a request with an optional JSON body and decodes an optional
 // JSON response. It treats any non-2xx status as an error.
 func sendJSON(ctx context.Context, apiURL, method, path string, auth Auth, body, out any) error {
@@ -185,7 +266,7 @@ func sendJSON(ctx context.Context, apiURL, method, path string, auth Auth, body,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%s %s returned %s", method, u, resp.Status)
+		return responseError(method, u, resp)
 	}
 	if out != nil {
 		return json.NewDecoder(resp.Body).Decode(out)
@@ -507,7 +588,7 @@ func DeleteSegmentOverride(ctx context.Context, apiURL string, auth Auth, enviro
 		return fmt.Errorf("no override exists for segment %d", segmentID)
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("POST %s returned %s", u, resp.Status)
+		return responseError(http.MethodPost, u, resp)
 	}
 	return nil
 }
@@ -515,6 +596,12 @@ func DeleteSegmentOverride(ctx context.Context, apiURL string, auth Auth, enviro
 // ErrWorkflowGated is returned when update-flag-v2 refuses because the
 // environment has change-request workflows enabled.
 var ErrWorkflowGated = fmt.Errorf("this environment uses change-request workflows; direct updates are disabled")
+
+// ErrPlanGated is returned when the API refuses an action because the
+// organisation's subscription plan does not permit it (a tier or quota limit),
+// as opposed to an ordinary RBAC permission denial. Wraps the server's detail
+// message so the reason still reaches the user; the CLI adds a pricing hint.
+var ErrPlanGated = errors.New("not available on your organisation's current plan")
 
 // UpdateFlag applies an environment-default change via the experimental
 // update-flag-v2 endpoint, keyed by the environment's client-side key. The
@@ -540,7 +627,7 @@ func UpdateFlag(ctx context.Context, apiURL string, auth Auth, environmentKey st
 		return ErrWorkflowGated
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("POST %s returned %s", u, resp.Status)
+		return responseError(http.MethodPost, u, resp)
 	}
 	return nil
 }

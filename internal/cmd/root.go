@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -99,12 +100,54 @@ func nudgeInit(cmd *cobra.Command) bool {
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		var usage *usageError
-		if errors.As(err, &usage) {
-			os.Exit(2)
+	prepare()
+	// ExecuteC returns the command that actually ran (or failed to parse), so a
+	// usageError can print the nearest command's usage — not the root's.
+	cmd, err := rootCmd.ExecuteC()
+	if err == nil {
+		return
+	}
+	os.Exit(reportError(cmd, err))
+}
+
+// reportError renders an error's hint and, for incorrect-input (exit 2) errors,
+// the nearest command's usage. cobra has already printed "Error: <message>";
+// this appends the hint then the usage block, and returns the process exit
+// code. Split from Execute so tests can exercise the rendering without os.Exit.
+func reportError(cmd *cobra.Command, err error) int {
+	errOut := cmd.ErrOrStderr()
+	if hint := hintFor(err); hint != "" {
+		fmt.Fprintln(errOut, hint)
+	}
+	var usage *usageError
+	if errors.As(err, &usage) {
+		fmt.Fprint(errOut, cmd.UsageString())
+		return 2
+	}
+	return 1
+}
+
+// prepare wires up one-time behaviour that must see every registered command:
+// incorrect positional-argument counts become usageErrors, so cobra's own
+// arg-validation failures print usage and exit 2 like our other usage errors.
+// Idempotent — safe to call before each invocation (Execute and tests).
+var prepareOnce sync.Once
+
+func prepare() {
+	prepareOnce.Do(func() { usageArgs(rootCmd) })
+}
+
+func usageArgs(cmd *cobra.Command) {
+	if inner := cmd.Args; inner != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			if err := inner(c, args); err != nil {
+				return &usageError{msg: err.Error()}
+			}
+			return nil
 		}
-		os.Exit(1)
+	}
+	for _, sub := range cmd.Commands() {
+		usageArgs(sub)
 	}
 }
 
@@ -130,6 +173,13 @@ func init() {
 		"filter JSON output through a jq expression (implies --json)")
 
 	rootCmd.SetUsageTemplate(singleLineUsage(rootCmd.UsageTemplate()))
+
+	// Flag-parse failures (unknown flag, missing value, bad value) are incorrect
+	// usage: exit 2 and print the command's usage. Set on the root; cobra walks
+	// up to it for every subcommand.
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &usageError{msg: err.Error()}
+	})
 
 	// Hidden aliases: --api for --api-url, --no-input for --yes.
 	rootCmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {

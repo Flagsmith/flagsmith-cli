@@ -45,7 +45,10 @@ const (
 )
 
 var (
-	ErrNotLoggedIn = errors.New("not logged in — run `flagsmith login`")
+	// ErrNotLoggedIn means no credential is available for the instance. The
+	// recovery ("run flagsmith login") is attached as a hint at the command
+	// layer (see internal/cmd hintFor), not baked into the message.
+	ErrNotLoggedIn = errors.New("not logged in")
 
 	// ErrKeychainUnavailable means the OS keychain could not be used. Login
 	// sessions are stored only in the keychain; when it is unavailable the

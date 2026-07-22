@@ -95,7 +95,11 @@ func run(stdin string, args ...string) (string, error) {
 	rootCmd.SetErr(buf)
 	rootCmd.SetIn(strings.NewReader(stdin))
 	rootCmd.SetArgs(args)
-	err := rootCmd.Execute()
+	prepare()
+	cmd, err := rootCmd.ExecuteC()
+	if err != nil {
+		reportError(cmd, err) // append hint + usage to buf, mirroring Execute
+	}
 	return buf.String(), err
 }
 
