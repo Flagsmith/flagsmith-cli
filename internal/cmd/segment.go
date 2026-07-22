@@ -55,9 +55,9 @@ type segmentView struct {
 	Rules       *ruleView `json:"rules"`
 }
 
-// segmentContext resolves the credential and project every segment command
+// projectScopedContext resolves the credential and project a project-scoped command
 // needs (segments are project-scoped; no environment).
-func segmentContext(cmd *cobra.Command) (*activeCredential, int, error) {
+func projectScopedContext(cmd *cobra.Command) (*activeCredential, int, error) {
 	pc, err := applyContext(cmd)
 	if err != nil {
 		return nil, 0, err
@@ -77,7 +77,7 @@ var segmentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List segments in the current project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := segmentContext(cmd)
+		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ var segmentGetCmd = &cobra.Command{
 	Short: "Show a segment and its rule tree",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := segmentContext(cmd)
+		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ var segmentCreateCmd = &cobra.Command{
 		if !cmd.Flags().Changed("rules") {
 			return usageErrorf("a segment needs a rule tree — pass --rules")
 		}
-		cred, projectID, err := segmentContext(cmd)
+		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ var segmentUpdateCmd = &cobra.Command{
 	Short: "Update a segment's rule tree or fields",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := segmentContext(cmd)
+		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -216,7 +216,7 @@ var segmentDeleteCmd = &cobra.Command{
 	Short: "Delete a segment",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := segmentContext(cmd)
+		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
 			return err
 		}

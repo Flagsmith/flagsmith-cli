@@ -27,6 +27,8 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith segment create <name> --rules @rule.json` — create a segment (`--description`, `--feature`).
 - `flagsmith segment update <segment>` — replace the rules (`--rules`), description, or feature.
 - `flagsmith segment delete <segment>` — delete a segment.
+- `flagsmith feature list` — list project features (`--include-archived`).
+- `flagsmith feature get <feature>` — show a feature and its variants.
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

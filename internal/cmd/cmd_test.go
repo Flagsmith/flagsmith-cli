@@ -115,6 +115,7 @@ type fakeInstance struct {
 	features       map[string][]map[string]any // projectID -> features list; nil → default
 	lastFeatEnv    string                      // last ?environment= seen by /features/
 	lastFeatSeg    string                      // last ?segment= seen by /features/
+	lastFeatArch   string                      // last ?is_archived= seen by /features/
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
 	lastDelete     map[string]any              // last delete-segment-override request body
@@ -305,7 +306,19 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Lock()
 		f.lastFeatEnv = r.URL.Query().Get("environment")
 		f.lastFeatSeg = r.URL.Query().Get("segment")
+		f.lastFeatArch = r.URL.Query().Get("is_archived")
 		items := f.features[r.PathValue("project")]
+		if arch := r.URL.Query().Get("is_archived"); arch != "" {
+			want := arch == "true"
+			filtered := []map[string]any{}
+			for _, it := range items {
+				a, _ := it["is_archived"].(bool)
+				if a == want {
+					filtered = append(filtered, it)
+				}
+			}
+			items = filtered
+		}
 		f.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{
 			"count": len(items), "next": nil, "previous": nil, "results": items,
@@ -526,6 +539,28 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// Feature retrieve (feature CRUD; the list route above is shared with flags).
+	mux.HandleFunc("GET /api/v1/projects/{project}/features/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		var found map[string]any
+		for _, it := range f.features[r.PathValue("project")] {
+			if it["id"] == id {
+				found = it
+				break
+			}
+		}
+		f.mu.Unlock()
+		if found == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(found)
 	})
 	// Segments: list, retrieve, create, update, delete.
 	mux.HandleFunc("GET /api/v1/projects/{project}/segments/", func(w http.ResponseWriter, r *http.Request) {
@@ -2911,6 +2946,99 @@ func TestSegmentDelete(t *testing.T) {
 	if !strings.Contains(out, "Deleted segment us-adults (42)") {
 		t.Errorf("output = %q", out)
 	}
+}
+
+// withFeatures loads project 101 with feature-CRUD-shaped features (one
+// multivariate, one archived), replacing the flag-oriented defaults.
+func withFeatures(f *fakeInstance) {
+	f.features["101"] = []map[string]any{
+		{"id": 88, "name": "checkout-v2", "type": "STANDARD", "description": "New checkout flow",
+			"initial_value": "green", "default_enabled": true, "is_archived": false,
+			"multivariate_options": []any{}},
+		{"id": 91, "name": "banner-copy", "type": "MULTIVARIATE", "description": "A/B banner text",
+			"initial_value": "hello", "default_enabled": false, "is_archived": false,
+			"multivariate_options": []any{
+				map[string]any{"id": 201, "type": "unicode", "string_value": "headline", "default_percentage_allocation": 30, "key": "hero"},
+				map[string]any{"id": 202, "type": "unicode", "string_value": "subhead", "default_percentage_allocation": 70, "key": "sub"},
+			}},
+		{"id": 40, "name": "legacy-copy", "type": "STANDARD", "description": "Retired",
+			"initial_value": "old", "default_enabled": false, "is_archived": true,
+			"multivariate_options": []any{}},
+	}
+}
+
+func TestFeatureList(t *testing.T) {
+	t.Run("hides archived by default", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "list")
+		if err != nil {
+			t.Fatalf("feature list: %v\noutput: %s", err, out)
+		}
+		if f.lastFeatArch != "false" {
+			t.Errorf("is_archived param = %q, want false", f.lastFeatArch)
+		}
+		for _, want := range []string{"NAME", "ID", "TYPE", "VALUE", "DESCRIPTION", "checkout-v2", "banner-copy", "multivariate", "green", "2 features"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if strings.Contains(out, "legacy-copy") {
+			t.Errorf("output = %q, should hide archived", out)
+		}
+	})
+
+	t.Run("--include-archived shows archived", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "list", "--include-archived")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.lastFeatArch != "" {
+			t.Errorf("is_archived param = %q, want unset", f.lastFeatArch)
+		}
+		if !strings.Contains(out, "legacy-copy") || !strings.Contains(out, "3 features") {
+			t.Errorf("output = %q, want legacy-copy and 3 features", out)
+		}
+	})
+}
+
+func TestFeatureGet(t *testing.T) {
+	t.Run("multivariate detail with variants", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "get", "banner-copy") // by name
+		if err != nil {
+			t.Fatalf("feature get: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"banner-copy (91)", "multivariate", "hello", "Variants", "headline", "30", "hero", "subhead"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("--json curated shape", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "get", "91", "--json") // by id
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if v["type"] != "multivariate" || v["value"] != "hello" {
+			t.Errorf("feature = %+v", v)
+		}
+		variants := v["variants"].([]any)
+		v0 := variants[0].(map[string]any)
+		if v0["value"] != "headline" || v0["weight"] != float64(30) || v0["key"] != "hero" {
+			t.Errorf("variant = %+v", v0)
+		}
+	})
 }
 
 func TestAPI(t *testing.T) {

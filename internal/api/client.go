@@ -211,6 +211,49 @@ type Feature struct {
 	CodeReferencesCounts []CodeReferenceCount `json:"code_references_counts"`
 	EnvironmentState     *FeatureState        `json:"environment_feature_state"`
 	SegmentState         *FeatureState        `json:"segment_feature_state"`
+
+	// Project-level definition fields (feature CRUD).
+	InitialValue        *string              `json:"initial_value"`
+	DefaultEnabled      bool                 `json:"default_enabled"`
+	IsArchived          bool                 `json:"is_archived"`
+	MultivariateOptions []MultivariateOption `json:"multivariate_options"`
+}
+
+// MultivariateOption is a variant of a multivariate feature. The value is a
+// typed struct (type is "unicode"/"int"/"bool"); default_percentage_allocation
+// is the variant's weight.
+type MultivariateOption struct {
+	ID                          int     `json:"id,omitempty"`
+	Type                        string  `json:"type,omitempty"`
+	StringValue                 *string `json:"string_value,omitempty"`
+	IntegerValue                *int    `json:"integer_value,omitempty"`
+	BooleanValue                *bool   `json:"boolean_value,omitempty"`
+	DefaultPercentageAllocation float64 `json:"default_percentage_allocation"`
+	Key                         string  `json:"key,omitempty"`
+	Feature                     int     `json:"feature,omitempty"`
+}
+
+// ProjectFeatures lists a project's features (no environment context).
+// includeArchived controls whether archived features are returned.
+func ProjectFeatures(ctx context.Context, apiURL string, auth Auth, projectID int, includeArchived bool) ([]Feature, error) {
+	var features []Feature
+	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
+	if !includeArchived {
+		path += "?is_archived=false"
+	}
+	if err := getList(ctx, apiURL, path, auth, &features); err != nil {
+		return nil, err
+	}
+	return features, nil
+}
+
+// GetFeature fetches one project feature (with its multivariate options).
+func GetFeature(ctx context.Context, apiURL string, auth Auth, projectID, featureID int) (*Feature, error) {
+	f := &Feature{}
+	if err := get(ctx, apiURL, fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID), auth, f); err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 // CodeReferences totals the per-repository code reference counts.
