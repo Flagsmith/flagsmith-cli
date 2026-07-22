@@ -3135,6 +3135,22 @@ func TestFeatureList(t *testing.T) {
 		}
 	})
 
+	t.Run("truncates a long value", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		long := strings.Repeat("x", 200)
+		f.features["101"] = []map[string]any{{
+			"id": 1, "name": "blob", "type": "STANDARD", "initial_value": long,
+			"is_archived": false, "multivariate_options": []any{},
+		}}
+		out, err := run("", "feature", "list")
+		if err != nil {
+			t.Fatalf("feature list: %v", err)
+		}
+		if !strings.Contains(out, "…") || strings.Contains(out, long) {
+			t.Errorf("output = %q, want the long value truncated", out)
+		}
+	})
+
 	t.Run("--include-archived shows archived", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withFeatures(f)

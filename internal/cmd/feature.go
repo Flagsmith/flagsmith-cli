@@ -109,7 +109,7 @@ var featureListCmd = &cobra.Command{
 			}
 			rows := make([][]string, len(views))
 			for i, v := range views {
-				rows[i] = []string{v.Name, strconv.Itoa(v.ID), v.Type, valueDisplay(v.Value), v.Description}
+				rows[i] = []string{v.Name, strconv.Itoa(v.ID), v.Type, truncateValue(valueDisplay(v.Value)), v.Description}
 			}
 			if err := output.Table(w, []string{"NAME", "ID", "TYPE", "VALUE", "DESCRIPTION"}, rows); err != nil {
 				return err
