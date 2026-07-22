@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -247,6 +248,50 @@ var environmentCloneCmd = &cobra.Command{
 	},
 }
 
+var environmentDocumentCmd = &cobra.Command{
+	Use:   "document [environment]",
+	Short: "Output the environment document (JSON for local SDK evaluation)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pc, err := applyContext(cmd)
+		if err != nil {
+			return err
+		}
+		cred, err := resolveCredential(cmd.Context())
+		if err != nil {
+			return err
+		}
+		projectID, err := resolveProjectID(cmd, pc, cred)
+		if err != nil {
+			return err
+		}
+		var apiKey string
+		if len(args) == 1 {
+			ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+			if err != nil {
+				return err
+			}
+			apiKey = ref.APIKey
+		} else {
+			env, err := resolveEnvironment(cmd, pc, cred, projectID)
+			if err != nil {
+				return err
+			}
+			apiKey = env.APIKey
+		}
+		doc, err := api.EnvironmentDocument(cmd.Context(), apiURL, cred.auth, apiKey)
+		if err != nil {
+			return err
+		}
+		var parsed any
+		if err := json.Unmarshal(doc, &parsed); err != nil {
+			return err
+		}
+		// A document is always JSON; --jq composes.
+		return output.Render(cmd.OutOrStdout(), parsed, output.Options{JSON: true, JQ: jqFlag}, nil)
+	},
+}
+
 var environmentKeyCmd = &cobra.Command{
 	Use:   "key",
 	Short: "Manage an environment's server-side SDK keys",
@@ -366,6 +411,6 @@ func init() {
 		c.Flags().StringVar(&envBannerTextFlag, "banner-text", "", "dashboard banner text")
 	}
 	environmentUpdateCmd.Flags().StringVar(&envNameFlag, "name", "", "rename the environment")
-	environmentCmd.AddCommand(environmentListCmd, environmentGetCmd, environmentCreateCmd, environmentUpdateCmd, environmentDeleteCmd, environmentCloneCmd)
+	environmentCmd.AddCommand(environmentListCmd, environmentGetCmd, environmentCreateCmd, environmentUpdateCmd, environmentDeleteCmd, environmentCloneCmd, environmentDocumentCmd)
 	rootCmd.AddCommand(environmentCmd)
 }

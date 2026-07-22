@@ -427,6 +427,19 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("GET /api/v1/environments/{api_key}/document/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"api_key": r.PathValue("api_key"),
+			"feature_states": []any{
+				map[string]any{"feature": map[string]any{"name": "onboarding"}},
+				map[string]any{"feature": map[string]any{"name": "checkout"}},
+			},
+		})
+	})
 	// Server-side SDK keys sub-resource.
 	mux.HandleFunc("GET /api/v1/environments/{api_key}/api-keys/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
@@ -3801,6 +3814,50 @@ func TestEnvironment(t *testing.T) {
 		}
 		if !strings.Contains(out, "Cloned Production into Production Copy") {
 			t.Errorf("output = %q", out)
+		}
+	})
+}
+
+func TestEnvironmentDocument(t *testing.T) {
+	t.Run("by name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "document", "Production")
+		if err != nil {
+			t.Fatalf("environment document: %v\noutput: %s", err, out)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if doc["api_key"] != "K2mVsGdXhZ8kQqZ9pJmNbJ" || len(doc["feature_states"].([]any)) != 2 {
+			t.Errorf("doc = %+v", doc)
+		}
+	})
+
+	t.Run("no argument uses the context environment", func(t *testing.T) {
+		f := flagUpdateEnv(t) // config environment = WqXhZk8sVY3dGgTqZ9pJmN (Development)
+		withEnvironments(f)
+		out, err := run("", "environment", "document")
+		if err != nil {
+			t.Fatalf("environment document: %v\noutput: %s", err, out)
+		}
+		var doc map[string]any
+		json.Unmarshal([]byte(out), &doc)
+		if doc["api_key"] != "WqXhZk8sVY3dGgTqZ9pJmN" {
+			t.Errorf("doc api_key = %v, want the context environment", doc["api_key"])
+		}
+	})
+
+	t.Run("--jq filters the document", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "document", "Production", "--jq", ".feature_states | length")
+		if err != nil {
+			t.Fatalf("environment document --jq: %v", err)
+		}
+		if strings.TrimSpace(out) != "2" {
+			t.Errorf("out = %q, want 2", out)
 		}
 	})
 }

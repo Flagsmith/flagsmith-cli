@@ -627,6 +627,16 @@ func CloneEnvironment(ctx context.Context, apiURL string, auth Auth, apiKey stri
 	return e, nil
 }
 
+// EnvironmentDocument fetches the environment document (the offline-evaluation
+// payload) as raw JSON, via the admin document action.
+func EnvironmentDocument(ctx context.Context, apiURL string, auth Auth, apiKey string) (json.RawMessage, error) {
+	var doc json.RawMessage
+	if err := get(ctx, apiURL, "/api/v1/environments/"+apiKey+"/document/", auth, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
 // EnvironmentAPIKey is a server-side (ser.) SDK key for an environment. Key is
 // returned in full only on create.
 type EnvironmentAPIKey struct {
