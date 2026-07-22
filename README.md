@@ -40,4 +40,5 @@ flagsmith flag list    # list the flags in the current environment
 [Authentication](docs/design/03-authentication.md) ·
 [Project config](docs/design/04-project-config.md) ·
 [CRUD conventions](docs/design/05-crud.md) ·
-[Flags](docs/design/06-flags.md)
+[API](docs/design/06-api.md) ·
+[Flags](docs/design/07-flags.md)

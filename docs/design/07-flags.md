@@ -30,7 +30,7 @@ A detail human result view includes:
 - Number of code references
 - Lifecycle stage
 
-JSON output is a curated flag shape, not the raw features-endpoint item: the environment state is hoisted to the top level (`enabled`, `value`) alongside the metadata the human view shows, dropping dashboard-only noise. Human and JSON output stay in lockstep.
+JSON output includes the above curated field list:
 
 ```json
 {
