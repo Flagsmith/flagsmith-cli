@@ -35,7 +35,7 @@ func initPrompts(cmd *cobra.Command) {
 }
 
 func promptIO(cmd *cobra.Command) prompt.IO {
-	return prompt.IO{In: promptIn, Out: cmd.OutOrStdout(), RawTTY: rawTerminal()}
+	return prompt.IO{In: promptIn, ErrOut: cmd.ErrOrStderr(), RawTTY: rawTerminal()}
 }
 
 // The prompt helpers take the flag that supplies the same value without a

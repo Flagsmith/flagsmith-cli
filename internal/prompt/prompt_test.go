@@ -9,7 +9,7 @@ import (
 
 func testIO(input string) (IO, *bytes.Buffer) {
 	out := &bytes.Buffer{}
-	return IO{In: bufio.NewReader(strings.NewReader(input)), Out: out, RawTTY: false}, out
+	return IO{In: bufio.NewReader(strings.NewReader(input)), ErrOut: out, RawTTY: false}, out
 }
 
 func TestSelectAccessible(t *testing.T) {

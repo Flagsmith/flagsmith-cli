@@ -12,13 +12,20 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-// IO carries a prompt's streams. RawTTY selects the full-terminal UI and
-// must only be true when stdin is a real terminal; otherwise huh runs in
-// accessible mode reading In and writing Out. On EOF, accessible prompts
-// terminate with their default value — they never hang (02).
+// IO carries a prompt's streams. A prompt is a diagnostic, not a result, so
+// its UI goes to ErrOut (stderr) — never the data stream. stdout is reserved
+// for the parseable result (02: stdout is data; stderr is prompts, progress
+// and warnings), so routing a prompt to stdout would corrupt a redirected
+// result such as `flagsmith ... --json > out.json`. The type deliberately has
+// no data writer: a prompt structurally cannot reach stdout.
+//
+// RawTTY selects the full-terminal UI and must only be true when stdin is a
+// real terminal; otherwise huh runs in accessible mode reading In and writing
+// ErrOut. On EOF, accessible prompts terminate with their default value —
+// they never hang (02).
 type IO struct {
 	In     *bufio.Reader
-	Out    io.Writer
+	ErrOut io.Writer
 	RawTTY bool
 }
 
@@ -38,7 +45,7 @@ func run(streams IO, field huh.Field) error {
 	form := huh.NewForm(huh.NewGroup(field)).
 		WithAccessible(!streams.RawTTY)
 	if !streams.RawTTY {
-		form = form.WithInput(unbuffered{streams.In}).WithOutput(streams.Out)
+		form = form.WithInput(unbuffered{streams.In}).WithOutput(streams.ErrOut)
 	}
 	err := form.Run()
 	if errors.Is(err, huh.ErrUserAborted) {

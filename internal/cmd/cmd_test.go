@@ -1923,6 +1923,41 @@ func TestPromptSelfGuardsWithoutTTY(t *testing.T) {
 	}
 }
 
+func TestInteractivePromptsGoToStderr(t *testing.T) {
+	// Given — an interactive init that must prompt for org, project and
+	// environment (multi-org forces every prompt to fire).
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
+	f.projects["7"] = []map[string]any{{"id": 202, "name": "beta-app"}}
+	f.envs["202"] = []map[string]any{
+		{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"},
+	}
+	tempRepo(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	fakeTTY(t)
+
+	// When — answer the prompts (org 2, project 1, environment 1)
+	stdout, stderr, err := runSplit("2\n1\n1\n", "init", "--api-url", f.srv.URL)
+
+	// Then — a prompt is a diagnostic, not a result: its UI must land on
+	// stderr, never stdout, so `flagsmith ... --json > out.json` can't be
+	// corrupted by the prompt written before the JSON (02: stdout is data,
+	// stderr is prompts/progress/warnings). A fresh init writes no data
+	// result, so stdout must be empty.
+	if err != nil {
+		t.Fatalf("init: %v\nstderr: %s", err, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty — prompt UI must not leak into the data stream", stdout)
+	}
+	for _, label := range []string{"Organisation", "Project", "Default environment"} {
+		if !strings.Contains(stderr, label) {
+			t.Errorf("stderr = %q, want prompt label %q", stderr, label)
+		}
+	}
+}
+
 func TestInitInteractiveMultiOrg(t *testing.T) {
 	// Given
 	isolateStorage(t)
