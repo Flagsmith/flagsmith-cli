@@ -139,6 +139,18 @@ type fakeInstance struct {
 	lastFeatureBody map[string]any // last feature create/update body
 	nextMVID        int
 	lastMVBody      map[string]any // last mv-options create/update body
+	lastOrgBody     map[string]any // last organisation create/update body
+	lastProjectBody map[string]any // last project create/update body
+	nextOrgID       int
+}
+
+func (f *fakeInstance) orgByID(id int) map[string]any {
+	for _, o := range f.orgs {
+		if o["id"] == id {
+			return o
+		}
+	}
+	return nil
 }
 
 // featureByID finds a stored feature item by id (caller holds the lock).
@@ -205,6 +217,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		nextSegmentID: 100,
 		nextFeatureID: 900,
 		nextMVID:      300,
+		nextOrgID:     20,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -554,6 +567,74 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		if fv, ok := body["feature"].(float64); ok {
 			delete(f.edgeOverrides[ident], int(fv))
 		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Organisation CRUD (the list route above handles GET /organisations/).
+	mux.HandleFunc("GET /api/v1/organisations/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		o := f.orgByID(id)
+		f.mu.Unlock()
+		if o == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(o)
+	})
+	mux.HandleFunc("POST /api/v1/organisations/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastOrgBody = body
+		f.nextOrgID++
+		body["id"] = f.nextOrgID
+		f.orgs = append(f.orgs, body)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(body)
+	})
+	mux.HandleFunc("PATCH /api/v1/organisations/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastOrgBody = body
+		o := f.orgByID(id)
+		if o != nil {
+			for k, v := range body {
+				o[k] = v
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(o)
+	})
+	mux.HandleFunc("DELETE /api/v1/organisations/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		kept := f.orgs[:0:0]
+		for _, o := range f.orgs {
+			if o["id"] != id {
+				kept = append(kept, o)
+			}
+		}
+		f.orgs = kept
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -3388,6 +3469,95 @@ func TestFeatureVariant(t *testing.T) {
 		_, err := run("", "feature", "variant", "delete", "banner-copy", "nope", "--yes")
 		if err == nil || !strings.Contains(err.Error(), "nope") {
 			t.Errorf("err = %v, want a not-found error", err)
+		}
+	})
+}
+
+func TestOrganisation(t *testing.T) {
+	t.Run("list", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
+		out, err := run("", "organisation", "list")
+		if err != nil {
+			t.Fatalf("organisation list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"NAME", "ID", "Acme", "3", "Beta", "7", "2 organisations"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("org alias", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "org", "list")
+		if err != nil || !strings.Contains(out, "Acme") {
+			t.Errorf("org alias: (%q, %v)", out, err)
+		}
+	})
+
+	t.Run("get by name", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "organisation", "get", "Acme")
+		if err != nil {
+			t.Fatalf("organisation get: %v", err)
+		}
+		if !strings.Contains(out, "Acme (3)") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--json mirrors the API fields", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme", "force_2fa": true, "webhook_notification_email": "x@y.com"}}
+		out, err := run("", "organisation", "get", "3", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if v["force_2fa"] != true || v["webhook_notification_email"] != "x@y.com" {
+			t.Errorf("org = %+v, want the raw API fields preserved", v)
+		}
+	})
+
+	t.Run("create", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		out, err := run("", "organisation", "create", "Acme Labs", "--force-2fa")
+		if err != nil {
+			t.Fatalf("organisation create: %v", err)
+		}
+		if f.lastOrgBody["name"] != "Acme Labs" || f.lastOrgBody["force_2fa"] != true {
+			t.Errorf("body = %+v", f.lastOrgBody)
+		}
+		if !strings.Contains(out, "Created organisation Acme Labs") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		if _, err := run("", "organisation", "update", "Acme", "--webhook-email", "a@b.com"); err != nil {
+			t.Fatalf("organisation update: %v", err)
+		}
+		if f.lastOrgBody["webhook_notification_email"] != "a@b.com" {
+			t.Errorf("body = %+v", f.lastOrgBody)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		out, err := run("", "organisation", "delete", "Acme", "--yes")
+		if err != nil {
+			t.Fatalf("organisation delete: %v", err)
+		}
+		if f.orgByID(3) != nil {
+			t.Errorf("org 3 still present")
+		}
+		if !strings.Contains(out, "Deleted organisation Acme (3)") {
+			t.Errorf("output = %q", out)
 		}
 	})
 }

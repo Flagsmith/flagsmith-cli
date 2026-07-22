@@ -64,10 +64,38 @@ func UsersMe(ctx context.Context, apiURL string, auth Auth) (*User, error) {
 	return user, nil
 }
 
-// Organisation is the subset of GET /api/v1/organisations/ the CLI shows.
+// rawItem holds the raw API JSON for a resource so JSON output can mirror the
+// server's full field set rather than a curated subset. Embedders capture it in
+// UnmarshalJSON and return it from MarshalJSON.
+type rawItem struct {
+	raw json.RawMessage
+}
+
+// Organisation carries the id/name the CLI needs plus the raw API item, so
+// JSON output mirrors the server's full field set.
 type Organisation struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+	rawItem
+}
+
+func (o Organisation) MarshalJSON() ([]byte, error) {
+	if len(o.raw) > 0 {
+		return o.raw, nil
+	}
+	type alias Organisation
+	return json.Marshal(alias(o))
+}
+
+func (o *Organisation) UnmarshalJSON(b []byte) error {
+	type alias Organisation
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*o = Organisation(a)
+	o.raw = append([]byte(nil), b...)
+	return nil
 }
 
 func Organisations(ctx context.Context, apiURL string, auth Auth) ([]Organisation, error) {
@@ -76,6 +104,39 @@ func Organisations(ctx context.Context, apiURL string, auth Auth) ([]Organisatio
 		return nil, err
 	}
 	return orgs, nil
+}
+
+// GetOrganisation fetches one organisation.
+func GetOrganisation(ctx context.Context, apiURL string, auth Auth, orgID int) (*Organisation, error) {
+	o := &Organisation{}
+	if err := get(ctx, apiURL, fmt.Sprintf("/api/v1/organisations/%d/", orgID), auth, o); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+// CreateOrganisation creates an organisation from a flat field body.
+func CreateOrganisation(ctx context.Context, apiURL string, auth Auth, body map[string]any) (*Organisation, error) {
+	o := &Organisation{}
+	if err := sendJSON(ctx, apiURL, http.MethodPost, "/api/v1/organisations/", auth, body, o); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+// UpdateOrganisation patches an organisation's fields.
+func UpdateOrganisation(ctx context.Context, apiURL string, auth Auth, orgID int, body map[string]any) (*Organisation, error) {
+	o := &Organisation{}
+	path := fmt.Sprintf("/api/v1/organisations/%d/", orgID)
+	if err := sendJSON(ctx, apiURL, http.MethodPatch, path, auth, body, o); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+// DeleteOrganisation removes an organisation.
+func DeleteOrganisation(ctx context.Context, apiURL string, auth Auth, orgID int) error {
+	return sendJSON(ctx, apiURL, http.MethodDelete, fmt.Sprintf("/api/v1/organisations/%d/", orgID), auth, nil, nil)
 }
 
 // getList decodes a list endpoint that may respond paginated
