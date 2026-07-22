@@ -180,7 +180,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if ambiguous {
 			organisationID = org.ID
 		}
-		created, err := api.CreateProject(ctx, apiURL, cred.auth, createProjectFlag, org.ID)
+		created, err := api.CreateProject(ctx, apiURL, cred.auth, map[string]any{"name": createProjectFlag, "organisation": org.ID})
 		if err != nil {
 			return fmt.Errorf("creating project: %w", err)
 		}
@@ -231,7 +231,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			created, err := api.CreateProject(ctx, apiURL, cred.auth, name, org.ID)
+			created, err := api.CreateProject(ctx, apiURL, cred.auth, map[string]any{"name": name, "organisation": org.ID})
 			if err != nil {
 				return fmt.Errorf("creating project: %w", err)
 			}

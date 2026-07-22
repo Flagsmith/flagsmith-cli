@@ -153,6 +153,18 @@ func (f *fakeInstance) orgByID(id int) map[string]any {
 	return nil
 }
 
+// projectByID finds a stored project across all orgs (caller holds the lock).
+func (f *fakeInstance) projectByID(id int) map[string]any {
+	for _, list := range f.projects {
+		for _, p := range list {
+			if p["id"] == id {
+				return p
+			}
+		}
+	}
+	return nil
+}
+
 // featureByID finds a stored feature item by id (caller holds the lock).
 func (f *fakeInstance) featureByID(project string, id int) map[string]any {
 	for _, it := range f.features[project] {
@@ -175,7 +187,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 	f := &fakeInstance{
 		orgs: []map[string]any{{"id": 3, "name": "Acme"}},
 		projects: map[string][]map[string]any{
-			"3": {{"id": 101, "name": "acme-api"}},
+			"3": {{"id": 101, "name": "acme-api", "organisation": 3}},
 		},
 		envs: map[string][]map[string]any{
 			"101": {
@@ -273,7 +285,14 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
-		projects := f.projects[r.URL.Query().Get("organisation")]
+		var projects []map[string]any
+		if org := r.URL.Query().Get("organisation"); org != "" {
+			projects = f.projects[org]
+		} else {
+			for _, list := range f.projects {
+				projects = append(projects, list...)
+			}
+		}
 		f.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{"count": len(projects), "results": projects})
 	})
@@ -282,21 +301,23 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		var body struct {
-			Name         string `json:"name"`
-			Organisation int    `json:"organisation"`
-		}
+		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
+		name, _ := body["name"].(string)
 		f.mu.Lock()
-		f.created = append(f.created, body.Name)
-		f.mu.Unlock()
-		f.mu.Lock()
+		f.lastProjectBody = body
+		f.created = append(f.created, name)
+		proj := map[string]any{"id": 999, "name": name}
+		if org, ok := body["organisation"].(float64); ok {
+			proj["organisation"] = int(org)
+			f.projects[strconv.Itoa(int(org))] = append(f.projects[strconv.Itoa(int(org))], proj)
+		}
 		if f.envs["999"] == nil {
 			f.envs["999"] = []map[string]any{} // created projects start empty
 		}
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{"id": 999, "name": body.Name})
+		json.NewEncoder(w).Encode(proj)
 	})
 	mux.HandleFunc("GET /api/v1/environments/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
@@ -395,9 +416,54 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		id, _ := strconv.Atoi(r.PathValue("project"))
 		f.mu.Lock()
-		edge := f.useEdge
+		resp := map[string]any{"id": id, "name": "acme-api", "organisation": 3}
+		if p := f.projectByID(id); p != nil {
+			resp = map[string]any{}
+			for k, v := range p {
+				resp[k] = v
+			}
+		}
+		resp["use_edge_identities"] = f.useEdge
 		f.mu.Unlock()
-		json.NewEncoder(w).Encode(map[string]any{"id": id, "name": "acme-api", "use_edge_identities": edge})
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("PATCH /api/v1/projects/{project}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("project"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastProjectBody = body
+		p := f.projectByID(id)
+		if p != nil {
+			for k, v := range body {
+				p[k] = v
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(p)
+	})
+	mux.HandleFunc("DELETE /api/v1/projects/{project}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("project"))
+		f.mu.Lock()
+		for org, list := range f.projects {
+			kept := list[:0:0]
+			for _, p := range list {
+				if p["id"] != id {
+					kept = append(kept, p)
+				}
+			}
+			f.projects[org] = kept
+		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	})
 	// Core identities: identifier lookup and create.
 	mux.HandleFunc("GET /api/v1/environments/{env}/identities/", func(w http.ResponseWriter, r *http.Request) {
@@ -3469,6 +3535,94 @@ func TestFeatureVariant(t *testing.T) {
 		_, err := run("", "feature", "variant", "delete", "banner-copy", "nope", "--yes")
 		if err == nil || !strings.Contains(err.Error(), "nope") {
 			t.Errorf("err = %v, want a not-found error", err)
+		}
+	})
+}
+
+func TestProject(t *testing.T) {
+	t.Run("list shows the organisation name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
+		f.projects["3"] = []map[string]any{
+			{"id": 101, "name": "acme-api", "organisation": 3},
+			{"id": 102, "name": "acme-web", "organisation": 3},
+		}
+		out, err := run("", "project", "list")
+		if err != nil {
+			t.Fatalf("project list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"NAME", "ID", "ORGANISATION", "acme-api", "101", "Acme", "2 projects"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("get by name", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "project", "get", "acme-api")
+		if err != nil {
+			t.Fatalf("project get: %v", err)
+		}
+		if !strings.Contains(out, "acme-api (101)") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--json mirrors the API fields", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.projects["3"] = []map[string]any{
+			{"id": 101, "name": "acme-api", "organisation": 3, "hide_disabled_flags": true},
+		}
+		out, err := run("", "project", "get", "101", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if v["hide_disabled_flags"] != true {
+			t.Errorf("project = %+v, want the raw API fields preserved", v)
+		}
+	})
+
+	t.Run("create requires an organisation", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
+		out, err := run("", "project", "create", "acme-mobile", "--organisation", "Acme")
+		if err != nil {
+			t.Fatalf("project create: %v", err)
+		}
+		if f.lastProjectBody["name"] != "acme-mobile" || f.lastProjectBody["organisation"] != float64(3) {
+			t.Errorf("body = %+v", f.lastProjectBody)
+		}
+		if !strings.Contains(out, "Created project acme-mobile") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("update settings", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		if _, err := run("", "project", "update", "acme-api", "--hide-disabled-flags"); err != nil {
+			t.Fatalf("project update: %v", err)
+		}
+		if f.lastProjectBody["hide_disabled_flags"] != true {
+			t.Errorf("body = %+v", f.lastProjectBody)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		out, err := run("", "project", "delete", "acme-api", "--yes")
+		if err != nil {
+			t.Fatalf("project delete: %v", err)
+		}
+		if f.projectByID(101) != nil {
+			t.Errorf("project 101 still present")
+		}
+		if !strings.Contains(out, "Deleted project acme-api (101)") {
+			t.Errorf("output = %q", out)
 		}
 	})
 }

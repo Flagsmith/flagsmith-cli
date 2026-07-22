@@ -193,11 +193,33 @@ func sendJSON(ctx context.Context, apiURL, method, path string, auth Auth, body,
 	return nil
 }
 
-// Project is the subset of the projects API the CLI uses.
+// Project carries the fields the CLI needs plus the raw API item, so JSON
+// output mirrors the server's full field set.
 type Project struct {
 	ID                int    `json:"id"`
 	Name              string `json:"name"`
+	Organisation      int    `json:"organisation"`
 	UseEdgeIdentities bool   `json:"use_edge_identities"`
+	rawItem
+}
+
+func (p *Project) UnmarshalJSON(b []byte) error {
+	type alias Project
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*p = Project(a)
+	p.raw = append([]byte(nil), b...)
+	return nil
+}
+
+func (p Project) MarshalJSON() ([]byte, error) {
+	if len(p.raw) > 0 {
+		return p.raw, nil
+	}
+	type alias Project
+	return json.Marshal(alias(p))
 }
 
 // GetProject fetches a single project — notably its use_edge_identities flag,
@@ -210,40 +232,44 @@ func GetProject(ctx context.Context, apiURL string, auth Auth, projectID int) (*
 	return p, nil
 }
 
+// Projects lists a project's projects. organisationID 0 lists all accessible
+// projects (the endpoint's organisation filter is optional).
 func Projects(ctx context.Context, apiURL string, auth Auth, organisationID int) ([]Project, error) {
 	var projects []Project
-	path := fmt.Sprintf("/api/v1/projects/?organisation=%d", organisationID)
+	path := "/api/v1/projects/"
+	if organisationID != 0 {
+		path += fmt.Sprintf("?organisation=%d", organisationID)
+	}
 	if err := getList(ctx, apiURL, path, auth, &projects); err != nil {
 		return nil, err
 	}
 	return projects, nil
 }
 
-func CreateProject(ctx context.Context, apiURL string, auth Auth, name string, organisationID int) (*Project, error) {
-	body, err := json.Marshal(map[string]any{"name": name, "organisation": organisationID})
-	if err != nil {
+// CreateProject creates a project from a flat field body (name + organisation
+// required).
+func CreateProject(ctx context.Context, apiURL string, auth Auth, body map[string]any) (*Project, error) {
+	p := &Project{}
+	if err := sendJSON(ctx, apiURL, http.MethodPost, "/api/v1/projects/", auth, body, p); err != nil {
 		return nil, err
 	}
-	u := strings.TrimRight(apiURL, "/") + "/api/v1/projects/"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
-	if err != nil {
+	return p, nil
+}
+
+// UpdateProject patches a project's fields (organisation is immutable and
+// ignored if sent).
+func UpdateProject(ctx context.Context, apiURL string, auth Auth, projectID int, body map[string]any) (*Project, error) {
+	p := &Project{}
+	path := fmt.Sprintf("/api/v1/projects/%d/", projectID)
+	if err := sendJSON(ctx, apiURL, http.MethodPatch, path, auth, body, p); err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	auth.Apply(req)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("POST %s returned %s", u, resp.Status)
-	}
-	project := &Project{}
-	if err := json.NewDecoder(resp.Body).Decode(project); err != nil {
-		return nil, err
-	}
-	return project, nil
+	return p, nil
+}
+
+// DeleteProject removes a project.
+func DeleteProject(ctx context.Context, apiURL string, auth Auth, projectID int) error {
+	return sendJSON(ctx, apiURL, http.MethodDelete, fmt.Sprintf("/api/v1/projects/%d/", projectID), auth, nil, nil)
 }
 
 // FeatureState is a feature's state in one environment: its on/off and typed

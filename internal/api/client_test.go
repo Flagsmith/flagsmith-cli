@@ -118,7 +118,7 @@ func TestCreateProject(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	p, err := CreateProject(context.Background(), srv.URL, Bearer("t"), "acme-web", 3)
+	p, err := CreateProject(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "acme-web", "organisation": 3})
 
 	// Then
 	if err != nil {
