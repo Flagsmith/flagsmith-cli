@@ -10,13 +10,33 @@ The natural human identifier for `flag` is the feature name:
 
 ```
 $ flagsmith flag get checkout-v2
+Feature              checkout-v2
+Description          Checkout redesign
+Type                 standard
+State                on
+Value                green
+Segment overrides    1
+Identity overrides   1
+Code references      0
+Lifecycle stage      new
 ```
 
 To get a segment/identity override, use flags:
 
 ```
 $ flagsmith flag get checkout-v2 --identifier id123
-$ flagsmith flag get checkout-v2 --segment 12
+Feature      checkout-v2
+Type         standard
+Identifier   id123
+State        on
+Value        orange
+
+$ flagsmith flag get checkout-v2 --segment 1147496
+Feature   checkout-v2
+Type      standard
+Segment   1147496
+State     on
+Value     orange
 ```
 
 A detail human result view includes:
@@ -36,13 +56,13 @@ JSON output includes the above curated field list:
 {
   "feature": "checkout-v2",
   "type": "standard",
-  "description": "…",
+  "description": "Checkout redesign",
   "enabled": true,
   "value": "green",
-  "segment_overrides": 2,
-  "identity_overrides": 0,
-  "code_references": 3,
-  "lifecycle_stage": "live"
+  "segment_overrides": 1,
+  "identity_overrides": 1,
+  "code_references": 0,
+  "lifecycle_stage": "new"
 }
 ```
 
@@ -54,15 +74,13 @@ Flags always exist for environments, so a bare `flag create` / `flag delete` wou
 
 ```
 $ flagsmith flag create brand-new-feature
-Did you mean flagsmith feature create brand-new-feature?
-
-Usage:
-  ...
+Error: flags exist per environment, so there is nothing to create.
+To create the feature itself, use `flagsmith feature create brand-new-feature`.
 ```
 
 ```
 $ flagsmith flag delete checkout-v2
-Error: provide either one of --segment, --identifier.
+Error: provide --segment <id> or --identifier <id> to delete an override
 ```
 
 Toggling the state, setting the value, and managing segment/identity overrides is handled by `flagsmith flag update`.
@@ -71,35 +89,64 @@ Toggle the environment default:
 
 ```
 $ flagsmith flag update --enable checkout-v2 --yes
-✓ Enabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
-<INSERT FLAG OUTPUT HERE>
+✓ Enabled checkout-v2 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature              checkout-v2
+Description          Checkout redesign
+Type                 standard
+State                on
+Value                green
+Segment overrides    1
+Identity overrides   1
+Code references      0
+Lifecycle stage      new
+
 $ flagsmith flag update --disable checkout-v2 --yes
-✓ Disabled checkout-v2 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
-<INSERT FLAG OUTPUT HERE>
+✓ Disabled checkout-v2 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature              checkout-v2
+Description          Checkout redesign
+Type                 standard
+State                off
+Value                green
+Segment overrides    1
+Identity overrides   1
+Code references      0
+Lifecycle stage      new
 ```
 
 Set environment default value:
 
 ```
 $ flagsmith flag update checkout-v2 --value green --yes
- ✓ Set checkout-v2 to "green" in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
-<INSERT FLAG OUTPUT HERE>
+✓ Set checkout-v2 to "green" in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature              checkout-v2
+Description          Checkout redesign
+Type                 standard
+State                off
+Value                green
+Segment overrides    1
+Identity overrides   1
+Code references      0
+Lifecycle stage      new
 ```
 
 Set an identity override and enable its flag:
 
 ```
 $ flagsmith flag update checkout-v2 --value orange --identifier id123 --enable --yes
- ✓ Set checkout-v2 to "orange" for identifier id123 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
- ✓ Enabled checkout-v2 for identifier id123 in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
- <INSERT FLAG OUTPUT HERE>
+✓ Set checkout-v2 to "orange" for identifier id123 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+✓ Enabled checkout-v2 for identifier id123 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature      checkout-v2
+Type         standard
+Identifier   id123
+State        on
+Value        orange
 ```
 
 Delete a segment override:
 
 ```
-$ flagsmith flag delete checkout-v2 --segment 12 --yes
- ✓ Deleted checkout-v2 override for segment Premium users (12) in environment Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+$ flagsmith flag delete checkout-v2 --segment 1147496 --yes
+✓ Deleted checkout-v2 override for segment 1147496 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
 ```
 
 All flag mutations are powered by `/api/experiments/environments/{environment_key}/update-flag-v2/`. 
@@ -120,20 +167,20 @@ JSON output is a bare array of the curated flag shape (see §1), one entry per f
 `--segment <id>` lists the flags overridden for that segment, showing each override's state instead of the environment default (over the same features endpoint, `?environment=…&segment=<id>`). Only flags with an override for the segment appear, and lifecycle stage is dropped — it is an environment-level concept:
 
 ```
-$ flagsmith flag list --segment 12
-NAME         TYPE      STATE  VALUE
-checkout-v2  standard  on     orange
+$ flagsmith flag list --segment 1147496
+NAME          TYPE       STATE   VALUE
+checkout-v2   standard   on      orange
 
 1 flag
 ```
 
 ```
-$ flagsmith flag list --segment 12 --json
+$ flagsmith flag list --segment 1147496 --json
 [
   {
     "feature": "checkout-v2",
     "type": "standard",
-    "segment": 12,
+    "segment": 1147496,
     "enabled": true,
     "value": "orange"
   }

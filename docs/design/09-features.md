@@ -10,9 +10,9 @@ A project-level definition for flags.
 
 ```
 $ flagsmith feature list
-NAME          ID   TYPE          DEFAULT VALUE   DESCRIPTION
-checkout-v2   88   standard      green           New checkout flow
-banner-copy   91   multivariate  hello           A/B banner text
+NAME          ID       TYPE           DEFAULT VALUE   DESCRIPTION
+checkout-v2   233884   standard       green           New checkout flow
+banner-copy   233885   multivariate   hello           A/B banner text
 
 2 features
 ```
@@ -21,40 +21,50 @@ Archived features are hidden by default; `--include-archived` shows them:
 
 ```
 $ flagsmith feature list --include-archived
-NAME          ID   TYPE          DEFAULT VALUE   DESCRIPTION
-checkout-v2   88   standard      green           New checkout flow
-banner-copy   91   multivariate  hello           A/B banner text
-legacy-copy   40   standard      old             Retired (archived)
+NAME          ID       TYPE           DEFAULT VALUE   DESCRIPTION
+checkout-v2   233884   standard       green           New checkout flow
+banner-copy   233885   multivariate   hello           A/B banner text
+legacy-copy   233887   standard       old             Retired banner copy
 
 3 features
 ```
 
 ```
 $ flagsmith feature get banner-copy
-Feature        banner-copy (91)
-Description    A/B banner text
-Type           multivariate
-Default value  hello
-Enabled        false
+Feature         banner-copy (233885)
+Description     A/B banner text
+Type            multivariate
+Default value   hello
+Enabled         false
 
 Variants
-  VALUE      WEIGHT  KEY   ID
-  headline   30      hero  201
-  subhead    70      sub   202
+  VALUE     WEIGHT  KEY   ID
+  headline  30      hero  30011
+  subhead   50      sub   30010
 ```
 
 ```
 $ flagsmith feature get banner-copy --json
 {
-  "id": 91,
+  "id": 233885,
   "name": "banner-copy",
   "description": "A/B banner text",
   "type": "multivariate",
   "default_value": "hello",
   "enabled": false,
   "variants": [
-    { "id": 201, "value": "headline", "weight": 30, "key": "hero" },
-    { "id": 202, "value": "subhead", "weight": 70, "key": "sub" }
+    {
+      "id": 30011,
+      "value": "headline",
+      "weight": 30,
+      "key": "hero"
+    },
+    {
+      "id": 30010,
+      "value": "subhead",
+      "weight": 50,
+      "key": "sub"
+    }
   ]
 }
 ```
@@ -63,22 +73,36 @@ $ flagsmith feature get banner-copy --json
 
 ```
 $ flagsmith feature create checkout-v2 --value green --description "New checkout flow"
-✓ Created feature checkout-v2 (88)
-<feature output>
+✓ Created feature checkout-v2 (233884)
+Feature         checkout-v2 (233884)
+Description     New checkout flow
+Type            standard
+Default value   green
+Enabled         false
 ```
 
-Multivariate: variants inline (a JSON array from a file, `-`, or a string):
+Multivariate: variants inline (a JSON array from a file, `-`, or a string). They're
+created keyless — add keys later with `feature variant`:
 
 ```
 $ cat variants.json
 [
   { "value": "headline", "weight": 30 },
-  { "value": "subhead",  "weight": 70 }
+  { "value": "subhead",  "weight": 50 }
 ]
 
 $ flagsmith feature create banner-copy --value hello --variants @variants.json
-✓ Created feature banner-copy (91)
-<feature output>
+✓ Created feature banner-copy (233885)
+Feature         banner-copy (233885)
+Description     
+Type            multivariate
+Default value   hello
+Enabled         false
+
+Variants
+  VALUE     WEIGHT  KEY  ID
+  headline  30           30011
+  subhead   50           30010
 ```
 
 ### Update
@@ -87,8 +111,12 @@ Only the mutable fields — description, tags, archive. `name`, `--value`, and `
 
 ```
 $ flagsmith feature update checkout-v2 --description "Checkout redesign" --archive
-✓ Updated feature checkout-v2 (88)
-<feature output>
+✓ Updated feature checkout-v2 (233884)
+Feature         checkout-v2 (233884)
+Description     Checkout redesign
+Type            standard
+Default value   green
+Enabled         false
 ```
 
 ### Variants
@@ -97,30 +125,30 @@ Ongoing variant edits are granular (by id or key), so per-environment weight ove
 
 ```
 $ flagsmith feature variant list banner-copy
-VALUE     WEIGHT  KEY   ID
-headline  30      hero  201
-subhead   70      sub   202
+VALUE      WEIGHT   KEY    ID
+headline   30       hero   30011
+subhead    50       sub    30010
 
 $ flagsmith feature variant add banner-copy --value cta --weight 20 --key button
-✓ Added variant cta (203) to banner-copy
+✓ Added variant cta (30012) to banner-copy
 
-$ flagsmith feature variant update banner-copy hero --weight 40
-✓ Updated variant headline (201)
+$ flagsmith feature variant update banner-copy hero --weight 25
+✓ Updated variant headline (30011)
 
 $ flagsmith feature variant delete banner-copy hero --yes
-✓ Deleted variant headline (201) from banner-copy
+✓ Deleted variant headline (30011) from banner-copy
 ```
 
 ### Delete
 
 ```
 $ flagsmith feature delete checkout-v2 --yes
-✓ Deleted feature checkout-v2 (88)
+✓ Deleted feature checkout-v2 (233884)
 ```
 
 ## 2. Behaviour
 
-- Referenced by name or numeric id (see 05-crud.md); project from context.
+- Referenced by name or numeric id. Resolution uses the name cache established in 04-project-config.md. Project comes from config context.
 - Archived features are hidden from `list` by default. `--include-archived` drops the filter to show them alongside active ones. Archive/unarchive a feature with `update --archive`/`--unarchive`.
 - Create/update asymmetry: `name`, `--value`, and `--enabled` are set at create and immutable afterwards. `update` changes description, tags, and archive only. Per-environment value/state changes go through `flag update` (07-flags.md).
 - Value typing: `--value` (alias `--default-value`) is the feature's default seed, stored as a plain string. Variant `--value` is typed. Variant type is inferred from provided value, overridable with `--type string|integer|boolean`.

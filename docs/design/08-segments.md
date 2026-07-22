@@ -10,9 +10,9 @@ A segment is a named rule tree, evaluated against the evaluation context to deci
 
 ```
 $ flagsmith segment list
-NAME         ID     CONDITIONS  DESCRIPTION
-us-adults    42     2           Users in the US aged 18+
-beta-optin   57     1           Opted into the beta
+NAME         ID        CONDITIONS   DESCRIPTION
+us-adults    1147496   2            Users in the US aged 18+
+beta-optin   1147497   1            Opted into the beta
 
 2 segments
 ```
@@ -21,10 +21,10 @@ Feature-specific segments are hidden by default; `--include-feature-specific` sh
 
 ```
 $ flagsmith segment list --include-feature-specific
-NAME          ID     CONDITIONS  DESCRIPTION
-us-adults     42     2           Users in the US aged 18+
-beta-optin    57     1           Opted into the beta
-beta-cohort   58     1           Beta cohort for checkout-v2
+NAME          ID        CONDITIONS   DESCRIPTION
+us-adults     1147496   2            Users in the US aged 18+
+beta-optin    1147497   1            Opted into the beta
+beta-cohort   1147498   1            Beta cohort for checkout-v2
 
 3 segments
 ```
@@ -33,10 +33,10 @@ beta-cohort   58     1           Beta cohort for checkout-v2
 
 ```
 $ flagsmith segment get us-adults
-To get segment overrides, run flagsmith flag list --segment 42
+To get segment overrides, run flagsmith flag list --segment 1147496
 
-Segment      us-adults (42)
-Description  Users in the US aged 18+
+Segment       us-adults (1147496)
+Description   Users in the US aged 18+
 
 All of the below:
   Any of the below:
@@ -47,7 +47,7 @@ All of the below:
 ```
 $ flagsmith segment get us-adults --json
 {
-  "id": 42,
+  "id": 1147496,
   "name": "us-adults",
   "description": "Users in the US aged 18+",
   "rules": {
@@ -57,8 +57,19 @@ $ flagsmith segment get us-adults --json
       {
         "type": "ANY",
         "conditions": [
-          { "property": "country", "operator": "IN", "value": "[\"US\", \"CA\"]" },
-          { "property": "age", "operator": "GREATER_THAN_INCLUSIVE", "value": "18" }
+          {
+            "property": "country",
+            "operator": "IN",
+            "value": [
+              "US",
+              "CA"
+            ]
+          },
+          {
+            "property": "age",
+            "operator": "GREATER_THAN_INCLUSIVE",
+            "value": "18"
+          }
         ]
       }
     ]
@@ -72,16 +83,27 @@ The rule tree comes from a file, stdin (`-`), or an inline string:
 
 ```
 $ flagsmith segment create us-adults --description "Users in the US aged 18+" --rules @rule.json
-✓ Created segment us-adults (42)
-<segment output>
+✓ Created segment us-adults (1147496)
+Segment       us-adults (1147496)
+Description   Users in the US aged 18+
+
+All of the below:
+  Any of the below:
+    country  IN                      US, CA
+    age      GREATER_THAN_INCLUSIVE  18
 ```
 
 `--feature` scopes the segment to a single feature (a feature-specific segment):
 
 ```
 $ flagsmith segment create beta-cohort --feature checkout-v2 --rules @rule.json
-✓ Created segment beta-cohort (58)
-<segment output>
+✓ Created segment beta-cohort (1147498)
+Segment       beta-cohort (1147498)
+Description   Beta cohort for checkout-v2
+
+All of the below:
+  Any of the below:
+    cohort  EQUAL  beta
 ```
 
 ### Update (round-trip)
@@ -91,15 +113,21 @@ $ flagsmith segment create beta-cohort --feature checkout-v2 --rules @rule.json
 ```
 $ flagsmith segment get us-adults --jq '.rules' > rule.json   # edit
 $ flagsmith segment update us-adults --rules @rule.json
-✓ Updated segment us-adults (42)
-<segment output>
+✓ Updated segment us-adults (1147496)
+Segment       us-adults (1147496)
+Description   Users in the US aged 18+
+
+All of the below:
+  Any of the below:
+    country  IN                      US, CA
+    age      GREATER_THAN_INCLUSIVE  18
 ```
 
 ### Delete
 
 ```
 $ flagsmith segment delete us-adults --yes
-✓ Deleted segment us-adults (42)
+✓ Deleted segment us-adults (1147496)
 ```
 
 ## 2. Rule JSON
