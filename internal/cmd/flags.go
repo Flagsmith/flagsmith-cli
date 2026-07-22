@@ -184,7 +184,10 @@ var flagListCmd = &cobra.Command{
 	},
 }
 
-var flagGetSegmentFlag int
+var (
+	flagGetSegmentFlag    int
+	flagGetIdentifierFlag string
+)
 
 var flagGetCmd = &cobra.Command{
 	Use:   "get <feature>",
@@ -192,6 +195,9 @@ var flagGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+		if flagGetSegmentFlag != 0 && flagGetIdentifierFlag != "" {
+			return usageErrorf("--segment and --identifier are mutually exclusive")
+		}
 		_, cred, projectID, env, err := flagContext(cmd)
 		if err != nil {
 			return err
@@ -205,6 +211,20 @@ var flagGetCmd = &cobra.Command{
 		feature := findFeature(features, name)
 		if feature == nil {
 			return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
+		}
+		if flagGetIdentifierFlag != "" {
+			edge, err := useEdgeIdentities(cmd, cred, projectID)
+			if err != nil {
+				return err
+			}
+			override, err := readIdentityOverride(cmd, cred, env.APIKey, feature.ID, flagGetIdentifierFlag, edge)
+			if err != nil {
+				return err
+			}
+			if override == nil {
+				return fmt.Errorf("%q has no override for identifier %q in %s", name, flagGetIdentifierFlag, environmentLabel(env))
+			}
+			return renderIdentityDetail(cmd, feature, flagGetIdentifierFlag, override)
 		}
 		if flagGetSegmentFlag != 0 {
 			if feature.SegmentState == nil {
@@ -283,6 +303,7 @@ func plural(n int, one, many string) string {
 
 func init() {
 	flagGetCmd.Flags().IntVar(&flagGetSegmentFlag, "segment", 0, "show the override for this segment id")
+	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
 	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagDeleteCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)
 }

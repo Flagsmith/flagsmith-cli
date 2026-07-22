@@ -19,9 +19,9 @@ flagsmith flag list    # list the flags in the current environment
 
 - `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
 - `flagsmith flag list` — list feature flags in the current environment.
-- `flagsmith flag get <feature>` — show a single flag's state (`--segment <id>` for a segment override).
-- `flagsmith flag update <feature>` — toggle (`--enable`/`--disable`) or set the value (`--value`, `--type`); `--segment <id>` targets a segment override.
-- `flagsmith flag delete <feature> --segment <id>` — delete a segment override.
+- `flagsmith flag get <feature>` — show a single flag's state (`--segment <id>` or `--identifier <id>` for an override).
+- `flagsmith flag update <feature>` — toggle (`--enable`/`--disable`) or set the value (`--value`, `--type`); `--segment <id>` or `--identifier <id>` targets an override.
+- `flagsmith flag delete <feature> --segment <id>|--identifier <id>` — delete a segment or identity override.
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

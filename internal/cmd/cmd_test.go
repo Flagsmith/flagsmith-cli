@@ -120,6 +120,22 @@ type fakeInstance struct {
 	lastDelete     map[string]any              // last delete-segment-override request body
 	workflowGated  bool                        // when true, update endpoints return 403
 	segmentMissing bool                        // when true, delete-segment-override returns 404
+
+	useEdge           bool                       // GET /projects/{id}/ use_edge_identities
+	coreIdentities    map[string]int             // identifier -> identity id
+	coreOverrides     map[int]map[int]*fakeFS    // identity id -> feature id -> state
+	edgeOverrides     map[string]map[int]*fakeFS // identifier -> feature id -> state
+	nextFSID          int
+	lastIdentityWrite map[string]any // last core identity FS create/update body
+	lastEdgeWrite     map[string]any // last edge identifier PUT body
+	lastEdgeDelete    map[string]any // last edge identifier DELETE body
+}
+
+// fakeFS is a stored identity feature-state in the fake backend.
+type fakeFS struct {
+	id      int
+	enabled bool
+	value   any
 }
 
 func newFakeInstance(t *testing.T) *fakeInstance {
@@ -138,7 +154,11 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 				{"id": 3, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN"},
 			},
 		},
-		features: map[string][]map[string]any{"101": defaultFeatures()},
+		features:       map[string][]map[string]any{"101": defaultFeatures()},
+		coreIdentities: map[string]int{"user-1": 501},
+		coreOverrides:  map[int]map[int]*fakeFS{},
+		edgeOverrides:  map[string]map[int]*fakeFS{},
+		nextFSID:       9000,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -293,6 +313,189 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
 		f.lastDelete = body
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Project retrieve — carries use_edge_identities.
+	mux.HandleFunc("GET /api/v1/projects/{project}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("project"))
+		f.mu.Lock()
+		edge := f.useEdge
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"id": id, "name": "acme-api", "use_edge_identities": edge})
+	})
+	// Core identities: identifier lookup and create.
+	mux.HandleFunc("GET /api/v1/environments/{env}/identities/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		q := strings.Trim(r.URL.Query().Get("q"), `"`)
+		f.mu.Lock()
+		var results []map[string]any
+		if id, ok := f.coreIdentities[q]; ok {
+			results = append(results, map[string]any{"id": id, "identifier": q})
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(results), "results": results})
+	})
+	mux.HandleFunc("POST /api/v1/environments/{env}/identities/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		ident, _ := body["identifier"].(string)
+		f.mu.Lock()
+		id := 700 + len(f.coreIdentities)
+		f.coreIdentities[ident] = id
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": id, "identifier": ident})
+	})
+	// Core identity feature-states: list, create, update, delete.
+	mux.HandleFunc("GET /api/v1/environments/{env}/identities/{id}/featurestates/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		idID, _ := strconv.Atoi(r.PathValue("id"))
+		fid, _ := strconv.Atoi(r.URL.Query().Get("feature"))
+		f.mu.Lock()
+		var results []map[string]any
+		if fs := f.coreOverrides[idID][fid]; fs != nil {
+			results = append(results, map[string]any{"id": fs.id, "enabled": fs.enabled, "feature_state_value": fs.value, "feature": fid})
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(results), "results": results})
+	})
+	mux.HandleFunc("POST /api/v1/environments/{env}/identities/{id}/featurestates/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		idID, _ := strconv.Atoi(r.PathValue("id"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		fid := int(body["feature"].(float64))
+		en, _ := body["enabled"].(bool)
+		f.mu.Lock()
+		f.lastIdentityWrite = body
+		if f.coreOverrides[idID] == nil {
+			f.coreOverrides[idID] = map[int]*fakeFS{}
+		}
+		f.nextFSID++
+		f.coreOverrides[idID][fid] = &fakeFS{id: f.nextFSID, enabled: en, value: body["feature_state_value"]}
+		id := f.nextFSID
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": id})
+	})
+	mux.HandleFunc("PUT /api/v1/environments/{env}/identities/{id}/featurestates/{fsid}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		idID, _ := strconv.Atoi(r.PathValue("id"))
+		fsID, _ := strconv.Atoi(r.PathValue("fsid"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		en, _ := body["enabled"].(bool)
+		f.mu.Lock()
+		f.lastIdentityWrite = body
+		for _, fs := range f.coreOverrides[idID] {
+			if fs.id == fsID {
+				fs.enabled = en
+				fs.value = body["feature_state_value"]
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"id": fsID})
+	})
+	mux.HandleFunc("DELETE /api/v1/environments/{env}/identities/{id}/featurestates/{fsid}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		idID, _ := strconv.Atoi(r.PathValue("id"))
+		fsID, _ := strconv.Atoi(r.PathValue("fsid"))
+		f.mu.Lock()
+		for fid, fs := range f.coreOverrides[idID] {
+			if fs.id == fsID {
+				delete(f.coreOverrides[idID], fid)
+			}
+		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Edge identities: uuid lookup and per-uuid feature-states (read).
+	mux.HandleFunc("GET /api/v1/environments/{env}/edge-identities/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		q := strings.Trim(r.URL.Query().Get("q"), `"`)
+		f.mu.Lock()
+		var results []map[string]any
+		if _, ok := f.edgeOverrides[q]; ok {
+			results = append(results, map[string]any{"identity_uuid": "uuid-" + q, "identifier": q})
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(results), "results": results})
+	})
+	mux.HandleFunc("GET /api/v1/environments/{env}/edge-identities/{uuid}/edge-featurestates/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		identifier := strings.TrimPrefix(r.PathValue("uuid"), "uuid-")
+		fid, _ := strconv.Atoi(r.URL.Query().Get("feature"))
+		f.mu.Lock()
+		var results []map[string]any
+		if fs := f.edgeOverrides[identifier][fid]; fs != nil {
+			results = append(results, map[string]any{"enabled": fs.enabled, "feature_state_value": fs.value, "feature": fid, "featurestate_uuid": "fsu"})
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(results), "results": results})
+	})
+	// Edge identifier-based feature-states (note the double environments, no slash).
+	mux.HandleFunc("PUT /api/v1/environments/environments/{env}/edge-identities-featurestates", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		ident, _ := body["identifier"].(string)
+		fid := int(body["feature"].(float64))
+		en, _ := body["enabled"].(bool)
+		f.mu.Lock()
+		f.lastEdgeWrite = body
+		if f.edgeOverrides[ident] == nil {
+			f.edgeOverrides[ident] = map[int]*fakeFS{}
+		}
+		f.edgeOverrides[ident][fid] = &fakeFS{enabled: en, value: body["feature_state_value"]}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"feature": fid, "enabled": en, "feature_state_value": body["feature_state_value"]})
+	})
+	mux.HandleFunc("DELETE /api/v1/environments/environments/{env}/edge-identities-featurestates", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		ident, _ := body["identifier"].(string)
+		f.mu.Lock()
+		f.lastEdgeDelete = body
+		if fv, ok := body["feature"].(float64); ok {
+			delete(f.edgeOverrides[ident], int(fv))
+		}
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -2216,6 +2419,135 @@ func TestFlagDelete(t *testing.T) {
 		_, err := run("", "flag", "delete", "max_items", "--segment", "99", "--yes")
 		if err == nil || !strings.Contains(err.Error(), "segment 99") {
 			t.Errorf("err = %v, want a not-found error naming the segment", err)
+		}
+	})
+}
+
+func TestFlagIdentity(t *testing.T) {
+	// max_items is feature id 2 in defaultFeatures; user-1 is core identity 501.
+
+	t.Run("core: update creates an override via the core endpoint", func(t *testing.T) {
+		f := flagUpdateEnv(t) // useEdge defaults to false
+
+		out, err := run("", "flag", "update", "max_items", "--identifier", "user-1", "--value", "42", "--yes")
+		if err != nil {
+			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
+		}
+		w := f.lastIdentityWrite
+		if w["feature"] != float64(2) || w["enabled"] != false || w["feature_state_value"] != float64(42) {
+			t.Errorf("core write = %+v", w)
+		}
+		if f.lastEdgeWrite != nil {
+			t.Errorf("edge endpoint should not have been used: %+v", f.lastEdgeWrite)
+		}
+		if !strings.Contains(out, "Set max_items to 42 for identifier user-1") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("core: get shows the override", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.coreOverrides[501] = map[int]*fakeFS{2: {id: 9001, enabled: true, value: "custom"}}
+
+		out, err := run("", "flag", "get", "max_items", "--identifier", "user-1")
+		if err != nil {
+			t.Fatalf("flag get --identifier: %v", err)
+		}
+		for _, want := range []string{"Identifier", "user-1", "custom", "on"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("core: delete removes the override", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.coreOverrides[501] = map[int]*fakeFS{2: {id: 9001, enabled: true, value: "x"}}
+
+		out, err := run("", "flag", "delete", "max_items", "--identifier", "user-1", "--yes")
+		if err != nil {
+			t.Fatalf("flag delete --identifier: %v", err)
+		}
+		if f.coreOverrides[501][2] != nil {
+			t.Errorf("override still present: %+v", f.coreOverrides[501][2])
+		}
+		if !strings.Contains(out, "Deleted max_items override for identifier user-1") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("edge: update via the identifier endpoint", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.useEdge = true
+
+		out, err := run("", "flag", "update", "max_items", "--identifier", "edge-user", "--enable", "--value", "7", "--yes")
+		if err != nil {
+			t.Fatalf("flag update --identifier (edge): %v\noutput: %s", err, out)
+		}
+		w := f.lastEdgeWrite
+		if w["identifier"] != "edge-user" || w["feature"] != float64(2) || w["enabled"] != true || w["feature_state_value"] != float64(7) {
+			t.Errorf("edge write = %+v", w)
+		}
+		if f.lastIdentityWrite != nil {
+			t.Errorf("core endpoint should not have been used: %+v", f.lastIdentityWrite)
+		}
+		if !strings.Contains(out, "Set max_items to 7 for identifier edge-user") ||
+			!strings.Contains(out, "Enabled max_items for identifier edge-user") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("edge: get resolves uuid then reads", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.useEdge = true
+		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: false, value: "e"}}
+
+		out, err := run("", "flag", "get", "max_items", "--identifier", "edge-user")
+		if err != nil {
+			t.Fatalf("flag get --identifier (edge): %v", err)
+		}
+		for _, want := range []string{"Identifier", "edge-user", "e", "off"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("edge: delete via the identifier endpoint", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.useEdge = true
+		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: true, value: "e"}}
+
+		out, err := run("", "flag", "delete", "max_items", "--identifier", "edge-user", "--yes")
+		if err != nil {
+			t.Fatalf("flag delete --identifier (edge): %v", err)
+		}
+		if f.lastEdgeDelete["identifier"] != "edge-user" || f.lastEdgeDelete["feature"] != float64(2) {
+			t.Errorf("edge delete body = %+v", f.lastEdgeDelete)
+		}
+		if f.edgeOverrides["edge-user"][2] != nil {
+			t.Errorf("edge override still present")
+		}
+		if !strings.Contains(out, "Deleted max_items override for identifier edge-user") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--segment and --identifier are mutually exclusive", func(t *testing.T) {
+		flagUpdateEnv(t)
+		_, err := run("", "flag", "update", "max_items", "--segment", "1", "--identifier", "user-1", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+	})
+
+	t.Run("delete demands a target", func(t *testing.T) {
+		flagUpdateEnv(t)
+		_, err := run("", "flag", "delete", "max_items", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--identifier") {
+			t.Errorf("err = %v, want a usage error naming --segment/--identifier", err)
 		}
 	})
 }

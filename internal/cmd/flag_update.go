@@ -11,12 +11,14 @@ import (
 )
 
 var (
-	flagEnableFlag    bool
-	flagDisableFlag   bool
-	flagValueFlag     string
-	flagTypeFlag      string
-	flagUpdateSegment int
-	flagDeleteSegment int
+	flagEnableFlag       bool
+	flagDisableFlag      bool
+	flagValueFlag        string
+	flagTypeFlag         string
+	flagUpdateSegment    int
+	flagUpdateIdentifier string
+	flagDeleteSegment    int
+	flagDeleteIdentifier string
 )
 
 var flagUpdateCmd = &cobra.Command{
@@ -32,7 +34,12 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	disable := cmd.Flags().Changed("disable")
 	setValue := cmd.Flags().Changed("value")
 
+	segmentID := flagUpdateSegment
+	identifier := flagUpdateIdentifier
+
 	switch {
+	case segmentID != 0 && identifier != "":
+		return usageErrorf("--segment and --identifier are mutually exclusive")
 	case enable && disable:
 		return usageErrorf("--enable and --disable are mutually exclusive")
 	case !enable && !disable && !setValue:
@@ -41,7 +48,6 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 		return usageErrorf("--type only applies together with --value")
 	}
 
-	segmentID := flagUpdateSegment
 	_, cred, projectID, env, err := flagContext(cmd)
 	if err != nil {
 		return err
@@ -53,6 +59,10 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	feature := findFeature(features, name)
 	if feature == nil {
 		return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
+	}
+
+	if identifier != "" {
+		return runIdentityUpdate(cmd, cred, env, projectID, feature, identifier, enable, disable, setValue)
 	}
 
 	// update-flag-v2 always requires the whole environment default, so carry it
@@ -142,12 +152,20 @@ var flagDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if !cmd.Flags().Changed("segment") {
-			return usageErrorf("provide --segment <id> to delete a segment override")
+		hasSegment := cmd.Flags().Changed("segment")
+		hasIdentifier := cmd.Flags().Changed("identifier")
+		switch {
+		case !hasSegment && !hasIdentifier:
+			return usageErrorf("provide --segment <id> or --identifier <id> to delete an override")
+		case hasSegment && hasIdentifier:
+			return usageErrorf("--segment and --identifier are mutually exclusive")
 		}
-		_, cred, _, env, err := flagContext(cmd)
+		_, cred, projectID, env, err := flagContext(cmd)
 		if err != nil {
 			return err
+		}
+		if hasIdentifier {
+			return runIdentityDelete(cmd, cred, env, projectID, name, flagDeleteIdentifier)
 		}
 		errOut := cmd.ErrOrStderr()
 		label := fmt.Sprintf("delete %s override for segment %d in %s", name, flagDeleteSegment, environmentLabel(env))
@@ -253,5 +271,7 @@ func init() {
 	flagUpdateCmd.Flags().StringVar(&flagValueFlag, "value", "", "set the flag value")
 	flagUpdateCmd.Flags().StringVar(&flagTypeFlag, "type", "", "force the value type: string, integer, or boolean")
 	flagUpdateCmd.Flags().IntVar(&flagUpdateSegment, "segment", 0, "target this segment's override instead of the environment default")
+	flagUpdateCmd.Flags().StringVar(&flagUpdateIdentifier, "identifier", "", "target this identity's override instead of the environment default")
 	flagDeleteCmd.Flags().IntVar(&flagDeleteSegment, "segment", 0, "the segment id whose override to delete")
+	flagDeleteCmd.Flags().StringVar(&flagDeleteIdentifier, "identifier", "", "the identity whose override to delete")
 }

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -96,10 +98,55 @@ func getList(ctx context.Context, apiURL, path string, auth Auth, out any) error
 	return json.Unmarshal(page.Results, out)
 }
 
+// sendJSON issues a request with an optional JSON body and decodes an optional
+// JSON response. It treats any non-2xx status as an error.
+func sendJSON(ctx context.Context, apiURL, method, path string, auth Auth, body, out any) error {
+	var r io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		r = bytes.NewReader(b)
+	}
+	u := strings.TrimRight(apiURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, method, u, r)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	auth.Apply(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s %s returned %s", method, u, resp.Status)
+	}
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
+}
+
 // Project is the subset of the projects API the CLI uses.
 type Project struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
+	UseEdgeIdentities bool   `json:"use_edge_identities"`
+}
+
+// GetProject fetches a single project — notably its use_edge_identities flag,
+// which decides whether identity overrides use the core or edge endpoints.
+func GetProject(ctx context.Context, apiURL string, auth Auth, projectID int) (*Project, error) {
+	p := &Project{}
+	if err := get(ctx, apiURL, fmt.Sprintf("/api/v1/projects/%d/", projectID), auth, p); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func Projects(ctx context.Context, apiURL string, auth Auth, organisationID int) ([]Project, error) {
@@ -335,4 +382,140 @@ func CreateEnvironment(ctx context.Context, apiURL string, auth Auth, name strin
 		return nil, err
 	}
 	return env, nil
+}
+
+// IdentityFeatureState is a feature's override for one identity. ID is the
+// (core) feature-state id used to update/delete it; it is unset for edge reads.
+type IdentityFeatureState struct {
+	ID      int  `json:"id"`
+	Enabled bool `json:"enabled"`
+	Value   any  `json:"feature_state_value"`
+	Feature int  `json:"feature"`
+}
+
+// exactQuery builds the ?q="<value>" exact-match query for identity searches.
+func exactQuery(value string) string {
+	return url.Values{"q": {`"` + value + `"`}}.Encode()
+}
+
+// --- Core identities (Postgres) ---
+
+type identity struct {
+	ID         int    `json:"id"`
+	Identifier string `json:"identifier"`
+}
+
+// IdentityByIdentifier resolves an identifier to its numeric identity id via
+// the core Admin API. found is false when no identity matches.
+func IdentityByIdentifier(ctx context.Context, apiURL string, auth Auth, envKey, identifier string) (id int, found bool, err error) {
+	var ids []identity
+	path := fmt.Sprintf("/api/v1/environments/%s/identities/?%s", envKey, exactQuery(identifier))
+	if err := getList(ctx, apiURL, path, auth, &ids); err != nil {
+		return 0, false, err
+	}
+	for _, i := range ids {
+		if i.Identifier == identifier {
+			return i.ID, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
+// CreateIdentity creates a core identity and returns its id.
+func CreateIdentity(ctx context.Context, apiURL string, auth Auth, envKey, identifier string) (int, error) {
+	out := &identity{}
+	path := fmt.Sprintf("/api/v1/environments/%s/identities/", envKey)
+	if err := sendJSON(ctx, apiURL, http.MethodPost, path, auth, map[string]any{"identifier": identifier}, out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
+}
+
+// IdentityOverride returns a core identity's override for a feature, or nil.
+func IdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey string, identityID, featureID int) (*IdentityFeatureState, error) {
+	var states []IdentityFeatureState
+	path := fmt.Sprintf("/api/v1/environments/%s/identities/%d/featurestates/?feature=%d", envKey, identityID, featureID)
+	if err := getList(ctx, apiURL, path, auth, &states); err != nil {
+		return nil, err
+	}
+	if len(states) > 0 {
+		return &states[0], nil
+	}
+	return nil, nil
+}
+
+// SetIdentityOverride creates (fsID == 0) or updates a core identity override.
+// value is a native scalar (string/int/bool); the server infers its type.
+func SetIdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey string, identityID, featureID, fsID int, enabled bool, value any) error {
+	if fsID == 0 {
+		path := fmt.Sprintf("/api/v1/environments/%s/identities/%d/featurestates/", envKey, identityID)
+		body := map[string]any{"feature": featureID, "enabled": enabled, "feature_state_value": value}
+		return sendJSON(ctx, apiURL, http.MethodPost, path, auth, body, nil)
+	}
+	path := fmt.Sprintf("/api/v1/environments/%s/identities/%d/featurestates/%d/", envKey, identityID, fsID)
+	body := map[string]any{"enabled": enabled, "feature_state_value": value}
+	return sendJSON(ctx, apiURL, http.MethodPut, path, auth, body, nil)
+}
+
+// DeleteIdentityOverride removes a core identity override by feature-state id.
+func DeleteIdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey string, identityID, fsID int) error {
+	path := fmt.Sprintf("/api/v1/environments/%s/identities/%d/featurestates/%d/", envKey, identityID, fsID)
+	return sendJSON(ctx, apiURL, http.MethodDelete, path, auth, nil, nil)
+}
+
+// --- Edge identities (DynamoDB) ---
+
+type edgeIdentity struct {
+	IdentityUUID string `json:"identity_uuid"`
+	Identifier   string `json:"identifier"`
+}
+
+// EdgeIdentityUUID resolves an identifier to its edge identity uuid, or found
+// false when none exists yet.
+func EdgeIdentityUUID(ctx context.Context, apiURL string, auth Auth, envKey, identifier string) (uuid string, found bool, err error) {
+	var ids []edgeIdentity
+	path := fmt.Sprintf("/api/v1/environments/%s/edge-identities/?%s", envKey, exactQuery(identifier))
+	if err := getList(ctx, apiURL, path, auth, &ids); err != nil {
+		return "", false, err
+	}
+	for _, i := range ids {
+		if i.Identifier == identifier {
+			return i.IdentityUUID, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// EdgeIdentityOverride returns an edge identity's override for a feature, or
+// nil. It is keyed by the identity uuid (the identifier endpoint has no GET).
+func EdgeIdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey, identityUUID string, featureID int) (*IdentityFeatureState, error) {
+	var states []IdentityFeatureState
+	path := fmt.Sprintf("/api/v1/environments/%s/edge-identities/%s/edge-featurestates/?feature=%d", envKey, identityUUID, featureID)
+	if err := getList(ctx, apiURL, path, auth, &states); err != nil {
+		return nil, err
+	}
+	if len(states) > 0 {
+		return &states[0], nil
+	}
+	return nil, nil
+}
+
+// edgeIdentityFeatureStatesPath is the identifier-based edge endpoint. The
+// backend nests it under a second literal "environments/" segment and omits
+// the trailing slash — replicated verbatim here.
+func edgeIdentityFeatureStatesPath(envKey string) string {
+	return "/api/v1/environments/environments/" + envKey + "/edge-identities-featurestates"
+}
+
+// SetEdgeIdentityOverride creates-or-updates an edge identity override in one
+// call (the identity is created if it does not exist). value is a native scalar.
+func SetEdgeIdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey, identifier string, featureID int, enabled bool, value any) error {
+	body := map[string]any{"identifier": identifier, "feature": featureID, "enabled": enabled, "feature_state_value": value}
+	return sendJSON(ctx, apiURL, http.MethodPut, edgeIdentityFeatureStatesPath(envKey), auth, body, nil)
+}
+
+// DeleteEdgeIdentityOverride removes an edge identity override.
+func DeleteEdgeIdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey, identifier string, featureID int) error {
+	body := map[string]any{"identifier": identifier, "feature": featureID}
+	return sendJSON(ctx, apiURL, http.MethodDelete, edgeIdentityFeatureStatesPath(envKey), auth, body, nil)
 }
