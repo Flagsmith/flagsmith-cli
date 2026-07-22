@@ -35,7 +35,12 @@ var (
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Bind this directory to a Flagsmith project (writes flagsmith.json)",
-	RunE:  runInit,
+	Example: `  # interactive: log in, pick a project and environment
+  flagsmith init
+
+  # non-interactive: name the project, create a new environment
+  flagsmith init --project acme-api --create-environment Staging`,
+	RunE: runInit,
 }
 
 // explicitValue returns a context value only when it came from a flag or

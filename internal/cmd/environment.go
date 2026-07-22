@@ -101,8 +101,9 @@ func renderEnvironment(cmd *cobra.Command, cred *activeCredential, e *api.Enviro
 }
 
 var environmentListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List environments in the current project",
+	Use:     "list",
+	Short:   "List environments in the current project",
+	Example: "  flagsmith environment list",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -131,9 +132,10 @@ var environmentListCmd = &cobra.Command{
 }
 
 var environmentGetCmd = &cobra.Command{
-	Use:   "get <environment>",
-	Short: "Show an environment",
-	Args:  cobra.ExactArgs(1),
+	Use:     "get <environment>",
+	Short:   "Show an environment",
+	Example: "  flagsmith environment get Production",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -154,7 +156,9 @@ var environmentGetCmd = &cobra.Command{
 var environmentCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create an environment (mints a client-side key)",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # the project comes from context
+  flagsmith environment create Staging --description "Pre-prod"`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -175,7 +179,9 @@ var environmentCreateCmd = &cobra.Command{
 var environmentUpdateCmd = &cobra.Command{
 	Use:   "update <environment>",
 	Short: "Update an environment",
-	Args:  cobra.ExactArgs(1),
+	Example: `  flagsmith environment update Staging --description "Pre-prod"
+  flagsmith environment update Production --hide-disabled-flags --banner-text "Live"`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		body := envBodyFromFlags(cmd)
 		if len(body) == 0 {
@@ -199,9 +205,10 @@ var environmentUpdateCmd = &cobra.Command{
 }
 
 var environmentDeleteCmd = &cobra.Command{
-	Use:   "delete <environment>",
-	Short: "Delete an environment",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete <environment>",
+	Short:   "Delete an environment",
+	Example: "  flagsmith environment delete Staging --yes",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -227,9 +234,10 @@ var environmentDeleteCmd = &cobra.Command{
 }
 
 var environmentCloneCmd = &cobra.Command{
-	Use:   "clone <environment> <name>",
-	Short: "Clone an environment into a new one",
-	Args:  cobra.ExactArgs(2),
+	Use:     "clone <environment> <name>",
+	Short:   "Clone an environment into a new one",
+	Example: `  flagsmith environment clone Production "Production Copy"`,
+	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -251,7 +259,10 @@ var environmentCloneCmd = &cobra.Command{
 var environmentDocumentCmd = &cobra.Command{
 	Use:   "document [environment]",
 	Short: "Output the environment document (JSON for local SDK evaluation)",
-	Args:  cobra.MaximumNArgs(1),
+	Example: `  # the context environment, or a named one
+  flagsmith environment document > env.json
+  flagsmith environment document Production --jq '.feature_states | length'`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pc, err := applyContext(cmd)
 		if err != nil {
@@ -307,9 +318,10 @@ func valueOrDash(s *string) string {
 }
 
 var environmentKeyListCmd = &cobra.Command{
-	Use:   "list <environment>",
-	Short: "List an environment's server-side keys",
-	Args:  cobra.ExactArgs(1),
+	Use:     "list <environment>",
+	Short:   "List an environment's server-side keys",
+	Example: "  flagsmith environment key list Production",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -338,9 +350,10 @@ var environmentKeyListCmd = &cobra.Command{
 }
 
 var environmentKeyCreateCmd = &cobra.Command{
-	Use:   "create <environment>",
-	Short: "Create a server-side key (its value is shown once)",
-	Args:  cobra.ExactArgs(1),
+	Use:     "create <environment>",
+	Short:   "Create a server-side key (its value is shown once)",
+	Example: `  flagsmith environment key create Production --name backend`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -369,9 +382,10 @@ var environmentKeyCreateCmd = &cobra.Command{
 }
 
 var environmentKeyDeleteCmd = &cobra.Command{
-	Use:   "delete <environment> <key-id>",
-	Short: "Delete a server-side key",
-	Args:  cobra.ExactArgs(2),
+	Use:     "delete <environment> <key-id>",
+	Short:   "Delete a server-side key",
+	Example: "  flagsmith environment key delete Production 14 --yes",
+	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keyID, err := strconv.Atoi(args[1])
 		if err != nil {

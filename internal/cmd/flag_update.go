@@ -24,8 +24,19 @@ var (
 var flagUpdateCmd = &cobra.Command{
 	Use:   "update <feature>",
 	Short: "Change a flag's state in the current environment",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runFlagUpdate,
+	Example: `  # toggle the environment default
+  flagsmith flag update onboarding --enable
+  flagsmith flag update onboarding --disable
+
+  # set a value (type inferred, or forced with --type)
+  flagsmith flag update banner-text --value "Welcome!"
+  flagsmith flag update max-items --value 10 --type integer
+
+  # target a segment or identity override instead of the default
+  flagsmith flag update onboarding --enable --segment 12
+  flagsmith flag update onboarding --value beta --identifier user-123`,
+	Args: cobra.ExactArgs(1),
+	RunE: runFlagUpdate,
 }
 
 func runFlagUpdate(cmd *cobra.Command, args []string) error {
@@ -149,7 +160,10 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 var flagDeleteCmd = &cobra.Command{
 	Use:   "delete <feature>",
 	Short: "Delete a flag's segment override in the current environment",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # remove a segment or identity override (the flag itself is untouched)
+  flagsmith flag delete onboarding --segment 12
+  flagsmith flag delete onboarding --identifier user-123`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		hasSegment := cmd.Flags().Changed("segment")

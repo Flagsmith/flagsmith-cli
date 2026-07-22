@@ -12,9 +12,10 @@ import (
 
 func newLogoutCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "logout",
-		Short: "Log out of an instance and revoke the stored session",
-		RunE:  runLogout,
+		Use:     "logout",
+		Short:   "Log out of an instance and revoke the stored session",
+		Example: "  flagsmith logout",
+		RunE:    runLogout,
 	}
 }
 

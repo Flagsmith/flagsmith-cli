@@ -149,6 +149,11 @@ var flagListSegmentFlag int
 var flagListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List every flag in the current environment",
+	Example: `  # flags in the current environment
+  flagsmith flag list
+
+  # only the flags overridden for a segment
+  flagsmith flag list --segment 12`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		_, cred, projectID, env, err := flagContext(cmd)
 		if err != nil {
@@ -223,7 +228,12 @@ var (
 var flagGetCmd = &cobra.Command{
 	Use:   "get <feature>",
 	Short: "Show a single flag's state in the current environment",
-	Args:  cobra.ExactArgs(1),
+	Example: `  flagsmith flag get onboarding
+
+  # a segment or identity override
+  flagsmith flag get onboarding --segment 12
+  flagsmith flag get onboarding --identifier user-123`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		if flagGetSegmentFlag != 0 && flagGetIdentifierFlag != "" {

@@ -76,6 +76,10 @@ func projectScopedContext(cmd *cobra.Command) (*activeCredential, int, error) {
 var segmentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List segments in the current project",
+	Example: `  flagsmith segment list
+
+  # include feature-specific segments
+  flagsmith segment list --include-feature-specific`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -113,9 +117,10 @@ var segmentListCmd = &cobra.Command{
 }
 
 var segmentGetCmd = &cobra.Command{
-	Use:   "get <segment>",
-	Short: "Show a segment and its rule tree",
-	Args:  cobra.ExactArgs(1),
+	Use:     "get <segment>",
+	Short:   "Show a segment and its rule tree",
+	Example: "  flagsmith segment get beta-users",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -140,7 +145,12 @@ var segmentGetCmd = &cobra.Command{
 var segmentCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a segment",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # rules from a file, - for stdin, or an inline JSON string
+  flagsmith segment create beta-users --rules @rules.json --description "Beta cohort"
+
+  # scope it to a feature (feature-specific segment)
+  flagsmith segment create rollout --rules @rules.json --feature onboarding`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("rules") {
 			return usageErrorf("a segment needs a rule tree — pass --rules")
@@ -173,7 +183,10 @@ var segmentCreateCmd = &cobra.Command{
 var segmentUpdateCmd = &cobra.Command{
 	Use:   "update <segment>",
 	Short: "Update a segment's rule tree or fields",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # --rules replaces the whole tree
+  flagsmith segment update beta-users --rules @rules.json
+  flagsmith segment update beta-users --description "Updated cohort"`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -212,9 +225,10 @@ var segmentUpdateCmd = &cobra.Command{
 }
 
 var segmentDeleteCmd = &cobra.Command{
-	Use:   "delete <segment>",
-	Short: "Delete a segment",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete <segment>",
+	Short:   "Delete a segment",
+	Example: "  flagsmith segment delete beta-users --yes",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {

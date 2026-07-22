@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	apiMethodFlag   string
-	apiFieldFlags   []string
-	apiRawFields    []string
+	apiMethodFlag  string
+	apiFieldFlags  []string
+	apiRawFields   []string
 	apiInputFlag   string
 	apiHeaderFlags []string
 	apiIncludeFlag bool
@@ -31,8 +31,16 @@ var (
 var apiCmd = &cobra.Command{
 	Use:   "api <path>",
 	Short: "Call the Flagsmith API with the CLI's credentials",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runAPI,
+	Example: `  # GET any endpoint with the CLI's credentials applied
+  flagsmith api /organisations/
+
+  # typed fields build a JSON body; -X sets the method
+  flagsmith api /projects/ -X POST -F name="Acme" -F organisation=13
+
+  # call the SDK API with the environment key instead
+  flagsmith api /flags/ --sdk`,
+	Args: cobra.ExactArgs(1),
+	RunE: runAPI,
 }
 
 func runAPI(cmd *cobra.Command, args []string) error {

@@ -20,8 +20,9 @@ func formatValue(v resolved) string {
 }
 
 var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Show the resolved context and where each value comes from",
+	Use:     "config",
+	Short:   "Show the resolved context and where each value comes from",
+	Example: "  flagsmith config",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pc, err := applyContext(cmd)
 		if err != nil {

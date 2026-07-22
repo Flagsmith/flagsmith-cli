@@ -80,8 +80,9 @@ func renderOrganisation(cmd *cobra.Command, o *api.Organisation) error {
 }
 
 var organisationListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List organisations",
+	Use:     "list",
+	Short:   "List organisations",
+	Example: "  flagsmith organisation list",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, err := credentialContext(cmd)
 		if err != nil {
@@ -110,9 +111,10 @@ var organisationListCmd = &cobra.Command{
 }
 
 var organisationGetCmd = &cobra.Command{
-	Use:   "get <organisation>",
-	Short: "Show an organisation",
-	Args:  cobra.ExactArgs(1),
+	Use:     "get <organisation>",
+	Short:   "Show an organisation",
+	Example: "  flagsmith organisation get acme",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, err := credentialContext(cmd)
 		if err != nil {
@@ -131,9 +133,10 @@ var organisationGetCmd = &cobra.Command{
 }
 
 var organisationCreateCmd = &cobra.Command{
-	Use:   "create <name>",
-	Short: "Create an organisation",
-	Args:  cobra.ExactArgs(1),
+	Use:     "create <name>",
+	Short:   "Create an organisation",
+	Example: `  flagsmith organisation create "Acme Inc"`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, err := credentialContext(cmd)
 		if err != nil {
@@ -153,7 +156,9 @@ var organisationCreateCmd = &cobra.Command{
 var organisationUpdateCmd = &cobra.Command{
 	Use:   "update <organisation>",
 	Short: "Update an organisation",
-	Args:  cobra.ExactArgs(1),
+	Example: `  flagsmith organisation update acme --name "Acme Corp"
+  flagsmith organisation update acme --force-2fa`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		body := orgBodyFromFlags(cmd)
 		if len(body) == 0 {
@@ -177,9 +182,10 @@ var organisationUpdateCmd = &cobra.Command{
 }
 
 var organisationDeleteCmd = &cobra.Command{
-	Use:   "delete <organisation>",
-	Short: "Delete an organisation",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete <organisation>",
+	Short:   "Delete an organisation",
+	Example: "  flagsmith organisation delete acme --yes",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, err := credentialContext(cmd)
 		if err != nil {

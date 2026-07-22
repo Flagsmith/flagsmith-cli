@@ -132,8 +132,9 @@ func orgList(orgs []api.Organisation) string {
 }
 
 var authStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show the current identity, organisation and credential source",
+	Use:     "status",
+	Short:   "Show the current identity, organisation and credential source",
+	Example: "  flagsmith auth status",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := applyContext(cmd); err != nil {
 			return err
@@ -193,6 +194,11 @@ var authStatusCmd = &cobra.Command{
 var authTokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Print the active Admin API credential (for curl and scripts)",
+	Example: `  flagsmith auth token
+
+  # e.g. drive curl with it
+  curl -H "Authorization: Api-Key $(flagsmith auth token)" \
+    https://api.flagsmith.com/api/v1/organisations/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := applyContext(cmd); err != nil {
 			return err

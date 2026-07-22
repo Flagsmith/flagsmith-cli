@@ -85,6 +85,29 @@ func TestReportError(t *testing.T) {
 	})
 }
 
+// Every runnable command carries an examples block (02 §4). Container commands
+// (no RunE) and cobra's built-ins are exempt.
+func TestEveryCommandHasExamples(t *testing.T) {
+	var missing []string
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			switch sub.Name() {
+			case "help", "completion":
+				continue
+			}
+			if sub.Runnable() && !sub.Hidden && sub.Example == "" {
+				missing = append(missing, sub.CommandPath())
+			}
+			walk(sub)
+		}
+	}
+	walk(rootCmd)
+	if len(missing) > 0 {
+		t.Errorf("commands without an examples block:\n\t%s", strings.Join(missing, "\n\t"))
+	}
+}
+
 // Incorrect usage (bad arg count, unknown flag) exits 2 and prints usage, even
 // for cobra's own parse/validation failures — see 02 §4.
 func TestUsageErrorsPrintUsage(t *testing.T) {

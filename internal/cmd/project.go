@@ -92,6 +92,10 @@ func renderProject(cmd *cobra.Command, cred *activeCredential, p *api.Project) e
 var projectListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List projects",
+	Example: `  flagsmith project list
+
+  # scope to one organisation
+  flagsmith project list --organisation acme`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pc, err := applyContext(cmd)
 		if err != nil {
@@ -131,9 +135,10 @@ var projectListCmd = &cobra.Command{
 }
 
 var projectGetCmd = &cobra.Command{
-	Use:   "get <project>",
-	Short: "Show a project",
-	Args:  cobra.ExactArgs(1),
+	Use:     "get <project>",
+	Short:   "Show a project",
+	Example: "  flagsmith project get acme-api",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, err := credentialContext(cmd)
 		if err != nil {
@@ -152,9 +157,10 @@ var projectGetCmd = &cobra.Command{
 }
 
 var projectCreateCmd = &cobra.Command{
-	Use:   "create <name>",
-	Short: "Create a project",
-	Args:  cobra.ExactArgs(1),
+	Use:     "create <name>",
+	Short:   "Create a project",
+	Example: `  flagsmith project create acme-api --organisation acme`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pc, err := applyContext(cmd)
 		if err != nil {
@@ -183,7 +189,9 @@ var projectCreateCmd = &cobra.Command{
 var projectUpdateCmd = &cobra.Command{
 	Use:   "update <project>",
 	Short: "Update a project",
-	Args:  cobra.ExactArgs(1),
+	Example: `  flagsmith project update acme-api --name acme-backend
+  flagsmith project update acme-api --hide-disabled-flags`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		body := projectBodyFromFlags(cmd)
 		if len(body) == 0 {
@@ -207,9 +215,10 @@ var projectUpdateCmd = &cobra.Command{
 }
 
 var projectDeleteCmd = &cobra.Command{
-	Use:   "delete <project>",
-	Short: "Delete a project",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete <project>",
+	Short:   "Delete a project",
+	Example: "  flagsmith project delete acme-api --yes",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, err := credentialContext(cmd)
 		if err != nil {

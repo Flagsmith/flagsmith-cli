@@ -19,6 +19,10 @@ func newLoginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Flagsmith in your browser",
+		Example: `  flagsmith login
+
+  # print the URL instead of opening a browser (headless)
+  flagsmith login --no-browser`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if _, err := applyContext(cmd); err != nil {
 				return err

@@ -89,6 +89,10 @@ func formatWeight(w float64) string {
 var featureListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List features in the current project",
+	Example: `  flagsmith feature list
+
+  # include archived features
+  flagsmith feature list --include-archived`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -121,9 +125,10 @@ var featureListCmd = &cobra.Command{
 }
 
 var featureGetCmd = &cobra.Command{
-	Use:   "get <feature>",
-	Short: "Show a feature and its variants",
-	Args:  cobra.ExactArgs(1),
+	Use:     "get <feature>",
+	Short:   "Show a feature and its variants",
+	Example: "  flagsmith feature get onboarding",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -184,7 +189,15 @@ var (
 var featureCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a feature",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # a standard feature, off by default
+  flagsmith feature create onboarding --description "New onboarding flow"
+
+  # a default value, enabled everywhere
+  flagsmith feature create banner-text --value "Welcome!" --enabled
+
+  # a multivariate feature with weighted variants from a file
+  flagsmith feature create button-colour --variants @variants.json`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -217,7 +230,12 @@ var featureCreateCmd = &cobra.Command{
 var featureUpdateCmd = &cobra.Command{
 	Use:   "update <feature>",
 	Short: "Update a feature's description or archive state",
-	Args:  cobra.ExactArgs(1),
+	Example: `  flagsmith feature update onboarding --description "Revised flow"
+
+  # archive or restore a feature
+  flagsmith feature update onboarding --archive
+  flagsmith feature update onboarding --unarchive`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if featureArchiveFlag && featureUnarchiveFlag {
 			return usageErrorf("--archive and --unarchive are mutually exclusive")
@@ -259,9 +277,10 @@ var featureUpdateCmd = &cobra.Command{
 }
 
 var featureDeleteCmd = &cobra.Command{
-	Use:   "delete <feature>",
-	Short: "Delete a feature",
-	Args:  cobra.ExactArgs(1),
+	Use:     "delete <feature>",
+	Short:   "Delete a feature",
+	Example: "  flagsmith feature delete onboarding",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -382,9 +401,10 @@ func variantLabel(o *api.MultivariateOption) string {
 }
 
 var featureVariantListCmd = &cobra.Command{
-	Use:   "list <feature>",
-	Short: "List a feature's variants",
-	Args:  cobra.ExactArgs(1),
+	Use:     "list <feature>",
+	Short:   "List a feature's variants",
+	Example: "  flagsmith feature variant list button-colour",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
@@ -416,7 +436,11 @@ var featureVariantListCmd = &cobra.Command{
 var featureVariantAddCmd = &cobra.Command{
 	Use:   "add <feature>",
 	Short: "Add a variant to a feature",
-	Args:  cobra.ExactArgs(1),
+	Example: `  flagsmith feature variant add button-colour --value red --weight 50
+
+  # a keyed, typed variant
+  flagsmith feature variant add max-items --value 10 --type integer --key high`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("value") {
 			return usageErrorf("a variant needs a value — pass --value")
@@ -453,7 +477,10 @@ var featureVariantAddCmd = &cobra.Command{
 var featureVariantUpdateCmd = &cobra.Command{
 	Use:   "update <feature> <variant>",
 	Short: "Update a variant (by id or key)",
-	Args:  cobra.ExactArgs(2),
+	Example: `  # address the variant by key or id
+  flagsmith feature variant update button-colour red --weight 70
+  flagsmith feature variant update button-colour 4812 --value crimson`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("value") && !cmd.Flags().Changed("weight") && !cmd.Flags().Changed("key") {
 			return usageErrorf("nothing to update — pass --value, --weight, or --key")
@@ -496,9 +523,10 @@ var featureVariantUpdateCmd = &cobra.Command{
 }
 
 var featureVariantDeleteCmd = &cobra.Command{
-	Use:   "delete <feature> <variant>",
-	Short: "Delete a variant (by id or key)",
-	Args:  cobra.ExactArgs(2),
+	Use:     "delete <feature> <variant>",
+	Short:   "Delete a variant (by id or key)",
+	Example: "  flagsmith feature variant delete button-colour red",
+	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
