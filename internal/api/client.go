@@ -627,6 +627,42 @@ func CloneEnvironment(ctx context.Context, apiURL string, auth Auth, apiKey stri
 	return e, nil
 }
 
+// EnvironmentAPIKey is a server-side (ser.) SDK key for an environment. Key is
+// returned in full only on create.
+type EnvironmentAPIKey struct {
+	ID        int     `json:"id"`
+	Key       string  `json:"key,omitempty"`
+	Name      string  `json:"name"`
+	Active    bool    `json:"active"`
+	CreatedAt string  `json:"created_at"`
+	ExpiresAt *string `json:"expires_at"`
+}
+
+// EnvironmentAPIKeys lists an environment's server-side keys.
+func EnvironmentAPIKeys(ctx context.Context, apiURL string, auth Auth, envKey string) ([]EnvironmentAPIKey, error) {
+	var keys []EnvironmentAPIKey
+	if err := getList(ctx, apiURL, "/api/v1/environments/"+envKey+"/api-keys/", auth, &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// CreateEnvironmentAPIKey mints a server-side key; the response includes the
+// full key value (shown once).
+func CreateEnvironmentAPIKey(ctx context.Context, apiURL string, auth Auth, envKey string, body map[string]any) (*EnvironmentAPIKey, error) {
+	k := &EnvironmentAPIKey{}
+	if err := sendJSON(ctx, apiURL, http.MethodPost, "/api/v1/environments/"+envKey+"/api-keys/", auth, body, k); err != nil {
+		return nil, err
+	}
+	return k, nil
+}
+
+// DeleteEnvironmentAPIKey removes a server-side key by id.
+func DeleteEnvironmentAPIKey(ctx context.Context, apiURL string, auth Auth, envKey string, keyID int) error {
+	path := fmt.Sprintf("/api/v1/environments/%s/api-keys/%d/", envKey, keyID)
+	return sendJSON(ctx, apiURL, http.MethodDelete, path, auth, nil, nil)
+}
+
 // IdentityFeatureState is a feature's override for one identity. ID is the
 // (core) feature-state id used to update/delete it; it is unset for edge reads.
 type IdentityFeatureState struct {

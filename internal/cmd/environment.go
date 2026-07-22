@@ -247,7 +247,118 @@ var environmentCloneCmd = &cobra.Command{
 	},
 }
 
+var environmentKeyCmd = &cobra.Command{
+	Use:   "key",
+	Short: "Manage an environment's server-side SDK keys",
+}
+
+var envKeyNameFlag string
+
+func valueOrDash(s *string) string {
+	if s == nil || *s == "" {
+		return "-"
+	}
+	return *s
+}
+
+var environmentKeyListCmd = &cobra.Command{
+	Use:   "list <environment>",
+	Short: "List an environment's server-side keys",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		keys, err := api.EnvironmentAPIKeys(cmd.Context(), apiURL, cred.auth, ref.APIKey)
+		if err != nil {
+			return err
+		}
+		return output.Render(cmd.OutOrStdout(), keys, outputOpts(), func(w io.Writer) error {
+			if len(keys) == 0 {
+				fmt.Fprintln(w, "No server-side keys.")
+				return nil
+			}
+			rows := make([][]string, len(keys))
+			for i, k := range keys {
+				rows[i] = []string{k.Name, strconv.Itoa(k.ID), strconv.FormatBool(k.Active), k.CreatedAt, valueOrDash(k.ExpiresAt)}
+			}
+			return output.Table(w, []string{"NAME", "ID", "ACTIVE", "CREATED", "EXPIRES AT"}, rows)
+		})
+	},
+}
+
+var environmentKeyCreateCmd = &cobra.Command{
+	Use:   "create <environment>",
+	Short: "Create a server-side key (its value is shown once)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		body := map[string]any{}
+		if cmd.Flags().Changed("name") {
+			body["name"] = envKeyNameFlag
+		}
+		key, err := api.CreateEnvironmentAPIKey(cmd.Context(), apiURL, cred.auth, ref.APIKey, body)
+		if err != nil {
+			return err
+		}
+		errOut := cmd.ErrOrStderr()
+		output.Success(errOut, "Created server-side key %s (%d)", key.Name, key.ID)
+		return output.Render(cmd.OutOrStdout(), key, outputOpts(), func(w io.Writer) error {
+			fmt.Fprintln(errOut, "Store this now — it will not be shown again:")
+			fmt.Fprintln(w, key.Key)
+			return nil
+		})
+	},
+}
+
+var environmentKeyDeleteCmd = &cobra.Command{
+	Use:   "delete <environment> <key-id>",
+	Short: "Delete a server-side key",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		keyID, err := strconv.Atoi(args[1])
+		if err != nil {
+			return usageErrorf("key id must be a number, got %q", args[1])
+		}
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		errOut := cmd.ErrOrStderr()
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete server-side key %d from %s", keyID, ref.Name)); err != nil {
+			return err
+		} else if !ok {
+			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
+			return nil
+		}
+		if err := api.DeleteEnvironmentAPIKey(cmd.Context(), apiURL, cred.auth, ref.APIKey, keyID); err != nil {
+			return err
+		}
+		output.Success(errOut, "Deleted server-side key %d from %s", keyID, ref.Name)
+		return nil
+	},
+}
+
 func init() {
+	environmentKeyCreateCmd.Flags().StringVar(&envKeyNameFlag, "name", "", "a name for the key")
+	environmentKeyCmd.AddCommand(environmentKeyListCmd, environmentKeyCreateCmd, environmentKeyDeleteCmd)
+	environmentCmd.AddCommand(environmentKeyCmd)
 	for _, c := range []*cobra.Command{environmentCreateCmd, environmentUpdateCmd} {
 		c.Flags().StringVar(&envDescriptionFlag, "description", "", "environment description")
 		c.Flags().BoolVar(&envHideDisabledFlag, "hide-disabled-flags", false, "hide disabled flags from the SDK")

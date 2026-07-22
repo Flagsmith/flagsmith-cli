@@ -142,7 +142,10 @@ type fakeInstance struct {
 	lastOrgBody     map[string]any // last organisation create/update body
 	lastProjectBody map[string]any // last project create/update body
 	nextOrgID       int
-	lastEnvBody     map[string]any // last environment create/update/clone body
+	lastEnvBody     map[string]any              // last environment create/update/clone body
+	serverKeys      map[string][]map[string]any // env api_key -> server-side keys
+	nextServerKeyID int
+	lastServerKey   map[string]any // last api-keys create body
 }
 
 // envByAPIKey finds a stored environment by its client-side key, returning its
@@ -240,10 +243,12 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 				}}},
 			},
 		},
-		nextSegmentID: 100,
-		nextFeatureID: 900,
-		nextMVID:      300,
-		nextOrgID:     20,
+		nextSegmentID:   100,
+		nextFeatureID:   900,
+		nextMVID:        300,
+		nextOrgID:       20,
+		serverKeys:      map[string][]map[string]any{},
+		nextServerKeyID: 500,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -419,6 +424,55 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			}
 			f.envs[proj] = kept
 		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Server-side SDK keys sub-resource.
+	mux.HandleFunc("GET /api/v1/environments/{api_key}/api-keys/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		keys := f.serverKeys[r.PathValue("api_key")]
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(keys) // bare array (pagination_class = None)
+	})
+	mux.HandleFunc("POST /api/v1/environments/{api_key}/api-keys/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		env := r.PathValue("api_key")
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastServerKey = body
+		f.nextServerKeyID++
+		key := map[string]any{
+			"id": f.nextServerKeyID, "name": body["name"], "active": true,
+			"key": "ser.mintedKey000000000", "created_at": "2026-07-16T00:00:00Z",
+		}
+		f.serverKeys[env] = append(f.serverKeys[env], key)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(key)
+	})
+	mux.HandleFunc("DELETE /api/v1/environments/{api_key}/api-keys/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		env := r.PathValue("api_key")
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		kept := []map[string]any{}
+		for _, k := range f.serverKeys[env] {
+			if k["id"] != id {
+				kept = append(kept, k)
+			}
+		}
+		f.serverKeys[env] = kept
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -3746,6 +3800,56 @@ func TestEnvironment(t *testing.T) {
 			t.Errorf("body = %+v", f.lastEnvBody)
 		}
 		if !strings.Contains(out, "Cloned Production into Production Copy") {
+			t.Errorf("output = %q", out)
+		}
+	})
+}
+
+func TestEnvironmentKey(t *testing.T) {
+	t.Run("list", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		f.serverKeys["K2mVsGdXhZ8kQqZ9pJmNbJ"] = []map[string]any{
+			{"id": 14, "name": "CI key", "active": true, "key": "ser.existing", "created_at": "2026-07-01T00:00:00Z"},
+		}
+		out, err := run("", "environment", "key", "list", "Production")
+		if err != nil {
+			t.Fatalf("key list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"NAME", "ID", "ACTIVE", "CI key", "14", "true"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("create prints the secret once", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "key", "create", "Production", "--name", "backend")
+		if err != nil {
+			t.Fatalf("key create: %v\noutput: %s", err, out)
+		}
+		if f.lastServerKey["name"] != "backend" {
+			t.Errorf("body = %+v", f.lastServerKey)
+		}
+		if !strings.Contains(out, "Created server-side key backend") || !strings.Contains(out, "ser.mintedKey000000000") {
+			t.Errorf("output = %q, want the confirmation and the secret", out)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		f.serverKeys["K2mVsGdXhZ8kQqZ9pJmNbJ"] = []map[string]any{{"id": 14, "name": "CI key", "active": true}}
+		out, err := run("", "environment", "key", "delete", "Production", "14", "--yes")
+		if err != nil {
+			t.Fatalf("key delete: %v", err)
+		}
+		if len(f.serverKeys["K2mVsGdXhZ8kQqZ9pJmNbJ"]) != 0 {
+			t.Errorf("key 14 still present")
+		}
+		if !strings.Contains(out, "Deleted server-side key 14") {
 			t.Errorf("output = %q", out)
 		}
 	})
