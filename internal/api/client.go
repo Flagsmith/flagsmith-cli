@@ -151,8 +151,8 @@ type CodeReferenceCount struct {
 }
 
 // Feature is a project feature with its state in the requested environment.
-// It preserves the raw API item so JSON output mirrors the server shape while
-// the parsed fields drive the human views.
+// The CLI projects it into a curated shape for output; the fields here are the
+// subset those views need.
 type Feature struct {
 	ID                   int                  `json:"id"`
 	Name                 string               `json:"name"`
@@ -164,27 +164,6 @@ type Feature struct {
 	CodeReferencesCounts []CodeReferenceCount `json:"code_references_counts"`
 	EnvironmentState     *FeatureState        `json:"environment_feature_state"`
 	SegmentState         *FeatureState        `json:"segment_feature_state"`
-
-	raw json.RawMessage
-}
-
-func (f *Feature) UnmarshalJSON(b []byte) error {
-	type alias Feature
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	*f = Feature(a)
-	f.raw = append([]byte(nil), b...)
-	return nil
-}
-
-func (f Feature) MarshalJSON() ([]byte, error) {
-	if len(f.raw) > 0 {
-		return f.raw, nil
-	}
-	type alias Feature
-	return json.Marshal(alias(f))
 }
 
 // CodeReferences totals the per-repository code reference counts.

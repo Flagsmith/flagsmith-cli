@@ -30,7 +30,23 @@ A detail human result view includes:
 - Number of code references
 - Lifecycle stage
 
-JSON outputs mirrors a single item shape from `/api/v1/projects/<project>/features/` response schema.
+JSON output is a curated flag shape, not the raw features-endpoint item: the environment state is hoisted to the top level (`enabled`, `value`) alongside the metadata the human view shows, dropping dashboard-only noise. Human and JSON output stay in lockstep.
+
+```json
+{
+  "feature": "checkout-v2",
+  "type": "standard",
+  "description": "…",
+  "enabled": true,
+  "value": "green",
+  "segment_overrides": 2,
+  "identity_overrides": 0,
+  "code_references": 3,
+  "lifecycle_stage": "live"
+}
+```
+
+A segment override (`--segment`) has its own curated shape: `feature`, `type`, `segment`, `enabled`, `value`.
 
 ## 2. Mutation
 
@@ -97,4 +113,4 @@ A list human result view includes:
 - Flag value
 - Lifecycle stage
 
-JSON outputs mirrors `/api/v1/projects/<project>/features/` response shape, bar the pagination envelope. 
+JSON output is a bare array of the curated flag shape (see §1), one entry per flag. 

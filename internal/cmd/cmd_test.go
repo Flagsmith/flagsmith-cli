@@ -1647,7 +1647,7 @@ func TestFlagsList(t *testing.T) {
 		}
 	})
 
-	t.Run("json mirrors the features items", func(t *testing.T) {
+	t.Run("json is a curated array with state hoisted", func(t *testing.T) {
 		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
@@ -1658,7 +1658,7 @@ func TestFlagsList(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list", "--json")
 
-		// Then — a bare array (pagination envelope stripped), full item shape
+		// Then — a bare array of the curated shape, no dashboard noise
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1669,8 +1669,14 @@ func TestFlagsList(t *testing.T) {
 		if len(flags) != 2 {
 			t.Fatalf("flags = %+v", flags)
 		}
-		if _, ok := flags[0]["environment_feature_state"]; !ok {
-			t.Errorf("item = %+v, want the raw features shape preserved", flags[0])
+		if flags[0]["feature"] != "onboarding_banner" || flags[0]["enabled"] != true {
+			t.Errorf("item = %+v, want curated fields at top level", flags[0])
+		}
+		if _, ok := flags[0]["environment_feature_state"]; ok {
+			t.Errorf("item = %+v, want the raw nested state dropped", flags[0])
+		}
+		if _, ok := flags[0]["lifecycle_stage"]; !ok {
+			t.Errorf("item = %+v, want lifecycle_stage present", flags[0])
 		}
 	})
 
@@ -1816,6 +1822,36 @@ func TestFlagGet(t *testing.T) {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want it to contain %q", out, want)
 			}
+		}
+	})
+
+	t.Run("json is the curated shape", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "flag", "get", "max_items", "--json")
+
+		// Then — flat, scriptable, matching the human detail fields
+		if err != nil {
+			t.Fatalf("flag get --json: %v", err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if v["feature"] != "max_items" || v["type"] != "standard" ||
+			v["enabled"] != false || v["value"] != float64(25) ||
+			v["segment_overrides"] != float64(1) || v["identity_overrides"] != float64(2) ||
+			v["code_references"] != float64(3) {
+			t.Errorf("curated view = %+v", v)
+		}
+		if _, ok := v["environment_feature_state"]; ok {
+			t.Errorf("view = %+v, want no nested state", v)
 		}
 	})
 

@@ -196,31 +196,6 @@ func TestFeatures(t *testing.T) {
 		}
 	})
 
-	t.Run("json output preserves the raw item shape", func(t *testing.T) {
-		// Given
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, `{"count":1,"results":[
-				{"id":9,"name":"x","type":"STANDARD","extra_server_field":"kept",
-				 "environment_feature_state":{"enabled":true,"feature_state_value":"v"}}]}`)
-		}))
-		defer srv.Close()
-
-		// When
-		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, err := json.Marshal(features[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Then — fields the struct does not model survive round-trip
-		if !strings.Contains(string(b), "extra_server_field") {
-			t.Errorf("marshalled = %s, want the raw item preserved", b)
-		}
-	})
-
 	t.Run("bad request", func(t *testing.T) {
 		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

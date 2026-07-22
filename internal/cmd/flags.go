@@ -17,29 +17,94 @@ var flagCmd = &cobra.Command{
 	Short: "Inspect feature flags in the current environment",
 }
 
-func flagValue(fs *api.FeatureState) string {
-	if fs == nil || fs.Value == nil {
-		return "-"
+// flagView is the curated JSON/detail shape for a flag's environment state —
+// state hoisted to the top, with the metadata the human view shows, and none
+// of the raw features-endpoint noise. Human output and JSON stay in lockstep.
+type flagView struct {
+	Feature           string `json:"feature"`
+	Type              string `json:"type"`
+	Description       string `json:"description"`
+	Enabled           bool   `json:"enabled"`
+	Value             any    `json:"value"`
+	SegmentOverrides  int    `json:"segment_overrides"`
+	IdentityOverrides int    `json:"identity_overrides"`
+	CodeReferences    int    `json:"code_references"`
+	LifecycleStage    string `json:"lifecycle_stage"`
+}
+
+func newFlagView(f *api.Feature) flagView {
+	return flagView{
+		Feature:           f.Name,
+		Type:              featureTypeLabel(f.Type),
+		Description:       f.Description,
+		Enabled:           flagEnabled(f.EnvironmentState),
+		Value:             stateValue(f.EnvironmentState),
+		SegmentOverrides:  f.NumSegmentOverrides,
+		IdentityOverrides: identityOverrideCount(f.NumIdentityOverrides),
+		CodeReferences:    f.CodeReferences(),
+		LifecycleStage:    f.LifecycleStage,
 	}
-	return fmt.Sprint(fs.Value)
+}
+
+// segmentFlagView is the curated shape for a flag's state in one segment.
+type segmentFlagView struct {
+	Feature string `json:"feature"`
+	Type    string `json:"type"`
+	Segment int    `json:"segment"`
+	Enabled bool   `json:"enabled"`
+	Value   any    `json:"value"`
+}
+
+func newSegmentFlagView(f *api.Feature, segmentID int) segmentFlagView {
+	return segmentFlagView{
+		Feature: f.Name,
+		Type:    featureTypeLabel(f.Type),
+		Segment: segmentID,
+		Enabled: flagEnabled(f.SegmentState),
+		Value:   stateValue(f.SegmentState),
+	}
 }
 
 func flagEnabled(fs *api.FeatureState) bool {
 	return fs != nil && fs.Enabled
 }
 
-// stateLabel renders a flag's on/off state.
-func stateLabel(fs *api.FeatureState) string {
-	if flagEnabled(fs) {
+// stateValue returns a feature state's raw value, or nil.
+func stateValue(fs *api.FeatureState) any {
+	if fs == nil {
+		return nil
+	}
+	return fs.Value
+}
+
+// boolState renders on/off.
+func boolState(enabled bool) string {
+	if enabled {
 		return "on"
 	}
 	return "off"
+}
+
+// valueDisplay renders a value for the human views: "-" when unset.
+func valueDisplay(v any) string {
+	if v == nil {
+		return "-"
+	}
+	return fmt.Sprint(v)
 }
 
 // featureTypeLabel lower-cases the feature type for display (the API returns
 // e.g. STANDARD / MULTIVARIATE).
 func featureTypeLabel(t string) string {
 	return strings.ToLower(t)
+}
+
+// identityOverrideCount treats a null count (Edge/Dynamo projects) as 0.
+func identityOverrideCount(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
 }
 
 // valueDisplayMax bounds how wide a flag value is shown in the list table;
@@ -91,25 +156,29 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return output.Render(cmd.OutOrStdout(), features, outputOpts(), func(w io.Writer) error {
-			if len(features) == 0 {
+		views := make([]flagView, len(features))
+		for i := range features {
+			views[i] = newFlagView(&features[i])
+		}
+		return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
+			if len(views) == 0 {
 				fmt.Fprintln(w, "No flags.")
 				return nil
 			}
-			rows := make([][]string, len(features))
-			for i, f := range features {
+			rows := make([][]string, len(views))
+			for i, v := range views {
 				rows[i] = []string{
-					f.Name,
-					featureTypeLabel(f.Type),
-					stateLabel(f.EnvironmentState),
-					truncateValue(flagValue(f.EnvironmentState)),
-					lifecycleOrDash(f.LifecycleStage),
+					v.Feature,
+					v.Type,
+					boolState(v.Enabled),
+					truncateValue(valueDisplay(v.Value)),
+					lifecycleOrDash(v.LifecycleStage),
 				}
 			}
 			if err := output.Table(w, []string{"NAME", "TYPE", "STATE", "VALUE", "LIFECYCLE"}, rows); err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "\n%d %s\n", len(features), plural(len(features), "flag", "flags"))
+			fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "flag", "flags"))
 			return nil
 		})
 	},
@@ -158,32 +227,34 @@ func findFeature(features []api.Feature, ref string) *api.Feature {
 	return nil
 }
 
-// renderSegmentDetail prints a flag's state for one segment override.
-func renderSegmentDetail(cmd *cobra.Command, feature *api.Feature, segmentID int) error {
-	return output.Render(cmd.OutOrStdout(), feature, outputOpts(), func(w io.Writer) error {
+// renderFlagDetail prints one flag's curated detail view (or its JSON).
+func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
+	v := newFlagView(feature)
+	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
-			{Label: "Feature", Value: feature.Name},
-			{Label: "Type", Value: featureTypeLabel(feature.Type)},
-			{Label: "Segment", Value: strconv.Itoa(segmentID)},
-			{Label: "State", Value: stateLabel(feature.SegmentState)},
-			{Label: "Value", Value: flagValue(feature.SegmentState)},
+			{Label: "Feature", Value: v.Feature},
+			{Label: "Description", Value: v.Description},
+			{Label: "Type", Value: v.Type},
+			{Label: "State", Value: boolState(v.Enabled)},
+			{Label: "Value", Value: valueDisplay(v.Value)},
+			{Label: "Segment overrides", Value: strconv.Itoa(v.SegmentOverrides)},
+			{Label: "Identity overrides", Value: strconv.Itoa(v.IdentityOverrides)},
+			{Label: "Code references", Value: strconv.Itoa(v.CodeReferences)},
+			{Label: "Lifecycle stage", Value: lifecycleOrDash(v.LifecycleStage)},
 		})
 	})
 }
 
-// renderFlagDetail prints one flag's detail view (or its raw JSON item).
-func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
-	return output.Render(cmd.OutOrStdout(), feature, outputOpts(), func(w io.Writer) error {
+// renderSegmentDetail prints a flag's curated state for one segment override.
+func renderSegmentDetail(cmd *cobra.Command, feature *api.Feature, segmentID int) error {
+	v := newSegmentFlagView(feature, segmentID)
+	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
-			{Label: "Feature", Value: feature.Name},
-			{Label: "Description", Value: feature.Description},
-			{Label: "Type", Value: featureTypeLabel(feature.Type)},
-			{Label: "State", Value: stateLabel(feature.EnvironmentState)},
-			{Label: "Value", Value: flagValue(feature.EnvironmentState)},
-			{Label: "Segment overrides", Value: strconv.Itoa(feature.NumSegmentOverrides)},
-			{Label: "Identity overrides", Value: identityOverrides(feature.NumIdentityOverrides)},
-			{Label: "Code references", Value: strconv.Itoa(feature.CodeReferences())},
-			{Label: "Lifecycle stage", Value: lifecycleOrDash(feature.LifecycleStage)},
+			{Label: "Feature", Value: v.Feature},
+			{Label: "Type", Value: v.Type},
+			{Label: "Segment", Value: strconv.Itoa(v.Segment)},
+			{Label: "State", Value: boolState(v.Enabled)},
+			{Label: "Value", Value: valueDisplay(v.Value)},
 		})
 	})
 }
@@ -193,13 +264,6 @@ func lifecycleOrDash(stage string) string {
 		return "-"
 	}
 	return stage
-}
-
-func identityOverrides(n *int) string {
-	if n == nil {
-		return "0" // Edge/Dynamo projects do not report a count
-	}
-	return strconv.Itoa(*n)
 }
 
 // environmentLabel renders an environment as "Name (key)" for messages.
