@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -164,8 +165,169 @@ func renderFeature(cmd *cobra.Command, f *api.Feature) error {
 	})
 }
 
+var (
+	featureValueFlag       string
+	featureEnabledFlag     bool
+	featureDescriptionFlag string
+	featureVariantsFlag    string
+	featureArchiveFlag     bool
+	featureUnarchiveFlag   bool
+)
+
+var featureCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a feature",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		in := api.FeatureWrite{Name: args[0]}
+		if cmd.Flags().Changed("value") {
+			in.InitialValue = &featureValueFlag
+		}
+		if cmd.Flags().Changed("description") {
+			in.Description = &featureDescriptionFlag
+		}
+		if cmd.Flags().Changed("enabled") {
+			in.DefaultEnabled = &featureEnabledFlag
+		}
+		if cmd.Flags().Changed("variants") {
+			if in.MultivariateOptions, err = variantsForWrite(cmd, featureVariantsFlag); err != nil {
+				return err
+			}
+		}
+		feat, err := api.CreateFeature(cmd.Context(), apiURL, cred.auth, projectID, in)
+		if err != nil {
+			return err
+		}
+		output.Success(cmd.ErrOrStderr(), "Created feature %s (%d)", feat.Name, feat.ID)
+		return renderFeature(cmd, feat)
+	},
+}
+
+var featureUpdateCmd = &cobra.Command{
+	Use:   "update <feature>",
+	Short: "Update a feature's description or archive state",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if featureArchiveFlag && featureUnarchiveFlag {
+			return usageErrorf("--archive and --unarchive are mutually exclusive")
+		}
+		in := api.FeatureWrite{}
+		changed := false
+		if cmd.Flags().Changed("description") {
+			in.Description = &featureDescriptionFlag
+			changed = true
+		}
+		if featureArchiveFlag {
+			t := true
+			in.IsArchived = &t
+			changed = true
+		}
+		if featureUnarchiveFlag {
+			fl := false
+			in.IsArchived = &fl
+			changed = true
+		}
+		if !changed {
+			return usageErrorf("nothing to update — pass --description, --archive, or --unarchive")
+		}
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		id, err := resolveFeatureID(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		feat, err := api.UpdateFeature(cmd.Context(), apiURL, cred.auth, projectID, id, in)
+		if err != nil {
+			return err
+		}
+		output.Success(cmd.ErrOrStderr(), "Updated feature %s (%d)", feat.Name, feat.ID)
+		return renderFeature(cmd, feat)
+	},
+}
+
+var featureDeleteCmd = &cobra.Command{
+	Use:   "delete <feature>",
+	Short: "Delete a feature",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		id, err := resolveFeatureID(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		errOut := cmd.ErrOrStderr()
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete feature %s (%d)", args[0], id)); err != nil {
+			return err
+		} else if !ok {
+			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
+			return nil
+		}
+		if err := api.DeleteFeature(cmd.Context(), apiURL, cred.auth, projectID, id); err != nil {
+			return err
+		}
+		output.Success(errOut, "Deleted feature %s (%d)", args[0], id)
+		return nil
+	},
+}
+
+// variantInput is one entry of the inline --variants JSON array.
+type variantInput struct {
+	Value  any     `json:"value"`
+	Weight float64 `json:"weight"`
+}
+
+// mvOptionFromJSON types a variant from its JSON value: bool → boolean,
+// number → integer, else string.
+func mvOptionFromJSON(value any, weight float64) api.MultivariateOption {
+	o := api.MultivariateOption{DefaultPercentageAllocation: weight}
+	switch t := value.(type) {
+	case bool:
+		v := t
+		o.Type, o.BooleanValue = "bool", &v
+	case float64:
+		n := int(t)
+		o.Type, o.IntegerValue = "int", &n
+	default:
+		s := fmt.Sprint(value)
+		o.Type, o.StringValue = "unicode", &s
+	}
+	return o
+}
+
+func variantsForWrite(cmd *cobra.Command, arg string) ([]api.MultivariateOption, error) {
+	raw, err := readRuleArg(cmd, arg)
+	if err != nil {
+		return nil, err
+	}
+	var inputs []variantInput
+	if err := json.Unmarshal(raw, &inputs); err != nil {
+		return nil, fmt.Errorf("parsing --variants: %w", err)
+	}
+	opts := make([]api.MultivariateOption, len(inputs))
+	for i, in := range inputs {
+		opts[i] = mvOptionFromJSON(in.Value, in.Weight)
+	}
+	return opts, nil
+}
+
 func init() {
 	featureListCmd.Flags().BoolVar(&featureIncludeArchived, "include-archived", false, "include archived features")
-	featureCmd.AddCommand(featureListCmd, featureGetCmd)
+	featureCreateCmd.Flags().StringVar(&featureValueFlag, "value", "", "the feature's default value")
+	featureCreateCmd.Flags().BoolVar(&featureEnabledFlag, "enabled", false, "enable the feature by default")
+	featureCreateCmd.Flags().StringVar(&featureDescriptionFlag, "description", "", "feature description")
+	featureCreateCmd.Flags().StringVar(&featureVariantsFlag, "variants", "", "multivariate variants: @file, -, or inline JSON")
+	featureUpdateCmd.Flags().StringVar(&featureDescriptionFlag, "description", "", "feature description")
+	featureUpdateCmd.Flags().BoolVar(&featureArchiveFlag, "archive", false, "archive the feature")
+	featureUpdateCmd.Flags().BoolVar(&featureUnarchiveFlag, "unarchive", false, "unarchive the feature")
+	featureCmd.AddCommand(featureListCmd, featureGetCmd, featureCreateCmd, featureUpdateCmd, featureDeleteCmd)
 	rootCmd.AddCommand(featureCmd)
 }

@@ -134,6 +134,9 @@ type fakeInstance struct {
 	segments        map[int]map[string]any // segment id -> segment
 	nextSegmentID   int
 	lastSegmentBody map[string]any // last segment create/update body
+
+	nextFeatureID   int
+	lastFeatureBody map[string]any // last feature create/update body
 }
 
 // fakeFS is a stored identity feature-state in the fake backend.
@@ -188,6 +191,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			},
 		},
 		nextSegmentID: 100,
+		nextFeatureID: 900,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -561,6 +565,68 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		json.NewEncoder(w).Encode(found)
+	})
+	// Feature create/update/delete.
+	mux.HandleFunc("POST /api/v1/projects/{project}/features/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		project := r.PathValue("project")
+		f.mu.Lock()
+		f.lastFeatureBody = body
+		f.nextFeatureID++
+		body["id"] = f.nextFeatureID
+		f.features[project] = append(f.features[project], body)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(body)
+	})
+	mux.HandleFunc("PATCH /api/v1/projects/{project}/features/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastFeatureBody = body
+		var found map[string]any
+		for _, it := range f.features[r.PathValue("project")] {
+			if it["id"] == id {
+				for k, v := range body {
+					it[k] = v
+				}
+				found = it
+			}
+		}
+		f.mu.Unlock()
+		if found == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(found)
+	})
+	mux.HandleFunc("DELETE /api/v1/projects/{project}/features/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		project := r.PathValue("project")
+		f.mu.Lock()
+		kept := f.features[project][:0:0]
+		for _, it := range f.features[project] {
+			if it["id"] != id {
+				kept = append(kept, it)
+			}
+		}
+		f.features[project] = kept
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	})
 	// Segments: list, retrieve, create, update, delete.
 	mux.HandleFunc("GET /api/v1/projects/{project}/segments/", func(w http.ResponseWriter, r *http.Request) {
@@ -3039,6 +3105,99 @@ func TestFeatureGet(t *testing.T) {
 			t.Errorf("variant = %+v", v0)
 		}
 	})
+}
+
+func TestFeatureCreate(t *testing.T) {
+	t.Run("standard with a default value", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "create", "checkout-3", "--value", "blue", "--description", "d", "--enabled")
+		if err != nil {
+			t.Fatalf("feature create: %v\noutput: %s", err, out)
+		}
+		b := f.lastFeatureBody
+		if b["name"] != "checkout-3" || b["initial_value"] != "blue" || b["description"] != "d" || b["default_enabled"] != true {
+			t.Errorf("body = %+v", b)
+		}
+		if !strings.Contains(out, "Created feature checkout-3") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("multivariate with inline variants types by JSON value", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		variants := `[{"value":"a","weight":30},{"value":42,"weight":70}]`
+		if _, err := run("", "feature", "create", "banner-2", "--value", "hello", "--variants", variants); err != nil {
+			t.Fatalf("feature create --variants: %v", err)
+		}
+		opts := f.lastFeatureBody["multivariate_options"].([]any)
+		o0 := opts[0].(map[string]any)
+		o1 := opts[1].(map[string]any)
+		if o0["type"] != "unicode" || o0["string_value"] != "a" || o0["default_percentage_allocation"] != float64(30) {
+			t.Errorf("variant 0 = %+v", o0)
+		}
+		if o1["type"] != "int" || o1["integer_value"] != float64(42) || o1["default_percentage_allocation"] != float64(70) {
+			t.Errorf("variant 1 = %+v", o1)
+		}
+	})
+}
+
+func TestFeatureUpdate(t *testing.T) {
+	t.Run("description", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "update", "checkout-v2", "--description", "redesign"); err != nil {
+			t.Fatalf("feature update: %v", err)
+		}
+		if f.lastFeatureBody["description"] != "redesign" {
+			t.Errorf("body = %+v", f.lastFeatureBody)
+		}
+	})
+
+	t.Run("archive and unarchive", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "update", "checkout-v2", "--archive"); err != nil {
+			t.Fatalf("archive: %v", err)
+		}
+		if f.lastFeatureBody["is_archived"] != true {
+			t.Errorf("archive body = %+v", f.lastFeatureBody)
+		}
+		if _, err := run("", "feature", "update", "legacy-copy", "--unarchive"); err != nil {
+			t.Fatalf("unarchive: %v", err)
+		}
+		if f.lastFeatureBody["is_archived"] != false {
+			t.Errorf("unarchive body = %+v", f.lastFeatureBody)
+		}
+	})
+
+	t.Run("archive and unarchive conflict", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		_, err := run("", "feature", "update", "checkout-v2", "--archive", "--unarchive")
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+	})
+}
+
+func TestFeatureDelete(t *testing.T) {
+	f := flagUpdateEnv(t)
+	withFeatures(f)
+	out, err := run("", "feature", "delete", "checkout-v2", "--yes")
+	if err != nil {
+		t.Fatalf("feature delete: %v", err)
+	}
+	for _, it := range f.features["101"] {
+		if it["id"] == 88 {
+			t.Errorf("feature 88 still present")
+		}
+	}
+	if !strings.Contains(out, "Deleted feature checkout-v2 (88)") {
+		t.Errorf("output = %q", out)
+	}
 }
 
 func TestAPI(t *testing.T) {

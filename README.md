@@ -29,6 +29,9 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith segment delete <segment>` — delete a segment.
 - `flagsmith feature list` — list project features (`--include-archived`).
 - `flagsmith feature get <feature>` — show a feature and its variants.
+- `flagsmith feature create <name>` — create a feature (`--value`, `--enabled`, `--description`, `--variants`).
+- `flagsmith feature update <feature>` — update description or archive (`--description`, `--archive`/`--unarchive`).
+- `flagsmith feature delete <feature>` — delete a feature.
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

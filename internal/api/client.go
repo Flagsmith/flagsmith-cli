@@ -256,6 +256,44 @@ func GetFeature(ctx context.Context, apiURL string, auth Auth, projectID, featur
 	return f, nil
 }
 
+// FeatureWrite is the create/update body. Pointer fields distinguish "unset"
+// from a zero value; the API ignores fields that are read-only for the action.
+type FeatureWrite struct {
+	Name                string               `json:"name,omitempty"`
+	Description         *string              `json:"description,omitempty"`
+	InitialValue        *string              `json:"initial_value,omitempty"`
+	DefaultEnabled      *bool                `json:"default_enabled,omitempty"`
+	IsArchived          *bool                `json:"is_archived,omitempty"`
+	MultivariateOptions []MultivariateOption `json:"multivariate_options,omitempty"`
+}
+
+// CreateFeature creates a project feature (project taken from the URL).
+func CreateFeature(ctx context.Context, apiURL string, auth Auth, projectID int, in FeatureWrite) (*Feature, error) {
+	out := &Feature{}
+	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
+	if err := sendJSON(ctx, apiURL, http.MethodPost, path, auth, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UpdateFeature patches the mutable fields of a feature (name, initial value,
+// and default-enabled are read-only server-side and ignored if sent).
+func UpdateFeature(ctx context.Context, apiURL string, auth Auth, projectID, featureID int, in FeatureWrite) (*Feature, error) {
+	out := &Feature{}
+	path := fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID)
+	if err := sendJSON(ctx, apiURL, http.MethodPatch, path, auth, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeleteFeature removes a feature.
+func DeleteFeature(ctx context.Context, apiURL string, auth Auth, projectID, featureID int) error {
+	path := fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID)
+	return sendJSON(ctx, apiURL, http.MethodDelete, path, auth, nil, nil)
+}
+
 // CodeReferences totals the per-repository code reference counts.
 func (f Feature) CodeReferences() int {
 	total := 0
