@@ -144,6 +144,8 @@ func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, a
 	return pc, cred, projectID, env, nil
 }
 
+var flagListSegmentFlag int
+
 var flagListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List every flag in the current environment",
@@ -152,9 +154,12 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, 0)
+		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, flagListSegmentFlag)
 		if err != nil {
 			return err
+		}
+		if flagListSegmentFlag != 0 {
+			return listSegmentOverrides(cmd, features, flagListSegmentFlag)
 		}
 		views := make([]flagView, len(features))
 		for i := range features {
@@ -182,6 +187,32 @@ var flagListCmd = &cobra.Command{
 			return nil
 		})
 	},
+}
+
+// listSegmentOverrides renders only the flags overridden for a segment,
+// showing the override's state rather than the environment default.
+func listSegmentOverrides(cmd *cobra.Command, features []api.Feature, segmentID int) error {
+	views := []segmentFlagView{}
+	for i := range features {
+		if features[i].SegmentState != nil {
+			views = append(views, newSegmentFlagView(&features[i], segmentID))
+		}
+	}
+	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
+		if len(views) == 0 {
+			fmt.Fprintln(w, "No segment overrides.")
+			return nil
+		}
+		rows := make([][]string, len(views))
+		for i, v := range views {
+			rows[i] = []string{v.Feature, v.Type, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}
+		if err := output.Table(w, []string{"NAME", "TYPE", "STATE", "VALUE"}, rows); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "flag", "flags"))
+		return nil
+	})
 }
 
 var (
@@ -302,6 +333,7 @@ func plural(n int, one, many string) string {
 }
 
 func init() {
+	flagListCmd.Flags().IntVar(&flagListSegmentFlag, "segment", 0, "list overrides for this segment id")
 	flagGetCmd.Flags().IntVar(&flagGetSegmentFlag, "segment", 0, "show the override for this segment id")
 	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
 	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagDeleteCmd, flagCreateCmd)

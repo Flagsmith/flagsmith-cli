@@ -2029,6 +2029,60 @@ func TestFlagsList(t *testing.T) {
 	})
 }
 
+func TestFlagListSegment(t *testing.T) {
+	t.Run("lists only the flags overridden for the segment", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true) // max_items with a segment override
+
+		out, err := run("", "flag", "list", "--segment", "12")
+		if err != nil {
+			t.Fatalf("flag list --segment: %v\noutput: %s", err, out)
+		}
+		if f.featuresSeg() != "12" {
+			t.Errorf("features segment = %q, want 12", f.featuresSeg())
+		}
+		for _, want := range []string{"NAME", "TYPE", "STATE", "VALUE", "max_items", "special", "on"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if strings.Contains(out, "LIFECYCLE") {
+			t.Errorf("output = %q, segment list should drop LIFECYCLE", out)
+		}
+	})
+
+	t.Run("--json is the segment-override shape", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		out, err := run("", "flag", "list", "--segment", "12", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var arr []map[string]any
+		if err := json.Unmarshal([]byte(out), &arr); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if len(arr) != 1 || arr[0]["feature"] != "max_items" ||
+			arr[0]["segment"] != float64(12) || arr[0]["enabled"] != true {
+			t.Errorf("items = %+v", arr)
+		}
+	})
+
+	t.Run("no overrides for the segment", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, false) // max_items, no segment override
+
+		out, err := run("", "flag", "list", "--segment", "99")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "No segment overrides") {
+			t.Errorf("output = %q, want a no-overrides message", out)
+		}
+	})
+}
+
 func TestFlagGet(t *testing.T) {
 	t.Run("detail view for a named feature", func(t *testing.T) {
 		// Given
