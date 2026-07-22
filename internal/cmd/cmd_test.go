@@ -2423,6 +2423,31 @@ func TestFlagDelete(t *testing.T) {
 	})
 }
 
+func TestUsageIsSingleLine(t *testing.T) {
+	// Given / When — root help
+	out, err := run("", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Then — one context-appropriate line, not cobra's default two-line form
+	if !strings.Contains(out, "flagsmith [command] [flags]") {
+		t.Errorf("root usage = %q, want the single-line form", out)
+	}
+	if strings.Contains(out, "flagsmith [flags]\n") {
+		t.Errorf("root usage still shows the two-line form:\n%s", out)
+	}
+
+	// Leaf commands render their own use line
+	leaf, err := run("", "flag", "list", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(leaf, "flagsmith flag list [flags]") {
+		t.Errorf("leaf usage = %q, want its own use line", leaf)
+	}
+}
+
 func TestFlagIdentity(t *testing.T) {
 	// max_items is feature id 2 in defaultFeatures; user-1 is core identity 501.
 

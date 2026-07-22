@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -11,6 +12,18 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
+
+// singleLineUsage rewrites cobra's default two-line Usage block (one line for
+// running the command bare, another for a subcommand) into a single
+// context-appropriate line: "<path> [command] [flags]" for groups, or the
+// command's own use line for leaves. Applied as a string replace on cobra's
+// own template so it survives version bumps (a no-op if the block ever changes,
+// caught by TestUsageIsSingleLine).
+func singleLineUsage(template string) string {
+	const defaultBlock = "Usage:{{if .Runnable}}\n  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}\n  {{.CommandPath}} [command]{{end}}"
+	const oneLine = "Usage:{{if .HasAvailableSubCommands}}\n  {{.CommandPath}} [command] [flags]{{else}}\n  {{.UseLine}}{{end}}"
+	return strings.Replace(template, defaultBlock, oneLine, 1)
+}
 
 // apiURL is the resolved instance URL for the current invocation, set by
 // applyContext. Flag values live in the *Flag variables below.
@@ -115,6 +128,8 @@ func init() {
 		"output JSON instead of human-readable text (env: FLAGSMITH_JSON_OUTPUT)")
 	flags.StringVar(&jqFlag, "jq", "",
 		"filter JSON output through a jq expression (implies --json)")
+
+	rootCmd.SetUsageTemplate(singleLineUsage(rootCmd.UsageTemplate()))
 
 	// Hidden aliases: --api for --api-url, --no-input for --yes.
 	rootCmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
