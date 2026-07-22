@@ -223,8 +223,8 @@ type Feature struct {
 // typed struct (type is "unicode"/"int"/"bool"); default_percentage_allocation
 // is the variant's weight.
 type MultivariateOption struct {
-	ID                          int     `json:"id,omitempty"`
-	Type                        string  `json:"type,omitempty"`
+	ID                          int      `json:"id,omitempty"`
+	Type                        string   `json:"type,omitempty"`
 	StringValue                 *string  `json:"string_value,omitempty"`
 	IntegerValue                *int     `json:"integer_value,omitempty"`
 	BooleanValue                *bool    `json:"boolean_value,omitempty"`
@@ -311,6 +311,7 @@ func CreateMVOption(ctx context.Context, apiURL string, auth Auth, projectID, fe
 // per-environment weight overrides survive).
 func UpdateMVOption(ctx context.Context, apiURL string, auth Auth, projectID, featureID, optionID int, in MultivariateOption) (*MultivariateOption, error) {
 	out := &MultivariateOption{}
+	in.Feature = featureID // even a partial update must carry feature: the serializer reads it in validate() (else 500)
 	path := fmt.Sprintf("%s%d/", mvOptionsPath(projectID, featureID), optionID)
 	if err := sendJSON(ctx, apiURL, http.MethodPatch, path, auth, in, out); err != nil {
 		return nil, err
@@ -657,6 +658,7 @@ type Segment struct {
 	ID          int           `json:"id,omitempty"`
 	Name        string        `json:"name"`
 	Description string        `json:"description,omitempty"`
+	Project     int           `json:"project,omitempty"`
 	Feature     *int          `json:"feature,omitempty"`
 	Rules       []SegmentRule `json:"rules"`
 }
@@ -684,6 +686,7 @@ func GetSegment(ctx context.Context, apiURL string, auth Auth, projectID, segmen
 // CreateSegment creates a segment (project taken from the URL).
 func CreateSegment(ctx context.Context, apiURL string, auth Auth, projectID int, in Segment) (*Segment, error) {
 	out := &Segment{}
+	in.Project = projectID // the serializer requires project in the body, not just the URL
 	path := fmt.Sprintf("/api/v1/projects/%d/segments/", projectID)
 	if err := sendJSON(ctx, apiURL, http.MethodPost, path, auth, in, out); err != nil {
 		return nil, err
@@ -694,6 +697,7 @@ func CreateSegment(ctx context.Context, apiURL string, auth Auth, projectID int,
 // UpdateSegment replaces a segment's rule tree and fields (PUT).
 func UpdateSegment(ctx context.Context, apiURL string, auth Auth, projectID, segmentID int, in Segment) (*Segment, error) {
 	out := &Segment{}
+	in.Project = projectID // the serializer requires project in the body, not just the URL
 	path := fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID)
 	if err := sendJSON(ctx, apiURL, http.MethodPut, path, auth, in, out); err != nil {
 		return nil, err

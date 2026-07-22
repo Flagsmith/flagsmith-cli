@@ -374,3 +374,99 @@ func TestOrganisations(t *testing.T) {
 		}
 	})
 }
+
+// The Admin API's segment serializer requires `project` in the request body
+// (the URL's project_pk is not enough), so create/update must send it or the
+// API returns 400 {"project":["This field is required."]}.
+func TestCreateSegment(t *testing.T) {
+	// Given
+	var body Segment
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/101/segments/" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, `{"id":42,"name":"us-adults","project":101}`)
+	}))
+	defer srv.Close()
+
+	// When
+	seg, err := CreateSegment(context.Background(), srv.URL, Bearer("t"), 101, Segment{
+		Name:  "us-adults",
+		Rules: []SegmentRule{{Type: "ALL"}},
+	})
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Project != 101 {
+		t.Errorf("body.project = %d, want 101 (must be sent in the body)", body.Project)
+	}
+	if seg.ID != 42 {
+		t.Errorf("segment = %+v", seg)
+	}
+}
+
+func TestUpdateSegment(t *testing.T) {
+	// Given
+	var body Segment
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/projects/101/segments/42/" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		fmt.Fprint(w, `{"id":42,"name":"us-adults","project":101}`)
+	}))
+	defer srv.Close()
+
+	// When
+	_, err := UpdateSegment(context.Background(), srv.URL, Bearer("t"), 101, 42, Segment{
+		Name:  "us-adults",
+		Rules: []SegmentRule{{Type: "ALL"}},
+	})
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Project != 101 {
+		t.Errorf("body.project = %d, want 101 (must be sent in the body)", body.Project)
+	}
+}
+
+// The Admin API's mv-option serializer reads attrs["feature"] in validate()
+// even on a PATCH, so a partial update that omits `feature` triggers an
+// unhandled KeyError → 500. UpdateMVOption must always send the feature id.
+func TestUpdateMVOption(t *testing.T) {
+	// Given
+	var body MultivariateOption
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/projects/101/features/5/mv-options/9/" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		fmt.Fprint(w, `{"id":9,"feature":5,"default_percentage_allocation":40}`)
+	}))
+	defer srv.Close()
+
+	// When
+	w := 40.0
+	_, err := UpdateMVOption(context.Background(), srv.URL, Bearer("t"), 101, 5, 9,
+		MultivariateOption{DefaultPercentageAllocation: &w})
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Feature != 5 {
+		t.Errorf("body.feature = %d, want 5 (must be sent to avoid the backend KeyError)", body.Feature)
+	}
+}
