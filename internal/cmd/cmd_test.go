@@ -137,6 +137,18 @@ type fakeInstance struct {
 
 	nextFeatureID   int
 	lastFeatureBody map[string]any // last feature create/update body
+	nextMVID        int
+	lastMVBody      map[string]any // last mv-options create/update body
+}
+
+// featureByID finds a stored feature item by id (caller holds the lock).
+func (f *fakeInstance) featureByID(project string, id int) map[string]any {
+	for _, it := range f.features[project] {
+		if it["id"] == id {
+			return it
+		}
+	}
+	return nil
 }
 
 // fakeFS is a stored identity feature-state in the fake backend.
@@ -192,6 +204,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		},
 		nextSegmentID: 100,
 		nextFeatureID: 900,
+		nextMVID:      300,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -625,6 +638,74 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			}
 		}
 		f.features[project] = kept
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Multivariate options sub-resource.
+	mux.HandleFunc("POST /api/v1/projects/{project}/features/{feature}/mv-options/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		fid, _ := strconv.Atoi(r.PathValue("feature"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastMVBody = body
+		f.nextMVID++
+		body["id"] = f.nextMVID
+		if feat := f.featureByID(r.PathValue("project"), fid); feat != nil {
+			opts, _ := feat["multivariate_options"].([]any)
+			feat["multivariate_options"] = append(opts, body)
+		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(body)
+	})
+	mux.HandleFunc("PATCH /api/v1/projects/{project}/features/{feature}/mv-options/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		fid, _ := strconv.Atoi(r.PathValue("feature"))
+		oid, _ := strconv.Atoi(r.PathValue("id"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastMVBody = body
+		var found map[string]any
+		if feat := f.featureByID(r.PathValue("project"), fid); feat != nil {
+			for _, o := range feat["multivariate_options"].([]any) {
+				om := o.(map[string]any)
+				if om["id"] == oid {
+					for k, v := range body {
+						om[k] = v
+					}
+					found = om
+				}
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(found)
+	})
+	mux.HandleFunc("DELETE /api/v1/projects/{project}/features/{feature}/mv-options/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		fid, _ := strconv.Atoi(r.PathValue("feature"))
+		oid, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		if feat := f.featureByID(r.PathValue("project"), fid); feat != nil {
+			opts, _ := feat["multivariate_options"].([]any)
+			kept := []any{}
+			for _, o := range opts {
+				if o.(map[string]any)["id"] != oid {
+					kept = append(kept, o)
+				}
+			}
+			feat["multivariate_options"] = kept
+		}
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -3198,6 +3279,90 @@ func TestFeatureDelete(t *testing.T) {
 	if !strings.Contains(out, "Deleted feature checkout-v2 (88)") {
 		t.Errorf("output = %q", out)
 	}
+}
+
+func TestFeatureVariant(t *testing.T) {
+	t.Run("list", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "variant", "list", "banner-copy")
+		if err != nil {
+			t.Fatalf("variant list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"VALUE", "WEIGHT", "KEY", "ID", "headline", "30", "hero", "201", "subhead"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("add types the value and posts to mv-options", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "variant", "add", "banner-copy", "--value", "cta", "--weight", "20", "--key", "button")
+		if err != nil {
+			t.Fatalf("variant add: %v\noutput: %s", err, out)
+		}
+		b := f.lastMVBody
+		if b["type"] != "unicode" || b["string_value"] != "cta" || b["default_percentage_allocation"] != float64(20) ||
+			b["key"] != "button" || b["feature"] != float64(91) {
+			t.Errorf("mv body = %+v", b)
+		}
+		if !strings.Contains(out, "Added variant cta") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("add infers an integer value", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "variant", "add", "banner-copy", "--value", "42", "--weight", "10"); err != nil {
+			t.Fatalf("variant add: %v", err)
+		}
+		if f.lastMVBody["type"] != "int" || f.lastMVBody["integer_value"] != float64(42) {
+			t.Errorf("mv body = %+v", f.lastMVBody)
+		}
+	})
+
+	t.Run("update a variant by key", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "variant", "update", "banner-copy", "hero", "--weight", "40"); err != nil {
+			t.Fatalf("variant update: %v", err)
+		}
+		if f.lastMVBody["default_percentage_allocation"] != float64(40) {
+			t.Errorf("mv body = %+v", f.lastMVBody)
+		}
+		// value untouched (only weight sent)
+		if _, ok := f.lastMVBody["string_value"]; ok {
+			t.Errorf("mv body = %+v, want only the weight sent", f.lastMVBody)
+		}
+	})
+
+	t.Run("delete a variant by id", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "variant", "delete", "banner-copy", "201", "--yes")
+		if err != nil {
+			t.Fatalf("variant delete: %v", err)
+		}
+		feat := f.featureByID("101", 91)
+		if len(feat["multivariate_options"].([]any)) != 1 {
+			t.Errorf("options = %+v, want variant 201 removed", feat["multivariate_options"])
+		}
+		if !strings.Contains(out, "Deleted variant") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("unknown variant errors", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		_, err := run("", "feature", "variant", "delete", "banner-copy", "nope", "--yes")
+		if err == nil || !strings.Contains(err.Error(), "nope") {
+			t.Errorf("err = %v, want a not-found error", err)
+		}
+	})
 }
 
 func TestAPI(t *testing.T) {

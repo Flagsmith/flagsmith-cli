@@ -69,10 +69,17 @@ func toFeatureView(f *api.Feature) featureView {
 	}
 	for _, o := range f.MultivariateOptions {
 		v.Variants = append(v.Variants, variantView{
-			ID: o.ID, Value: mvOptionValue(o), Weight: o.DefaultPercentageAllocation, Key: o.Key,
+			ID: o.ID, Value: mvOptionValue(o), Weight: weightOf(o), Key: o.Key,
 		})
 	}
 	return v
+}
+
+func weightOf(o api.MultivariateOption) float64 {
+	if o.DefaultPercentageAllocation != nil {
+		return *o.DefaultPercentageAllocation
+	}
+	return 0
 }
 
 func formatWeight(w float64) string {
@@ -288,7 +295,8 @@ type variantInput struct {
 // mvOptionFromJSON types a variant from its JSON value: bool → boolean,
 // number → integer, else string.
 func mvOptionFromJSON(value any, weight float64) api.MultivariateOption {
-	o := api.MultivariateOption{DefaultPercentageAllocation: weight}
+	w := weight
+	o := api.MultivariateOption{DefaultPercentageAllocation: &w}
 	switch t := value.(type) {
 	case bool:
 		v := t
@@ -319,6 +327,210 @@ func variantsForWrite(cmd *cobra.Command, arg string) ([]api.MultivariateOption,
 	return opts, nil
 }
 
+var (
+	featureVariantValueFlag  string
+	featureVariantWeightFlag float64
+	featureVariantKeyFlag    string
+	featureVariantTypeFlag   string
+)
+
+var featureVariantCmd = &cobra.Command{
+	Use:   "variant",
+	Short: "Manage a multivariate feature's variants",
+}
+
+// mvOptionFromFlag types a variant from a --value string, honouring --type.
+func mvOptionFromFlag(value, typeFlag string) (api.MultivariateOption, error) {
+	fv, err := inferFeatureValue(value, typeFlag)
+	if err != nil {
+		return api.MultivariateOption{}, err
+	}
+	o := api.MultivariateOption{}
+	switch fv.Type {
+	case "boolean":
+		b := fv.Value == "true"
+		o.Type, o.BooleanValue = "bool", &b
+	case "integer":
+		n, _ := strconv.Atoi(fv.Value)
+		o.Type, o.IntegerValue = "int", &n
+	default:
+		s := fv.Value
+		o.Type, o.StringValue = "unicode", &s
+	}
+	return o, nil
+}
+
+// findVariant resolves a variant reference (id or key) on a feature.
+func findVariant(f *api.Feature, ref string) *api.MultivariateOption {
+	if id, err := strconv.Atoi(ref); err == nil {
+		for i := range f.MultivariateOptions {
+			if f.MultivariateOptions[i].ID == id {
+				return &f.MultivariateOptions[i]
+			}
+		}
+	}
+	for i := range f.MultivariateOptions {
+		if f.MultivariateOptions[i].Key == ref {
+			return &f.MultivariateOptions[i]
+		}
+	}
+	return nil
+}
+
+func variantLabel(o *api.MultivariateOption) string {
+	return fmt.Sprint(mvOptionValue(*o))
+}
+
+var featureVariantListCmd = &cobra.Command{
+	Use:   "list <feature>",
+	Short: "List a feature's variants",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		id, err := resolveFeatureID(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		if err != nil {
+			return err
+		}
+		variants := toFeatureView(feat).Variants
+		return output.Render(cmd.OutOrStdout(), variants, outputOpts(), func(w io.Writer) error {
+			if len(variants) == 0 {
+				fmt.Fprintln(w, "No variants.")
+				return nil
+			}
+			rows := make([][]string, len(variants))
+			for i, v := range variants {
+				rows[i] = []string{fmt.Sprint(v.Value), formatWeight(v.Weight), v.Key, strconv.Itoa(v.ID)}
+			}
+			return output.Table(w, []string{"VALUE", "WEIGHT", "KEY", "ID"}, rows)
+		})
+	},
+}
+
+var featureVariantAddCmd = &cobra.Command{
+	Use:   "add <feature>",
+	Short: "Add a variant to a feature",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("value") {
+			return usageErrorf("a variant needs a value — pass --value")
+		}
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		id, err := resolveFeatureID(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		o, err := mvOptionFromFlag(featureVariantValueFlag, featureVariantTypeFlag)
+		if err != nil {
+			return err
+		}
+		o.Feature = id
+		if cmd.Flags().Changed("weight") {
+			w := featureVariantWeightFlag
+			o.DefaultPercentageAllocation = &w
+		}
+		if cmd.Flags().Changed("key") {
+			o.Key = featureVariantKeyFlag
+		}
+		created, err := api.CreateMVOption(cmd.Context(), apiURL, cred.auth, projectID, id, o)
+		if err != nil {
+			return err
+		}
+		output.Success(cmd.ErrOrStderr(), "Added variant %s (%d) to %s", variantLabel(created), created.ID, args[0])
+		return nil
+	},
+}
+
+var featureVariantUpdateCmd = &cobra.Command{
+	Use:   "update <feature> <variant>",
+	Short: "Update a variant (by id or key)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("value") && !cmd.Flags().Changed("weight") && !cmd.Flags().Changed("key") {
+			return usageErrorf("nothing to update — pass --value, --weight, or --key")
+		}
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		id, err := resolveFeatureID(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		if err != nil {
+			return err
+		}
+		variant := findVariant(feat, args[1])
+		if variant == nil {
+			return fmt.Errorf("variant %q not found on %s", args[1], args[0])
+		}
+		o := api.MultivariateOption{}
+		if cmd.Flags().Changed("value") {
+			if o, err = mvOptionFromFlag(featureVariantValueFlag, featureVariantTypeFlag); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("weight") {
+			w := featureVariantWeightFlag
+			o.DefaultPercentageAllocation = &w
+		}
+		if cmd.Flags().Changed("key") {
+			o.Key = featureVariantKeyFlag
+		}
+		if _, err := api.UpdateMVOption(cmd.Context(), apiURL, cred.auth, projectID, id, variant.ID, o); err != nil {
+			return err
+		}
+		output.Success(cmd.ErrOrStderr(), "Updated variant %s (%d)", variantLabel(variant), variant.ID)
+		return nil
+	},
+}
+
+var featureVariantDeleteCmd = &cobra.Command{
+	Use:   "delete <feature> <variant>",
+	Short: "Delete a variant (by id or key)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cred, projectID, err := projectScopedContext(cmd)
+		if err != nil {
+			return err
+		}
+		id, err := resolveFeatureID(cmd, cred, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		if err != nil {
+			return err
+		}
+		variant := findVariant(feat, args[1])
+		if variant == nil {
+			return fmt.Errorf("variant %q not found on %s", args[1], args[0])
+		}
+		errOut := cmd.ErrOrStderr()
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete variant %s (%d) from %s", variantLabel(variant), variant.ID, args[0])); err != nil {
+			return err
+		} else if !ok {
+			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
+			return nil
+		}
+		if err := api.DeleteMVOption(cmd.Context(), apiURL, cred.auth, projectID, id, variant.ID); err != nil {
+			return err
+		}
+		output.Success(errOut, "Deleted variant %s (%d) from %s", variantLabel(variant), variant.ID, args[0])
+		return nil
+	},
+}
+
 func init() {
 	featureListCmd.Flags().BoolVar(&featureIncludeArchived, "include-archived", false, "include archived features")
 	featureCreateCmd.Flags().StringVar(&featureValueFlag, "value", "", "the feature's default value")
@@ -328,6 +540,13 @@ func init() {
 	featureUpdateCmd.Flags().StringVar(&featureDescriptionFlag, "description", "", "feature description")
 	featureUpdateCmd.Flags().BoolVar(&featureArchiveFlag, "archive", false, "archive the feature")
 	featureUpdateCmd.Flags().BoolVar(&featureUnarchiveFlag, "unarchive", false, "unarchive the feature")
-	featureCmd.AddCommand(featureListCmd, featureGetCmd, featureCreateCmd, featureUpdateCmd, featureDeleteCmd)
+	for _, c := range []*cobra.Command{featureVariantAddCmd, featureVariantUpdateCmd} {
+		c.Flags().StringVar(&featureVariantValueFlag, "value", "", "variant value")
+		c.Flags().Float64Var(&featureVariantWeightFlag, "weight", 0, "variant weight (percentage allocation)")
+		c.Flags().StringVar(&featureVariantKeyFlag, "key", "", "variant key")
+		c.Flags().StringVar(&featureVariantTypeFlag, "type", "", "force the value type: string, integer, or boolean")
+	}
+	featureVariantCmd.AddCommand(featureVariantListCmd, featureVariantAddCmd, featureVariantUpdateCmd, featureVariantDeleteCmd)
+	featureCmd.AddCommand(featureListCmd, featureGetCmd, featureCreateCmd, featureUpdateCmd, featureDeleteCmd, featureVariantCmd)
 	rootCmd.AddCommand(featureCmd)
 }

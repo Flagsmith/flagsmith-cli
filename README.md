@@ -32,6 +32,7 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith feature create <name>` — create a feature (`--value`, `--enabled`, `--description`, `--variants`).
 - `flagsmith feature update <feature>` — update description or archive (`--description`, `--archive`/`--unarchive`).
 - `flagsmith feature delete <feature>` — delete a feature.
+- `flagsmith feature variant list|add|update|delete <feature>` — manage a multivariate feature's variants (by id or key).
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

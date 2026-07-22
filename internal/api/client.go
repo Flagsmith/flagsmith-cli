@@ -225,12 +225,12 @@ type Feature struct {
 type MultivariateOption struct {
 	ID                          int     `json:"id,omitempty"`
 	Type                        string  `json:"type,omitempty"`
-	StringValue                 *string `json:"string_value,omitempty"`
-	IntegerValue                *int    `json:"integer_value,omitempty"`
-	BooleanValue                *bool   `json:"boolean_value,omitempty"`
-	DefaultPercentageAllocation float64 `json:"default_percentage_allocation"`
-	Key                         string  `json:"key,omitempty"`
-	Feature                     int     `json:"feature,omitempty"`
+	StringValue                 *string  `json:"string_value,omitempty"`
+	IntegerValue                *int     `json:"integer_value,omitempty"`
+	BooleanValue                *bool    `json:"boolean_value,omitempty"`
+	DefaultPercentageAllocation *float64 `json:"default_percentage_allocation,omitempty"`
+	Key                         string   `json:"key,omitempty"`
+	Feature                     int      `json:"feature,omitempty"`
 }
 
 // ProjectFeatures lists a project's features (no environment context).
@@ -291,6 +291,36 @@ func UpdateFeature(ctx context.Context, apiURL string, auth Auth, projectID, fea
 // DeleteFeature removes a feature.
 func DeleteFeature(ctx context.Context, apiURL string, auth Auth, projectID, featureID int) error {
 	path := fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID)
+	return sendJSON(ctx, apiURL, http.MethodDelete, path, auth, nil, nil)
+}
+
+func mvOptionsPath(projectID, featureID int) string {
+	return fmt.Sprintf("/api/v1/projects/%d/features/%d/mv-options/", projectID, featureID)
+}
+
+// CreateMVOption adds a multivariate option (variant) to a feature.
+func CreateMVOption(ctx context.Context, apiURL string, auth Auth, projectID, featureID int, in MultivariateOption) (*MultivariateOption, error) {
+	out := &MultivariateOption{}
+	if err := sendJSON(ctx, apiURL, http.MethodPost, mvOptionsPath(projectID, featureID), auth, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UpdateMVOption patches a multivariate option in place (preserving the id, so
+// per-environment weight overrides survive).
+func UpdateMVOption(ctx context.Context, apiURL string, auth Auth, projectID, featureID, optionID int, in MultivariateOption) (*MultivariateOption, error) {
+	out := &MultivariateOption{}
+	path := fmt.Sprintf("%s%d/", mvOptionsPath(projectID, featureID), optionID)
+	if err := sendJSON(ctx, apiURL, http.MethodPatch, path, auth, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeleteMVOption removes a multivariate option.
+func DeleteMVOption(ctx context.Context, apiURL string, auth Auth, projectID, featureID, optionID int) error {
+	path := fmt.Sprintf("%s%d/", mvOptionsPath(projectID, featureID), optionID)
 	return sendJSON(ctx, apiURL, http.MethodDelete, path, auth, nil, nil)
 }
 
