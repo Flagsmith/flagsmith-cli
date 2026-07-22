@@ -48,4 +48,5 @@ flagsmith flag list    # list the flags in the current environment
 [CRUD conventions](docs/design/05-crud.md) ·
 [API](docs/design/06-api.md) ·
 [Flags](docs/design/07-flags.md) ·
-[Segments](docs/design/08-segments.md)
+[Segments](docs/design/08-segments.md) ·
+[Features](docs/design/09-features.md)
