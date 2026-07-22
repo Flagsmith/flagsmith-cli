@@ -35,6 +35,7 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith feature variant list|add|update|delete <feature>` — manage a multivariate feature's variants (by id or key).
 - `flagsmith organisation list|get|create|update|delete` (alias `org`) — manage organisations.
 - `flagsmith project list|get|create|update|delete` — manage projects (`create` uses `--organisation`).
+- `flagsmith environment list|get|create|update|delete|clone` (alias `env`) — manage environments (by name or API key).
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

@@ -299,7 +299,7 @@ func TestCreateEnvironment(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	env, err := CreateEnvironment(context.Background(), srv.URL, Bearer("t"), "Development", 101)
+	env, err := CreateEnvironment(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "Development", "project": 101})
 
 	// Then
 	if err != nil {

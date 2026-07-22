@@ -266,7 +266,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	switch {
 	case createEnvironmentFlag != "":
-		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, createEnvironmentFlag, projectID)
+		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, map[string]any{"name": createEnvironmentFlag, "project": projectID})
 		if err != nil {
 			return fmt.Errorf("creating environment: %w", err)
 		}
@@ -290,7 +290,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, name, projectID)
+		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, map[string]any{"name": name, "project": projectID})
 		if err != nil {
 			return fmt.Errorf("creating environment: %w", err)
 		}

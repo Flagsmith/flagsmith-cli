@@ -545,11 +545,35 @@ func UpdateFlag(ctx context.Context, apiURL string, auth Auth, environmentKey st
 	return nil
 }
 
-// Environment is the subset of the environments API the CLI uses.
+// Environment carries the fields the CLI needs plus the raw API item, so JSON
+// output mirrors the server's full field set. Identified by APIKey, not id.
 type Environment struct {
-	ID     int    `json:"id"`
-	Name   string `json:"name"`
-	APIKey string `json:"api_key"`
+	ID                     int    `json:"id"`
+	Name                   string `json:"name"`
+	APIKey                 string `json:"api_key"`
+	Project                int    `json:"project"`
+	Description            string `json:"description"`
+	UseV2FeatureVersioning bool   `json:"use_v2_feature_versioning"`
+	rawItem
+}
+
+func (e *Environment) UnmarshalJSON(b []byte) error {
+	type alias Environment
+	var a alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*e = Environment(a)
+	e.raw = append([]byte(nil), b...)
+	return nil
+}
+
+func (e Environment) MarshalJSON() ([]byte, error) {
+	if len(e.raw) > 0 {
+		return e.raw, nil
+	}
+	type alias Environment
+	return json.Marshal(alias(e))
 }
 
 func Environments(ctx context.Context, apiURL string, auth Auth, projectID int) ([]Environment, error) {
@@ -561,31 +585,46 @@ func Environments(ctx context.Context, apiURL string, auth Auth, projectID int) 
 	return envs, nil
 }
 
-func CreateEnvironment(ctx context.Context, apiURL string, auth Auth, name string, projectID int) (*Environment, error) {
-	body, err := json.Marshal(map[string]any{"name": name, "project": projectID})
-	if err != nil {
+// GetEnvironment fetches one environment by its client-side api_key.
+func GetEnvironment(ctx context.Context, apiURL string, auth Auth, apiKey string) (*Environment, error) {
+	e := &Environment{}
+	if err := get(ctx, apiURL, "/api/v1/environments/"+apiKey+"/", auth, e); err != nil {
 		return nil, err
 	}
-	u := strings.TrimRight(apiURL, "/") + "/api/v1/environments/"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
-	if err != nil {
+	return e, nil
+}
+
+// CreateEnvironment creates an environment from a flat field body (name +
+// project required). The client-side api_key is minted server-side.
+func CreateEnvironment(ctx context.Context, apiURL string, auth Auth, body map[string]any) (*Environment, error) {
+	e := &Environment{}
+	if err := sendJSON(ctx, apiURL, http.MethodPost, "/api/v1/environments/", auth, body, e); err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	auth.Apply(req)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
+	return e, nil
+}
+
+// UpdateEnvironment patches an environment (project is immutable and ignored).
+func UpdateEnvironment(ctx context.Context, apiURL string, auth Auth, apiKey string, body map[string]any) (*Environment, error) {
+	e := &Environment{}
+	if err := sendJSON(ctx, apiURL, http.MethodPatch, "/api/v1/environments/"+apiKey+"/", auth, body, e); err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("POST %s returned %s", u, resp.Status)
-	}
-	env := &Environment{}
-	if err := json.NewDecoder(resp.Body).Decode(env); err != nil {
+	return e, nil
+}
+
+// DeleteEnvironment removes an environment by api_key.
+func DeleteEnvironment(ctx context.Context, apiURL string, auth Auth, apiKey string) error {
+	return sendJSON(ctx, apiURL, http.MethodDelete, "/api/v1/environments/"+apiKey+"/", auth, nil, nil)
+}
+
+// CloneEnvironment clones an environment into a new one named by body["name"].
+func CloneEnvironment(ctx context.Context, apiURL string, auth Auth, apiKey string, body map[string]any) (*Environment, error) {
+	e := &Environment{}
+	if err := sendJSON(ctx, apiURL, http.MethodPost, "/api/v1/environments/"+apiKey+"/clone/", auth, body, e); err != nil {
 		return nil, err
 	}
-	return env, nil
+	return e, nil
 }
 
 // IdentityFeatureState is a feature's override for one identity. ID is the

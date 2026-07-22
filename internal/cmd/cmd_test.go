@@ -142,6 +142,20 @@ type fakeInstance struct {
 	lastOrgBody     map[string]any // last organisation create/update body
 	lastProjectBody map[string]any // last project create/update body
 	nextOrgID       int
+	lastEnvBody     map[string]any // last environment create/update/clone body
+}
+
+// envByAPIKey finds a stored environment by its client-side key, returning its
+// project key too (caller holds the lock).
+func (f *fakeInstance) envByAPIKey(key string) (string, map[string]any) {
+	for proj, list := range f.envs {
+		for _, e := range list {
+			if e["api_key"] == key {
+				return proj, e
+			}
+		}
+	}
+	return "", nil
 }
 
 func (f *fakeInstance) orgByID(id int) map[string]any {
@@ -338,16 +352,95 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		var body struct {
-			Name    string `json:"name"`
-			Project int    `json:"project"`
-		}
+		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
+		name, _ := body["name"].(string)
 		f.mu.Lock()
-		f.createdEnvs = append(f.createdEnvs, body.Name)
+		f.lastEnvBody = body
+		f.createdEnvs = append(f.createdEnvs, name)
+		env := map[string]any{"id": 42, "name": name, "api_key": "createdEnvKey00000000"}
+		for k, v := range body {
+			env[k] = v
+		}
+		env["api_key"] = "createdEnvKey00000000"
+		if proj, ok := body["project"].(float64); ok {
+			key := strconv.Itoa(int(proj))
+			f.envs[key] = append(f.envs[key], env)
+		}
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{"id": 42, "name": body.Name, "api_key": "createdEnvKey00000000"})
+		json.NewEncoder(w).Encode(env)
+	})
+	mux.HandleFunc("GET /api/v1/environments/{api_key}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		_, env := f.envByAPIKey(r.PathValue("api_key"))
+		f.mu.Unlock()
+		if env == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(env)
+	})
+	mux.HandleFunc("PATCH /api/v1/environments/{api_key}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastEnvBody = body
+		_, env := f.envByAPIKey(r.PathValue("api_key"))
+		if env != nil {
+			for k, v := range body {
+				env[k] = v
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(env)
+	})
+	mux.HandleFunc("DELETE /api/v1/environments/{api_key}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		key := r.PathValue("api_key")
+		f.mu.Lock()
+		for proj, list := range f.envs {
+			kept := list[:0:0]
+			for _, e := range list {
+				if e["api_key"] != key {
+					kept = append(kept, e)
+				}
+			}
+			f.envs[proj] = kept
+		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/v1/environments/{api_key}/clone/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastEnvBody = body
+		proj, src := f.envByAPIKey(r.PathValue("api_key"))
+		name, _ := body["name"].(string)
+		clone := map[string]any{"id": 77, "name": name, "api_key": "clonedEnvKey000000000"}
+		if src != nil {
+			clone["project"] = src["project"]
+			f.envs[proj] = append(f.envs[proj], clone)
+		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(clone)
 	})
 	mux.HandleFunc("GET /api/v1/projects/{project}/features/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
@@ -3535,6 +3628,125 @@ func TestFeatureVariant(t *testing.T) {
 		_, err := run("", "feature", "variant", "delete", "banner-copy", "nope", "--yes")
 		if err == nil || !strings.Contains(err.Error(), "nope") {
 			t.Errorf("err = %v, want a not-found error", err)
+		}
+	})
+}
+
+// withEnvironments loads project 101 with full environment records.
+func withEnvironments(f *fakeInstance) {
+	f.envs["101"] = []map[string]any{
+		{"id": 1, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN", "project": 101, "description": "Local dev"},
+		{"id": 2, "name": "Production", "api_key": "K2mVsGdXhZ8kQqZ9pJmNbJ", "project": 101, "description": "Live", "use_v2_feature_versioning": true},
+	}
+}
+
+func TestEnvironment(t *testing.T) {
+	t.Run("list", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "list")
+		if err != nil {
+			t.Fatalf("environment list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"NAME", "KEY", "DESCRIPTION", "Development", "WqXhZk8sVY3dGgTqZ9pJmN", "Production", "2 environments"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("env alias", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "env", "list")
+		if err != nil || !strings.Contains(out, "Development") {
+			t.Errorf("env alias: (%q, %v)", out, err)
+		}
+	})
+
+	t.Run("get by name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "get", "Production")
+		if err != nil {
+			t.Fatalf("environment get: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"Production (K2mVsGdXhZ8kQqZ9pJmNbJ)", "acme-api (101)", "Live"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("--json mirrors the API fields", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "get", "Production", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if v["use_v2_feature_versioning"] != true || v["api_key"] != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
+			t.Errorf("env = %+v, want raw API fields", v)
+		}
+	})
+
+	t.Run("create mints a key, project from context", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "create", "Staging")
+		if err != nil {
+			t.Fatalf("environment create: %v\noutput: %s", err, out)
+		}
+		if f.lastEnvBody["name"] != "Staging" || f.lastEnvBody["project"] != float64(101) {
+			t.Errorf("body = %+v", f.lastEnvBody)
+		}
+		if !strings.Contains(out, "Created environment Staging") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("update by key", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		if _, err := run("", "environment", "update", "Production", "--description", "prod live"); err != nil {
+			t.Fatalf("environment update: %v", err)
+		}
+		if f.lastEnvBody["description"] != "prod live" {
+			t.Errorf("body = %+v", f.lastEnvBody)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "delete", "Development", "--yes")
+		if err != nil {
+			t.Fatalf("environment delete: %v", err)
+		}
+		if _, e := f.envByAPIKey("WqXhZk8sVY3dGgTqZ9pJmN"); e != nil {
+			t.Errorf("Development still present")
+		}
+		if !strings.Contains(out, "Deleted environment Development") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("clone", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+		out, err := run("", "environment", "clone", "Production", "Production Copy")
+		if err != nil {
+			t.Fatalf("environment clone: %v", err)
+		}
+		if f.lastEnvBody["name"] != "Production Copy" {
+			t.Errorf("body = %+v", f.lastEnvBody)
+		}
+		if !strings.Contains(out, "Cloned Production into Production Copy") {
+			t.Errorf("output = %q", out)
 		}
 	})
 }
