@@ -10,20 +10,22 @@ Organisations and projects are flat CRUD resources, with brief caveats.
 
 ```
 $ flagsmith organisation list
-NAME    ID
-Acme    3
-Beta    7
+NAME   ID
+Acme   3
+Beta   7
 
 2 organisations
 
 $ flagsmith organisation get Acme
-Organisation  Acme (3)
+Organisation   Acme (3)
 
 $ flagsmith organisation create "Acme Labs"
 ✓ Created organisation Acme Labs (12)
+Organisation   Acme Labs (12)
 
 $ flagsmith organisation update Acme --force-2fa
 ✓ Updated organisation Acme (3)
+Organisation   Acme (3)
 
 $ flagsmith organisation delete Beta --yes
 ✓ Deleted organisation Beta (7)
@@ -36,20 +38,24 @@ $ flagsmith organisation delete Beta --yes
 ```
 $ flagsmith project list
 NAME       ID    ORGANISATION
-acme-api   101   Acme
-acme-web   102   Acme
+acme-api   101   Acme (3)
+acme-web   102   Acme (3)
 
 2 projects
 
 $ flagsmith project get acme-api
-Project       acme-api (101)
-Organisation  Acme (3)
+Project        acme-api (101)
+Organisation   Acme (3)
 
 $ flagsmith project create acme-mobile --organisation Acme
 ✓ Created project acme-mobile (103)
+Project        acme-mobile (103)
+Organisation   Acme (3)
 
 $ flagsmith project update acme-api --hide-disabled-flags
 ✓ Updated project acme-api (101)
+Project        acme-api (101)
+Organisation   Acme (3)
 
 $ flagsmith project delete acme-web --yes
 ✓ Deleted project acme-web (102)
