@@ -228,9 +228,14 @@ func (f Feature) CodeReferences() int {
 // for that segment.
 func Features(ctx context.Context, apiURL string, auth Auth, projectID, environmentID, segmentID int) ([]Feature, error) {
 	var features []Feature
-	path := fmt.Sprintf("/api/v1/projects/%d/features/?environment=%d", projectID, environmentID)
+	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
+	sep := "?"
+	if environmentID != 0 {
+		path += fmt.Sprintf("%senvironment=%d", sep, environmentID)
+		sep = "&"
+	}
 	if segmentID != 0 {
-		path += fmt.Sprintf("&segment=%d", segmentID)
+		path += fmt.Sprintf("%ssegment=%d", sep, segmentID)
 	}
 	if err := getList(ctx, apiURL, path, auth, &features); err != nil {
 		return nil, err
@@ -518,4 +523,75 @@ func SetEdgeIdentityOverride(ctx context.Context, apiURL string, auth Auth, envK
 func DeleteEdgeIdentityOverride(ctx context.Context, apiURL string, auth Auth, envKey, identifier string, featureID int) error {
 	body := map[string]any{"identifier": identifier, "feature": featureID}
 	return sendJSON(ctx, apiURL, http.MethodDelete, edgeIdentityFeatureStatesPath(envKey), auth, body, nil)
+}
+
+// SegmentCondition is one condition in a segment rule. On the wire `value` is
+// a plain string (or null); the CLI maps IN arrays to/from a JSON-array string.
+type SegmentCondition struct {
+	Property string `json:"property,omitempty"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value"`
+}
+
+// SegmentRule is a node in a segment's rule tree (ALL/ANY/NONE over conditions
+// and sub-rules).
+type SegmentRule struct {
+	Type       string             `json:"type"`
+	Conditions []SegmentCondition `json:"conditions,omitempty"`
+	Rules      []SegmentRule      `json:"rules,omitempty"`
+}
+
+// Segment is a project segment. Feature is set for feature-specific segments.
+type Segment struct {
+	ID          int           `json:"id,omitempty"`
+	Name        string        `json:"name"`
+	Description string        `json:"description,omitempty"`
+	Feature     *int          `json:"feature,omitempty"`
+	Rules       []SegmentRule `json:"rules"`
+}
+
+// Segments lists a project's segments. include controls whether
+// feature-specific segments are returned.
+func Segments(ctx context.Context, apiURL string, auth Auth, projectID int, include bool) ([]Segment, error) {
+	var segs []Segment
+	path := fmt.Sprintf("/api/v1/projects/%d/segments/?include_feature_specific=%t", projectID, include)
+	if err := getList(ctx, apiURL, path, auth, &segs); err != nil {
+		return nil, err
+	}
+	return segs, nil
+}
+
+// GetSegment fetches one segment with its full rule tree.
+func GetSegment(ctx context.Context, apiURL string, auth Auth, projectID, segmentID int) (*Segment, error) {
+	s := &Segment{}
+	if err := get(ctx, apiURL, fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID), auth, s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// CreateSegment creates a segment (project taken from the URL).
+func CreateSegment(ctx context.Context, apiURL string, auth Auth, projectID int, in Segment) (*Segment, error) {
+	out := &Segment{}
+	path := fmt.Sprintf("/api/v1/projects/%d/segments/", projectID)
+	if err := sendJSON(ctx, apiURL, http.MethodPost, path, auth, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UpdateSegment replaces a segment's rule tree and fields (PUT).
+func UpdateSegment(ctx context.Context, apiURL string, auth Auth, projectID, segmentID int, in Segment) (*Segment, error) {
+	out := &Segment{}
+	path := fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID)
+	if err := sendJSON(ctx, apiURL, http.MethodPut, path, auth, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeleteSegment removes a segment.
+func DeleteSegment(ctx context.Context, apiURL string, auth Auth, projectID, segmentID int) error {
+	path := fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID)
+	return sendJSON(ctx, apiURL, http.MethodDelete, path, auth, nil, nil)
 }

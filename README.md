@@ -22,6 +22,11 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith flag get <feature>` — show a single flag's state (`--segment <id>` or `--identifier <id>` for an override).
 - `flagsmith flag update <feature>` — toggle (`--enable`/`--disable`) or set the value (`--value`, `--type`); `--segment <id>` or `--identifier <id>` targets an override.
 - `flagsmith flag delete <feature> --segment <id>|--identifier <id>` — delete a segment or identity override.
+- `flagsmith segment list` — list segments (`--include-feature-specific` to include feature-scoped ones).
+- `flagsmith segment get <segment>` — show a segment and its rule tree.
+- `flagsmith segment create <name> --rules @rule.json` — create a segment (`--description`, `--feature`).
+- `flagsmith segment update <segment>` — replace the rules (`--rules`), description, or feature.
+- `flagsmith segment delete <segment>` — delete a segment.
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.

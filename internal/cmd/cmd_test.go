@@ -129,6 +129,10 @@ type fakeInstance struct {
 	lastIdentityWrite map[string]any // last core identity FS create/update body
 	lastEdgeWrite     map[string]any // last edge identifier PUT body
 	lastEdgeDelete    map[string]any // last edge identifier DELETE body
+
+	segments        map[int]map[string]any // segment id -> segment
+	nextSegmentID   int
+	lastSegmentBody map[string]any // last segment create/update body
 }
 
 // fakeFS is a stored identity feature-state in the fake backend.
@@ -159,6 +163,30 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		coreOverrides:  map[int]map[int]*fakeFS{},
 		edgeOverrides:  map[string]map[int]*fakeFS{},
 		nextFSID:       9000,
+		segments: map[int]map[string]any{
+			42: {
+				"id": 42, "name": "us-adults", "description": "Users in the US aged 18+", "feature": nil,
+				"rules": []any{map[string]any{"type": "ALL", "rules": []any{
+					map[string]any{"type": "ANY", "conditions": []any{
+						map[string]any{"property": "country", "operator": "IN", "value": `["US","CA"]`},
+						map[string]any{"property": "age", "operator": "GREATER_THAN_INCLUSIVE", "value": "18"},
+					}},
+				}}},
+			},
+			57: {
+				"id": 57, "name": "beta-optin", "description": "Opted into the beta", "feature": nil,
+				"rules": []any{map[string]any{"type": "ALL", "conditions": []any{
+					map[string]any{"property": "beta", "operator": "IS_SET", "value": nil},
+				}}},
+			},
+			58: {
+				"id": 58, "name": "beta-cohort", "description": "Beta cohort for checkout-v2", "feature": 2,
+				"rules": []any{map[string]any{"type": "ALL", "conditions": []any{
+					map[string]any{"property": "beta", "operator": "IS_SET", "value": nil},
+				}}},
+			},
+		},
+		nextSegmentID: 100,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -496,6 +524,82 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		if fv, ok := body["feature"].(float64); ok {
 			delete(f.edgeOverrides[ident], int(fv))
 		}
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Segments: list, retrieve, create, update, delete.
+	mux.HandleFunc("GET /api/v1/projects/{project}/segments/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		include := r.URL.Query().Get("include_feature_specific") == "true"
+		f.mu.Lock()
+		results := []map[string]any{}
+		for _, s := range f.segments {
+			if !include && s["feature"] != nil {
+				continue
+			}
+			results = append(results, s)
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(results), "results": results})
+	})
+	mux.HandleFunc("POST /api/v1/projects/{project}/segments/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastSegmentBody = body
+		f.nextSegmentID++
+		id := f.nextSegmentID
+		body["id"] = id
+		f.segments[id] = body
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(body)
+	})
+	mux.HandleFunc("GET /api/v1/projects/{project}/segments/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		s := f.segments[id]
+		f.mu.Unlock()
+		if s == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(s)
+	})
+	mux.HandleFunc("PUT /api/v1/projects/{project}/segments/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.lastSegmentBody = body
+		body["id"] = id
+		f.segments[id] = body
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(body)
+	})
+	mux.HandleFunc("DELETE /api/v1/projects/{project}/segments/{id}/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		f.mu.Lock()
+		delete(f.segments, id)
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -2629,6 +2733,184 @@ func TestFlagIdentity(t *testing.T) {
 			t.Errorf("err = %v, want a usage error naming --segment/--identifier", err)
 		}
 	})
+}
+
+func TestSegmentList(t *testing.T) {
+	t.Run("hides feature-specific segments by default", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "segment", "list")
+		if err != nil {
+			t.Fatalf("segment list: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"NAME", "ID", "CONDITIONS", "DESCRIPTION", "us-adults", "beta-optin", "2 segments"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if strings.Contains(out, "beta-cohort") {
+			t.Errorf("output = %q, should hide feature-specific beta-cohort", out)
+		}
+	})
+
+	t.Run("--include-feature-specific shows them", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "segment", "list", "--include-feature-specific")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "beta-cohort") || !strings.Contains(out, "3 segments") {
+			t.Errorf("output = %q, want beta-cohort and 3 segments", out)
+		}
+	})
+
+	t.Run("--json is an array of curated segments", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "segment", "list", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var arr []map[string]any
+		if err := json.Unmarshal([]byte(out), &arr); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if len(arr) != 2 {
+			t.Errorf("segments = %+v, want 2", arr)
+		}
+	})
+}
+
+func TestSegmentGet(t *testing.T) {
+	t.Run("renders the rule tree and a nudge", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "segment", "get", "us-adults") // by name
+		if err != nil {
+			t.Fatalf("segment get: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{
+			"us-adults (42)", "All of the below:", "Any of the below:",
+			"country", "IN", "US, CA", "age", "GREATER_THAN_INCLUSIVE",
+			"flag list --segment 42",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("--json decodes IN to an array and stamps $schema", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "segment", "get", "42", "--json") // by id
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		rules := v["rules"].(map[string]any)
+		if rules["$schema"] == nil {
+			t.Errorf("rules = %+v, want a $schema pointer", rules)
+		}
+		sub := rules["rules"].([]any)[0].(map[string]any)
+		cond := sub["conditions"].([]any)[0].(map[string]any)
+		arr, ok := cond["value"].([]any)
+		if !ok || len(arr) != 2 || arr[0] != "US" || arr[1] != "CA" {
+			t.Errorf("IN value = %v, want [\"US\",\"CA\"]", cond["value"])
+		}
+	})
+}
+
+func TestSegmentCreate(t *testing.T) {
+	t.Run("encodes IN and wraps the rule", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		rule := `{"type":"ALL","rules":[{"type":"ANY","conditions":[{"property":"country","operator":"IN","value":["US","CA"]}]}]}`
+		out, err := run("", "segment", "create", "newseg", "--rules", rule)
+		if err != nil {
+			t.Fatalf("segment create: %v\noutput: %s", err, out)
+		}
+		body := f.lastSegmentBody
+		if body["name"] != "newseg" {
+			t.Errorf("name = %v", body["name"])
+		}
+		top := body["rules"].([]any)[0].(map[string]any)
+		sub := top["rules"].([]any)[0].(map[string]any)
+		cond := sub["conditions"].([]any)[0].(map[string]any)
+		if cond["value"] != `["US","CA"]` {
+			t.Errorf("IN value on the wire = %v, want the JSON-array string", cond["value"])
+		}
+		if !strings.Contains(out, "Created segment newseg") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("requires --rules", func(t *testing.T) {
+		flagUpdateEnv(t)
+		_, err := run("", "segment", "create", "x")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--rules") {
+			t.Errorf("err = %v, want a usage error naming --rules", err)
+		}
+	})
+
+	t.Run("--feature resolves a name to an id", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		rule := `{"type":"ALL","conditions":[{"property":"beta","operator":"IS_SET"}]}`
+		if _, err := run("", "segment", "create", "fs", "--rules", rule, "--feature", "max_items"); err != nil {
+			t.Fatalf("segment create --feature: %v", err)
+		}
+		if f.lastSegmentBody["feature"] != float64(2) {
+			t.Errorf("feature = %v, want 2 (max_items)", f.lastSegmentBody["feature"])
+		}
+	})
+
+	t.Run("rejects a too-deep tree", func(t *testing.T) {
+		flagUpdateEnv(t)
+		deep := `{"type":"ALL","rules":[{"type":"ANY","rules":[{"type":"ALL","conditions":[]}]}]}`
+		_, err := run("", "segment", "create", "deep", "--rules", deep)
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "two levels") {
+			t.Errorf("err = %v, want a depth usage error", err)
+		}
+	})
+}
+
+func TestSegmentUpdate(t *testing.T) {
+	t.Run("keeps rules when only description changes", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		if _, err := run("", "segment", "update", "us-adults", "--description", "new desc"); err != nil {
+			t.Fatalf("segment update: %v", err)
+		}
+		if f.lastSegmentBody["description"] != "new desc" || f.lastSegmentBody["rules"] == nil {
+			t.Errorf("body = %+v, want new description with rules preserved", f.lastSegmentBody)
+		}
+	})
+
+	t.Run("replaces the rule tree", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		rule := `{"type":"ALL","conditions":[{"property":"x","operator":"EQUAL","value":"1"}]}`
+		if _, err := run("", "segment", "update", "42", "--rules", rule); err != nil {
+			t.Fatalf("segment update --rules: %v", err)
+		}
+		top := f.lastSegmentBody["rules"].([]any)[0].(map[string]any)
+		cond := top["conditions"].([]any)[0].(map[string]any)
+		if cond["property"] != "x" {
+			t.Errorf("body rules = %+v, want the replacement", f.lastSegmentBody["rules"])
+		}
+	})
+}
+
+func TestSegmentDelete(t *testing.T) {
+	f := flagUpdateEnv(t)
+	out, err := run("", "segment", "delete", "us-adults", "--yes")
+	if err != nil {
+		t.Fatalf("segment delete: %v", err)
+	}
+	if f.segments[42] != nil {
+		t.Errorf("segment 42 still present")
+	}
+	if !strings.Contains(out, "Deleted segment us-adults (42)") {
+		t.Errorf("output = %q", out)
+	}
 }
 
 func TestAPI(t *testing.T) {

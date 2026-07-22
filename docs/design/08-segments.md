@@ -10,9 +10,9 @@ A segment is a named rule tree, evaluated against the evaluation context to deci
 
 ```
 $ flagsmith segment list
-NAME         ID     CONDITIONS  OVERRIDES  DESCRIPTION
-us-adults    42     2           0          Users in the US aged 18+
-beta-optin   57     1           2          Opted into the beta
+NAME         ID     CONDITIONS  DESCRIPTION
+us-adults    42     2           Users in the US aged 18+
+beta-optin   57     1           Opted into the beta
 
 2 segments
 ```
@@ -21,10 +21,10 @@ Feature-specific segments are hidden by default; `--include-feature-specific` sh
 
 ```
 $ flagsmith segment list --include-feature-specific
-NAME          ID     CONDITIONS  OVERRIDES  DESCRIPTION
-us-adults     42     2           0          Users in the US aged 18+
-beta-optin    57     1           2          Opted into the beta
-beta-cohort   58     1           1          Beta cohort for checkout-v2
+NAME          ID     CONDITIONS  DESCRIPTION
+us-adults     42     2           Users in the US aged 18+
+beta-optin    57     1           Opted into the beta
+beta-cohort   58     1           Beta cohort for checkout-v2
 
 3 segments
 ```
