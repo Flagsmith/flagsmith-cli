@@ -55,4 +55,5 @@ flagsmith flag list    # list the flags in the current environment
 [API](docs/design/06-api.md) ·
 [Flags](docs/design/07-flags.md) ·
 [Segments](docs/design/08-segments.md) ·
-[Features](docs/design/09-features.md)
+[Features](docs/design/09-features.md) ·
+[Projects & organisations](docs/design/10-projects-organisations.md)
