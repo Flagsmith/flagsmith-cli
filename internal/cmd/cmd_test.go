@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -77,6 +78,11 @@ func resetFlags() {
 	}
 	resetAll(rootCmd)
 	noBrowser = false
+	// StringArray flags do not reset cleanly via Set(DefValue) — pflag appends
+	// the "[]" default as a literal element — so clear them explicitly.
+	apiHeaderFlags = nil
+	apiFieldFlags = nil
+	apiRawFields = nil
 }
 
 func run(stdin string, args ...string) (string, error) {
@@ -289,6 +295,24 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.lastDelete = body
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// echo reflects the request back, for exercising `flagsmith api`.
+	mux.HandleFunc("/api/v1/echo/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) && r.Header.Get("X-Environment-Key") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		json.NewEncoder(w).Encode(map[string]any{
+			"method":        r.Method,
+			"path":          r.URL.Path,
+			"query":         r.URL.RawQuery,
+			"authorization": r.Header.Get("Authorization"),
+			"envkey":        r.Header.Get("X-Environment-Key"),
+			"content_type":  r.Header.Get("Content-Type"),
+			"custom":        r.Header.Get("X-Custom"),
+			"body":          string(body),
+		})
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -2192,6 +2216,115 @@ func TestFlagDelete(t *testing.T) {
 		_, err := run("", "flag", "delete", "max_items", "--segment", "99", "--yes")
 		if err == nil || !strings.Contains(err.Error(), "segment 99") {
 			t.Errorf("err = %v, want a not-found error naming the segment", err)
+		}
+	})
+}
+
+func TestAPI(t *testing.T) {
+	// echoJSON runs `flagsmith api api/v1/echo/ <args>` and returns the
+	// decoded reflection of the request the fake saw.
+	echoJSON := func(t *testing.T, stdin string, args ...string) map[string]any {
+		t.Helper()
+		out, err := run(stdin, append([]string{"api", "api/v1/echo/"}, args...)...)
+		if err != nil {
+			t.Fatalf("api: %v\noutput: %s", err, out)
+		}
+		var e map[string]any
+		if err := json.Unmarshal([]byte(out), &e); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		return e
+	}
+
+	t.Run("GET applies the admin credential automatically", func(t *testing.T) {
+		flagUpdateEnv(t)
+		e := echoJSON(t, "")
+		if e["method"] != "GET" || e["authorization"] != "Api-Key "+masterKey {
+			t.Errorf("echo = %+v", e)
+		}
+	})
+
+	t.Run("--jq filters the response", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "api", "api/v1/organisations/", "--jq", ".results[].name")
+		if err != nil {
+			t.Fatalf("api: %v", err)
+		}
+		if strings.TrimSpace(out) != "Acme" {
+			t.Errorf("out = %q, want Acme", out)
+		}
+	})
+
+	t.Run("a field implies POST with a typed JSON body", func(t *testing.T) {
+		flagUpdateEnv(t)
+		e := echoJSON(t, "", "-F", "n=3", "-f", "s=3")
+		if e["method"] != "POST" || e["content_type"] != "application/json" {
+			t.Errorf("echo = %+v", e)
+		}
+		body, _ := e["body"].(string)
+		if !strings.Contains(body, `"n":3`) || !strings.Contains(body, `"s":"3"`) {
+			t.Errorf("body = %q, want typed n and raw s", body)
+		}
+	})
+
+	t.Run("fields on an explicit GET become query params", func(t *testing.T) {
+		flagUpdateEnv(t)
+		e := echoJSON(t, "", "-X", "GET", "-F", "a=1")
+		if e["method"] != "GET" || e["query"] != "a=1" {
+			t.Errorf("echo = %+v", e)
+		}
+	})
+
+	t.Run("raw body from stdin", func(t *testing.T) {
+		flagUpdateEnv(t)
+		e := echoJSON(t, `{"x":1}`, "-X", "POST", "--input", "-")
+		if e["body"] != `{"x":1}` {
+			t.Errorf("body = %q", e["body"])
+		}
+	})
+
+	t.Run("custom header", func(t *testing.T) {
+		flagUpdateEnv(t)
+		e := echoJSON(t, "", "-H", "X-Custom: hi")
+		if e["custom"] != "hi" {
+			t.Errorf("custom = %q", e["custom"])
+		}
+	})
+
+	t.Run("--include shows the status line", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "api", "api/v1/echo/", "-i")
+		if err != nil {
+			t.Fatalf("api: %v", err)
+		}
+		if !strings.Contains(out, "HTTP/1.1 200") {
+			t.Errorf("out = %q, want a status line", out)
+		}
+	})
+
+	t.Run("non-2xx exits non-zero", func(t *testing.T) {
+		flagUpdateEnv(t)
+		_, err := run("", "api", "api/v1/nope/")
+		if err == nil || !strings.Contains(err.Error(), "404") {
+			t.Errorf("err = %v, want a 404 error", err)
+		}
+	})
+
+	t.Run("--sdk uses the environment key, not the admin credential", func(t *testing.T) {
+		flagUpdateEnv(t)
+		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "someClientKey")
+		e := echoJSON(t, "", "--sdk")
+		if e["envkey"] != "someClientKey" || e["authorization"] != "" {
+			t.Errorf("echo = %+v, want the SDK key and no admin auth", e)
+		}
+	})
+
+	t.Run("--input with fields is a usage error", func(t *testing.T) {
+		flagUpdateEnv(t)
+		_, err := run("", "api", "api/v1/echo/", "--input", "-", "-F", "a=1")
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Errorf("err = %v, want a usage error", err)
 		}
 	})
 }

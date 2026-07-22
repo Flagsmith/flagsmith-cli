@@ -26,6 +26,7 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.
 - `flagsmith auth token` — print the active Admin API credential for curl/scripts.
+- `flagsmith api <path>` — call any Flagsmith endpoint with the CLI's credentials applied (curl-like; `--sdk` for the SDK API, `-F`/`-f` fields).
 
 ## Conventions
 

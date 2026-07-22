@@ -18,9 +18,6 @@ $ flagsmith api api/v1/projects/ -F name=acme -F organisation=3
 # Explicit method, raw body from stdin
 $ echo '{"name":"acme"}' | flagsmith api api/v1/projects/ -X POST --input -
 
-# Follow pagination, concatenating each page's results
-$ flagsmith api api/v1/projects/12/features/ --paginate --jq '.[].name'
-
 # --yes not expected for DELETE
 $ flagsmith api api/v1/projects/12/features/34/ -X DELETE
 
@@ -58,7 +55,6 @@ By default the Admin API is called with the resolved Admin credential (see 03-au
 
 - The response body is written to stdout verbatim, so it composes with the global `--jq` filter. `--json` does not apply — output is already the API's own shape — and is ignored.
 - `-i, --include` prepends the status line and response headers.
-- `--paginate` follows the `next` link of a paginated response, concatenating each page's `results` into a single array on stdout.
 - A non-2xx response writes the body to stderr and exits non-zero, surfacing the status code.
 
 ### Destructive calls
