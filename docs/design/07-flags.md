@@ -113,4 +113,29 @@ A list human result view includes:
 - Flag value
 - Lifecycle stage
 
-JSON output is a bare array of the curated flag shape (see §1), one entry per flag. 
+JSON output is a bare array of the curated flag shape (see §1), one entry per flag.
+
+### Segment overrides
+
+`--segment <id>` lists the flags overridden for that segment, showing each override's state instead of the environment default (over the same features endpoint, `?environment=…&segment=<id>`). Only flags with an override for the segment appear, and lifecycle stage is dropped — it is an environment-level concept:
+
+```
+$ flagsmith flag list --segment 12
+NAME         TYPE      STATE  VALUE
+checkout-v2  standard  on     orange
+
+1 flag
+```
+
+```
+$ flagsmith flag list --segment 12 --json
+[
+  {
+    "feature": "checkout-v2",
+    "type": "standard",
+    "segment": 12,
+    "enabled": true,
+    "value": "orange"
+  }
+]
+```
