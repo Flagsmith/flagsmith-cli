@@ -32,13 +32,16 @@ var apiCmd = &cobra.Command{
 	Use:   "api <path>",
 	Short: "Call the Flagsmith API with the CLI's credentials",
 	Example: `  # GET any endpoint with the CLI's credentials applied
-  flagsmith api /organisations/
+  flagsmith api api/v1/organisations/
 
-  # typed fields build a JSON body; -X sets the method
-  flagsmith api /projects/ -X POST -F name="Acme" -F organisation=13
+  # typed fields build a JSON body (POST is implied)
+  flagsmith api api/v1/projects/ -F name="Acme" -F organisation=13
+
+  # -X sets the method — e.g. a bodiless DELETE
+  flagsmith api api/v1/projects/102/ -X DELETE
 
   # call the SDK API with the environment key instead
-  flagsmith api /flags/ --sdk`,
+  flagsmith api --sdk api/v1/flags/`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAPI,
 }
