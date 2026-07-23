@@ -62,4 +62,5 @@ flagsmith flag list    # list the flags in the current environment
 [Segments](docs/design/08-segments.md) ·
 [Features](docs/design/09-features.md) ·
 [Projects & organisations](docs/design/10-projects-organisations.md) ·
-[Environments](docs/design/11-environments.md)
+[Environments](docs/design/11-environments.md) ·
+[Evaluate](docs/design/12-evaluate.md)
