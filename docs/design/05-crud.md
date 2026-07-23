@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: CRUD conventions
 
-Status: draft
+Status: draft/poc
 
 The shared conventions every resource command follow.
 

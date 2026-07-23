@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: `flagsmith project` & `flagsmith organisation`
 
-Status: draft
+Status: draft/poc
 
 Organisations and projects are flat CRUD resources, with brief caveats.
 

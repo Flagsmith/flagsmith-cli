@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: Authentication
 
-Status: draft
+Status: draft/poc
 
 ## 1. Context
 

@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: Project Config
 
-Status: draft
+Status: draft/poc
 
 Stored, and checked in version control, project-local configuration to enable robust workflows, created with an init command, and inspected with a config command.
 

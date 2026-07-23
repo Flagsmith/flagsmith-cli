@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: `flagsmith segment`
 
-Status: draft
+Status: draft/poc
 
 A segment is a named rule tree, evaluated against the evaluation context to decide segment membership. Everything but the rule tree is ordinary CRUD (see 05-crud.md); the rule tree is authored as JSON in accordance with the evaluation context schema.
 

@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: Output & Interactivity
 
-Status: draft
+Status: draft/poc
 
 Cross-cutting conventions every command follows.
 

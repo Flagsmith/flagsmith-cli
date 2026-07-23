@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: Installation
 
-Status: draft
+Status: draft/poc
 
 ## 1. Distribution channels
 

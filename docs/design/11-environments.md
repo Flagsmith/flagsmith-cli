@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: `flagsmith environment`
 
-Status: draft
+Status: draft/poc
 
 An environment is a project's deployment target, identified by its client-side API key. Referenced by name or key; the project comes from context.
 

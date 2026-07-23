@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: `flagsmith flag`
 
-Status: draft
+Status: draft/poc
 
 A flag is a feature's state in the current environment: its on/off and value for a given environment, segment, or identity.
 

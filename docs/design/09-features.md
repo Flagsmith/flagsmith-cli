@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: `flagsmith feature`
 
-Status: draft
+Status: draft/poc
 
 A project-level definition for flags.
 

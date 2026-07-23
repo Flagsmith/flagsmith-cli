@@ -1,6 +1,6 @@
 # Flagsmith CLI v2: `flagsmith api`
 
-Status: draft
+Status: draft/poc
 
 A curl-like command to allow users to call Flagsmith's API with the CLI's resolved credentials.
 
