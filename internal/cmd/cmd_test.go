@@ -3504,6 +3504,18 @@ func TestSegmentCreate(t *testing.T) {
 }
 
 func TestSegmentUpdate(t *testing.T) {
+	t.Run("nothing to update errors without touching the segment", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "segment", "update", "us-adults")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "nothing to update") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		if f.lastSegmentBody != nil {
+			t.Errorf("segment was PUT despite no changes: %+v", f.lastSegmentBody)
+		}
+	})
+
 	t.Run("keeps rules when only description changes", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		if _, err := run("", "segment", "update", "us-adults", "--description", "new desc"); err != nil {

@@ -188,6 +188,9 @@ var segmentUpdateCmd = &cobra.Command{
   flagsmith segment update beta-users --description "Updated cohort"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("rules") && !cmd.Flags().Changed("description") && !cmd.Flags().Changed("feature") {
+			return usageErrorf("nothing to update")
+		}
 		cred, projectID, err := projectScopedContext(cmd)
 		if err != nil {
 			return err
