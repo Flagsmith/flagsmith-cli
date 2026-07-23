@@ -32,8 +32,9 @@ var (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Bind this directory to a Flagsmith project (writes flagsmith.json)",
+	Use:         "init",
+	Short:       "Bind this directory to a Flagsmith project (writes flagsmith.json)",
+	Annotations: map[string]string{annotationLongRunning: "true"},
 	Example: `  # interactive: log in, pick a project and environment
   flagsmith init
 
