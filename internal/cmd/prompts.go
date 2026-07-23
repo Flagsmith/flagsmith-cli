@@ -21,10 +21,18 @@ var rawTerminal = func() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
-// interactive reports whether prompting is allowed: a TTY on stdin, no
-// --yes/--no-input, no FLAGSMITH_NO_INPUT.
+// noInput reports the non-interactive switch: --no-input or FLAGSMITH_NO_INPUT.
+// It is a liveness guarantee (never block on a human), orthogonal to --yes
+// (authorization). See docs/design/02-output-and-interactivity.md.
+func noInput() bool {
+	return noInputFlag || os.Getenv("FLAGSMITH_NO_INPUT") != ""
+}
+
+// interactive reports whether prompting is allowed: a TTY on stdin and no
+// non-interactive switch. --yes does not suppress prompting — it only
+// pre-answers confirmations.
 func interactive() bool {
-	return stdinIsTTY() && !yesFlag && os.Getenv("FLAGSMITH_NO_INPUT") == ""
+	return stdinIsTTY() && !noInput()
 }
 
 // promptIn buffers the command's stdin across consecutive prompts.
@@ -57,14 +65,15 @@ func textPrompt(cmd *cobra.Command, flag, label, def string) (string, error) {
 	return prompt.Text(promptIO(cmd), label, def)
 }
 
-// confirmOrYes resolves a yes/no confirmation: --yes/--no-input answers it
-// affirmatively; without a TTY and without --yes it is a usage error (exit
-// 2) naming --yes; otherwise it prompts.
+// confirmOrYes resolves a yes/no confirmation. --yes authorizes it; otherwise
+// an interactive TTY prompts; otherwise (--no-input, FLAGSMITH_NO_INPUT, or no
+// TTY) it is a usage error (exit 2) naming --yes. Non-interactive execution
+// never authorizes on its own: --no-input is a liveness switch, not consent.
 func confirmOrYes(cmd *cobra.Command, label string) (bool, error) {
-	if yesFlag || os.Getenv("FLAGSMITH_NO_INPUT") != "" {
+	if yesFlag {
 		return true, nil
 	}
-	if !stdinIsTTY() {
+	if !interactive() {
 		return false, usageErrorf("pass --yes to confirm %q without an interactive terminal", label)
 	}
 	return prompt.Confirm(promptIO(cmd), label)

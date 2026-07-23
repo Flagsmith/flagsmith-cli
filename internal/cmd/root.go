@@ -70,6 +70,7 @@ var (
 	environmentFlag  string
 	configPathFlag   string
 	yesFlag          bool
+	noInputFlag      bool
 	jsonFlag         bool
 	jqFlag           string
 )
@@ -212,7 +213,9 @@ func init() {
 	flags.StringVarP(&configPathFlag, "config-path", "c", "",
 		"path to flagsmith.json (env: FLAGSMITH_CONFIG_PATH)")
 	flags.BoolVar(&yesFlag, "yes", false,
-		"never prompt; answer confirmations affirmatively (env: FLAGSMITH_NO_INPUT)")
+		"answer confirmations affirmatively")
+	flags.BoolVar(&noInputFlag, "no-input", false,
+		"never prompt or open a browser; fail if required input is missing (env: FLAGSMITH_NO_INPUT)")
 	flags.BoolVar(&jsonFlag, "json", false,
 		"output JSON instead of human-readable text (env: FLAGSMITH_JSON_OUTPUT)")
 	flags.StringVar(&jqFlag, "jq", "",
@@ -227,13 +230,10 @@ func init() {
 		return &usageError{msg: err.Error()}
 	})
 
-	// Hidden aliases: --api for --api-url, --no-input for --yes.
+	// Hidden alias: --api for --api-url.
 	rootCmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
-		switch name {
-		case "api":
+		if name == "api" {
 			name = "api-url"
-		case "no-input":
-			name = "yes"
 		}
 		return pflag.NormalizedName(name)
 	})

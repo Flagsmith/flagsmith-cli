@@ -8,15 +8,16 @@ Cross-cutting conventions every command follows.
 
 Interactive behaviour and output are governed by global flags / environment variables:
 
-| Flag | Env var |
-|---|---|
-| `--yes`/`--no-input` | `FLAGSMITH_NO_INPUT` |
-| `--json` | `FLAGSMITH_JSON_OUTPUT` |
+| Flag | Env var | Meaning |
+|---|---|---|
+| `--no-input` | `FLAGSMITH_NO_INPUT` | never prompt or open a browser; fail if required input is missing |
+| `--yes` | — | answer confirmations affirmatively |
+| `--json` | `FLAGSMITH_JSON_OUTPUT` | machine-readable output |
 
 - Prompts and opening a browser require a TTY. Without one (CI, pipes, redirected stdin), the CLI behaves as if `--no-input` was set: it never prompts and never opens a browser.
-- `--yes` and `--no-input` are aliases of one global flag, also settable as `FLAGSMITH_NO_INPUT=1`: never prompt, never open a browser, answer confirmations affirmatively.
 - Every prompt has a flag equivalent, enforced structurally. Flags always win, and a fully-flagged invocation asks nothing even in a TTY.
-- Missing input that a TTY prompt would need always loudly exits with code 2, naming the flag. (That includes confirmations, where `--yes` is the flag.)
+- Missing input that a TTY prompt would need always loudly exits with code 2, naming the flag.
+- A confirmation resolves as: proceed with `--yes`; otherwise prompt if TTY available; otherwise (`--no-input`, `FLAGSMITH_NO_INPUT`, or no TTY) exit 2 naming `--yes`.
 
 ## 2. Output
 

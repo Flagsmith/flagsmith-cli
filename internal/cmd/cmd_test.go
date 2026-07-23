@@ -2440,12 +2440,62 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 
-	// When — --yes promises zero interaction; waiting on a browser is interaction
-	_, err := run("", "login", "--api-url", f.srv.URL, "--yes")
+	// When — --no-input promises zero interaction; waiting on a browser is interaction
+	_, err := run("", "login", "--api-url", f.srv.URL, "--no-input")
 
 	// Then
 	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_API_KEY") {
 		t.Errorf("err = %v, want a refusal pointing at FLAGSMITH_API_KEY", err)
+	}
+}
+
+// --yes is authorization, not a liveness switch, so it must NOT block a
+// browser login the way --no-input does: with --yes the login proceeds to the
+// OAuth callback flow rather than refusing up front.
+func TestBrowserLoginNotBlockedByYes(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+
+	// When — login with --yes (no TTY in the test); it must reach the browser flow
+	resetFlags()
+	out := &syncBuffer{}
+	rootCmd.SetOut(out)
+	rootCmd.SetErr(out)
+	rootCmd.SetIn(strings.NewReader(""))
+	rootCmd.SetArgs([]string{"login", "--api-url", f.srv.URL, "--yes"})
+	done := make(chan error, 1)
+	go func() { done <- rootCmd.Execute() }()
+
+	authURLPattern := regexp.MustCompile(`https?://\S+/oauth/authorize/\?\S+`)
+	var q url.Values
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && q == nil {
+		if m := authURLPattern.FindString(out.String()); m != "" {
+			u, err := url.Parse(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q = u.Query()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if q == nil {
+		t.Fatalf("--yes must not refuse login; no authorization URL printed; output: %q", out.String())
+	}
+	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
+		t.Fatal(err)
+	}
+
+	// Then — the flow completes without error
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("login: %v\noutput: %s", err, out.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("login did not return")
 	}
 }
 
@@ -3689,20 +3739,51 @@ func TestFeatureUpdate(t *testing.T) {
 }
 
 func TestFeatureDelete(t *testing.T) {
-	f := flagUpdateEnv(t)
-	withFeatures(f)
-	out, err := run("", "feature", "delete", "checkout-v2", "--yes")
-	if err != nil {
-		t.Fatalf("feature delete: %v", err)
-	}
-	for _, it := range f.features["101"] {
-		if it["id"] == 88 {
-			t.Errorf("feature 88 still present")
+	t.Run("--yes authorizes the delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		out, err := run("", "feature", "delete", "checkout-v2", "--yes")
+		if err != nil {
+			t.Fatalf("feature delete: %v", err)
+		}
+		for _, it := range f.features["101"] {
+			if it["id"] == 88 {
+				t.Errorf("feature 88 still present")
+			}
+		}
+		if !strings.Contains(out, "Deleted feature checkout-v2 (88)") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	// The core of the --no-input / --yes decoupling: a liveness switch must
+	// never authorize a destructive action. Without --yes, the delete refuses
+	// (exit 2, naming --yes) and performs no write.
+	assertRefused := func(t *testing.T, f *fakeInstance, err error) {
+		t.Helper()
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--yes") {
+			t.Errorf("err = %v, want a usage error (exit 2) naming --yes", err)
+		}
+		if it := f.featureByID("101", 88); it == nil {
+			t.Errorf("feature 88 was deleted without --yes")
 		}
 	}
-	if !strings.Contains(out, "Deleted feature checkout-v2 (88)") {
-		t.Errorf("output = %q", out)
-	}
+
+	t.Run("FLAGSMITH_NO_INPUT does not authorize the delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		t.Setenv("FLAGSMITH_NO_INPUT", "1")
+		_, err := run("", "feature", "delete", "checkout-v2")
+		assertRefused(t, f, err)
+	})
+
+	t.Run("--no-input does not authorize the delete", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		_, err := run("", "feature", "delete", "checkout-v2", "--no-input")
+		assertRefused(t, f, err)
+	})
 }
 
 func TestFeatureVariant(t *testing.T) {

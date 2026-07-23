@@ -360,7 +360,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		// Preserve any fields this CLI doesn't recognise across the rewrite.
 		newFile.Extra = old.Extra
-		if stdinIsTTY() && !yesFlag {
+		if interactive() && !yesFlag {
 			fmt.Fprintf(out, "%s exists — updating it.\n\n%s\n", config.FileName, fileDiff(old, newFile))
 		}
 		ok, err := confirmOrYes(cmd, "Write changes?")

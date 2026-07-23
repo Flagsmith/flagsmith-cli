@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
@@ -39,11 +38,12 @@ func newLoginCmd() *cobra.Command {
 }
 
 func browserLogin(cmd *cobra.Command) error {
-	// --yes/--no-input promises zero interaction; a browser login is
-	// nothing but interaction. Master API keys go through FLAGSMITH_API_KEY.
-	if yesFlag || os.Getenv("FLAGSMITH_NO_INPUT") != "" {
+	// --no-input promises zero interaction; a browser login is nothing but
+	// interaction. Master API keys go through FLAGSMITH_API_KEY. (--yes is
+	// authorization, not a liveness switch, so it does not block login.)
+	if noInput() {
 		return errors.New(
-			"browser login needs a terminal and cannot run with --no-input/--yes — set FLAGSMITH_API_KEY to use a Master API key instead")
+			"browser login needs a terminal and cannot run with --no-input — set FLAGSMITH_API_KEY to use a Master API key instead")
 	}
 	// The session lives in the OS keychain; without one, minting tokens we
 	// can't store would strand a live session — fail closed toward the env var.
