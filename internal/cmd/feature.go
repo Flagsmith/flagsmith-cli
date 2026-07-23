@@ -98,7 +98,7 @@ var featureListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := api.ProjectFeatures(cmd.Context(), apiURL, cred.auth, projectID, featureIncludeArchived)
+		features, err := cred.client().ProjectFeatures(cmd.Context(), projectID, featureIncludeArchived)
 		if err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ var featureGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		feat, err := cred.client().GetFeature(cmd.Context(), projectID, id)
 		if err != nil {
 			return err
 		}
@@ -218,7 +218,7 @@ var featureCreateCmd = &cobra.Command{
 				return err
 			}
 		}
-		feat, err := api.CreateFeature(cmd.Context(), apiURL, cred.auth, projectID, in)
+		feat, err := cred.client().CreateFeature(cmd.Context(), projectID, in)
 		if err != nil {
 			return err
 		}
@@ -267,7 +267,7 @@ var featureUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		feat, err := api.UpdateFeature(cmd.Context(), apiURL, cred.auth, projectID, id, in)
+		feat, err := cred.client().UpdateFeature(cmd.Context(), projectID, id, in)
 		if err != nil {
 			return err
 		}
@@ -297,7 +297,7 @@ var featureDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteFeature(cmd.Context(), apiURL, cred.auth, projectID, id); err != nil {
+		if err := cred.client().DeleteFeature(cmd.Context(), projectID, id); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted feature %s (%d)", args[0], id)
@@ -414,7 +414,7 @@ var featureVariantListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		feat, err := cred.client().GetFeature(cmd.Context(), projectID, id)
 		if err != nil {
 			return err
 		}
@@ -465,7 +465,7 @@ var featureVariantAddCmd = &cobra.Command{
 		if cmd.Flags().Changed("key") {
 			o.Key = featureVariantKeyFlag
 		}
-		created, err := api.CreateMVOption(cmd.Context(), apiURL, cred.auth, projectID, id, o)
+		created, err := cred.client().CreateMVOption(cmd.Context(), projectID, id, o)
 		if err != nil {
 			return err
 		}
@@ -493,7 +493,7 @@ var featureVariantUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		feat, err := cred.client().GetFeature(cmd.Context(), projectID, id)
 		if err != nil {
 			return err
 		}
@@ -514,7 +514,7 @@ var featureVariantUpdateCmd = &cobra.Command{
 		if cmd.Flags().Changed("key") {
 			o.Key = featureVariantKeyFlag
 		}
-		if _, err := api.UpdateMVOption(cmd.Context(), apiURL, cred.auth, projectID, id, variant.ID, o); err != nil {
+		if _, err := cred.client().UpdateMVOption(cmd.Context(), projectID, id, variant.ID, o); err != nil {
 			return err
 		}
 		output.Success(cmd.ErrOrStderr(), "Updated variant %s (%d)", variantLabel(variant), variant.ID)
@@ -536,7 +536,7 @@ var featureVariantDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		feat, err := api.GetFeature(cmd.Context(), apiURL, cred.auth, projectID, id)
+		feat, err := cred.client().GetFeature(cmd.Context(), projectID, id)
 		if err != nil {
 			return err
 		}
@@ -551,7 +551,7 @@ var featureVariantDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteMVOption(cmd.Context(), apiURL, cred.auth, projectID, id, variant.ID); err != nil {
+		if err := cred.client().DeleteMVOption(cmd.Context(), projectID, id, variant.ID); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted variant %s (%d) from %s", variantLabel(variant), variant.ID, args[0])

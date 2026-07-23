@@ -63,7 +63,7 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, segmentID)
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := api.UpdateFlag(cmd.Context(), apiURL, cred.auth, env.APIKey, req); err != nil {
+	if err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, req); err != nil {
 		return err
 	}
 
@@ -143,7 +143,7 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Result model: an update also prints the resulting resource to stdout.
-	features, err = api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, segmentID)
+	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ var flagDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing changed.")
 			return nil
 		}
-		if err := api.DeleteSegmentOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, name, flagDeleteSegment); err != nil {
+		if err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, name, flagDeleteSegment); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted %s override for segment %d in environment %s", name, flagDeleteSegment, environmentLabel(env))

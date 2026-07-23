@@ -16,15 +16,14 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/config"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/internal/version"
 )
 
-// version is the CLI version tag, stamped by the release build; the
-// $schema URL written by init pins the schema of the writing CLI.
-var version = "feat/cli-v2"
-
+// schemaURL pins the $schema written by init to the schema of the writing CLI,
+// keyed by the shared version tag.
 func schemaURL() string {
 	return fmt.Sprintf(
-		"https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/%s/schema/flagsmith.json", version)
+		"https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/%s/schema/flagsmith.json", version.Version)
 }
 
 var (
@@ -59,7 +58,7 @@ func explicitValue(r resolved) (any, bool) {
 // explicit --organisation wins; a lone org is used silently; otherwise the
 // picker runs (self-guarding to exit 2 naming --organisation without a TTY).
 func resolveOrganisation(cmd *cobra.Command, pc *projectContext, cred *activeCredential, names *cache.Names) (api.Organisation, bool, error) {
-	orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {
 		return api.Organisation{}, false, err
 	}
@@ -185,7 +184,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if ambiguous {
 			organisationID = org.ID
 		}
-		created, err := api.CreateProject(ctx, apiURL, cred.auth, map[string]any{"name": createProjectFlag, "organisation": org.ID})
+		created, err := cred.client().CreateProject(ctx, map[string]any{"name": createProjectFlag, "organisation": org.ID})
 		if err != nil {
 			return fmt.Errorf("creating project: %w", err)
 		}
@@ -206,7 +205,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if ambiguous {
 			organisationID = org.ID
 		}
-		projects, err := api.Projects(ctx, apiURL, cred.auth, org.ID)
+		projects, err := cred.client().Projects(ctx, org.ID)
 		if err != nil {
 			return err
 		}
@@ -236,7 +235,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			created, err := api.CreateProject(ctx, apiURL, cred.auth, map[string]any{"name": name, "organisation": org.ID})
+			created, err := cred.client().CreateProject(ctx, map[string]any{"name": name, "organisation": org.ID})
 			if err != nil {
 				return fmt.Errorf("creating project: %w", err)
 			}
@@ -250,7 +249,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Environments: doubles as the access check.
-	envs, err := api.Environments(ctx, apiURL, cred.auth, projectID)
+	envs, err := cred.client().Environments(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("verifying access to project %d: %w", projectID, err)
 	}
@@ -271,7 +270,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	switch {
 	case createEnvironmentFlag != "":
-		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, map[string]any{"name": createEnvironmentFlag, "project": projectID})
+		created, err := cred.client().CreateEnvironment(ctx, map[string]any{"name": createEnvironmentFlag, "project": projectID})
 		if err != nil {
 			return fmt.Errorf("creating environment: %w", err)
 		}
@@ -295,7 +294,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		created, err := api.CreateEnvironment(ctx, apiURL, cred.auth, map[string]any{"name": name, "project": projectID})
+		created, err := cred.client().CreateEnvironment(ctx, map[string]any{"name": name, "project": projectID})
 		if err != nil {
 			return fmt.Errorf("creating environment: %w", err)
 		}

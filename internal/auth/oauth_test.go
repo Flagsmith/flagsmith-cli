@@ -142,7 +142,7 @@ func startLogin(t *testing.T, ctx context.Context, apiURL string, openBrowser fu
 	out := &syncBuffer{}
 	results := make(chan loginResult, 1)
 	go func() {
-		creds, err := Login(ctx, apiURL, openBrowser, out)
+		creds, err := Login(ctx, http.DefaultClient, apiURL, openBrowser, out)
 		results <- loginResult{creds, err}
 	}()
 	return out, results
@@ -351,7 +351,7 @@ func TestDiscover(t *testing.T) {
 		f := newFakeAuthServer(t)
 
 		// When
-		md, err := Discover(context.Background(), f.srv.URL+"/")
+		md, err := Discover(context.Background(), http.DefaultClient, f.srv.URL+"/")
 
 		// Then
 		if err != nil {
@@ -368,7 +368,7 @@ func TestDiscover(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		_, err := Discover(context.Background(), srv.URL)
+		_, err := Discover(context.Background(), http.DefaultClient, srv.URL)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "is this a Flagsmith API URL?") {
@@ -384,7 +384,7 @@ func TestDiscover(t *testing.T) {
 		defer srv.Close()
 
 		// When / Then
-		if _, err := Discover(context.Background(), srv.URL); err == nil {
+		if _, err := Discover(context.Background(), http.DefaultClient, srv.URL); err == nil {
 			t.Error("expected an error for non-JSON metadata")
 		}
 	})
@@ -397,7 +397,7 @@ func TestDiscover(t *testing.T) {
 		defer srv.Close()
 
 		// When / Then
-		if _, err := Discover(context.Background(), srv.URL); err == nil {
+		if _, err := Discover(context.Background(), http.DefaultClient, srv.URL); err == nil {
 			t.Error("expected an error for metadata without endpoints")
 		}
 	})
@@ -409,7 +409,7 @@ func TestEnsureFresh(t *testing.T) {
 		c := &Credentials{APIURL: "http://unreachable.invalid", ExpiresAt: time.Now().Add(10 * time.Minute)}
 
 		// When
-		got, refreshed, err := EnsureFresh(context.Background(), c)
+		got, refreshed, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
 		// Then
 		if err != nil || refreshed || got != c {
@@ -422,7 +422,7 @@ func TestEnsureFresh(t *testing.T) {
 		c := &Credentials{Kind: KindMaster, APIURL: "http://unreachable.invalid", MasterKey: "AbCd1234.secret"}
 
 		// When
-		got, refreshed, err := EnsureFresh(context.Background(), c)
+		got, refreshed, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
 		// Then
 		if err != nil || refreshed || got != c {
@@ -436,7 +436,7 @@ func TestEnsureFresh(t *testing.T) {
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "old-refresh", ExpiresAt: time.Now().Add(-time.Minute)}
 
 		// When
-		got, refreshed, err := EnsureFresh(context.Background(), c)
+		got, refreshed, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
 		// Then
 		if err != nil {
@@ -466,7 +466,7 @@ func TestEnsureFresh(t *testing.T) {
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "revoked", ExpiresAt: time.Now().Add(-time.Minute)}
 
 		// When
-		_, _, err := EnsureFresh(context.Background(), c)
+		_, _, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "flagsmith login") {
@@ -482,7 +482,7 @@ func TestRevoke(t *testing.T) {
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "refresh-1"}
 
 		// When
-		if err := Revoke(context.Background(), c); err != nil {
+		if err := Revoke(context.Background(), http.DefaultClient, c); err != nil {
 			t.Fatal(err)
 		}
 
@@ -511,7 +511,7 @@ func TestRevoke(t *testing.T) {
 		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "refresh-1"}
 
 		// When / Then
-		if err := Revoke(context.Background(), c); err != nil {
+		if err := Revoke(context.Background(), http.DefaultClient, c); err != nil {
 			t.Errorf("Revoke without a revocation endpoint should succeed, got %v", err)
 		}
 	})

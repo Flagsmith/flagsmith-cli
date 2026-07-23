@@ -85,7 +85,7 @@ var segmentListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		segs, err := api.Segments(cmd.Context(), apiURL, cred.auth, projectID, segmentIncludeFeatureSpecific)
+		segs, err := cred.client().Segments(cmd.Context(), projectID, segmentIncludeFeatureSpecific)
 		if err != nil {
 			return err
 		}
@@ -130,7 +130,7 @@ var segmentGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		seg, err := api.GetSegment(cmd.Context(), apiURL, cred.auth, projectID, id)
+		seg, err := cred.client().GetSegment(cmd.Context(), projectID, id)
 		if err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ var segmentCreateCmd = &cobra.Command{
 			}
 			in.Feature = &fid
 		}
-		seg, err := api.CreateSegment(cmd.Context(), apiURL, cred.auth, projectID, in)
+		seg, err := cred.client().CreateSegment(cmd.Context(), projectID, in)
 		if err != nil {
 			return err
 		}
@@ -196,7 +196,7 @@ var segmentUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		seg, err := api.GetSegment(cmd.Context(), apiURL, cred.auth, projectID, id)
+		seg, err := cred.client().GetSegment(cmd.Context(), projectID, id)
 		if err != nil {
 			return err
 		}
@@ -215,7 +215,7 @@ var segmentUpdateCmd = &cobra.Command{
 			}
 			seg.Feature = &fid
 		}
-		updated, err := api.UpdateSegment(cmd.Context(), apiURL, cred.auth, projectID, id, *seg)
+		updated, err := cred.client().UpdateSegment(cmd.Context(), projectID, id, *seg)
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ var segmentDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteSegment(cmd.Context(), apiURL, cred.auth, projectID, id); err != nil {
+		if err := cred.client().DeleteSegment(cmd.Context(), projectID, id); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted segment %s (%d)", args[0], id)
@@ -258,7 +258,7 @@ func resolveSegmentID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	if id, err := strconv.Atoi(ref); err == nil {
 		return id, nil
 	}
-	segs, err := api.Segments(cmd.Context(), apiURL, cred.auth, projectID, true)
+	segs, err := cred.client().Segments(cmd.Context(), projectID, true)
 	if err != nil {
 		return 0, err
 	}
@@ -283,7 +283,7 @@ func resolveFeatureID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	if id, err := strconv.Atoi(ref); err == nil {
 		return id, nil
 	}
-	features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, 0, 0)
+	features, err := cred.client().Features(cmd.Context(), projectID, 0, 0)
 	if err != nil {
 		return 0, err
 	}

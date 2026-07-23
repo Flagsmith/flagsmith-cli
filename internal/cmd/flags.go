@@ -159,7 +159,7 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, flagListSegmentFlag)
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, flagListSegmentFlag)
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ var flagGetCmd = &cobra.Command{
 		}
 		// The server's search is a contains match, so fetch and narrow to the
 		// exact feature client-side.
-		features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, flagGetSegmentFlag)
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, flagGetSegmentFlag)
 		if err != nil {
 			return err
 		}

@@ -34,13 +34,13 @@ type Metadata struct {
 	RevocationEndpoint    string `json:"revocation_endpoint"`
 }
 
-func Discover(ctx context.Context, apiURL string) (*Metadata, error) {
+func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Metadata, error) {
 	u := strings.TrimRight(apiURL, "/") + "/.well-known/oauth-authorization-server"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("reaching %s: %w", u, err)
 	}
@@ -65,7 +65,7 @@ type tokenResponse struct {
 	Scope        string `json:"scope"`
 }
 
-func postToken(ctx context.Context, endpoint string, form url.Values) (*tokenResponse, error) {
+func postToken(ctx context.Context, httpClient *http.Client, endpoint string, form url.Values) (*tokenResponse, error) {
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()),
 	)
@@ -73,7 +73,7 @@ func postToken(ctx context.Context, endpoint string, form url.Values) (*tokenRes
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +109,8 @@ func randomURLSafe(n int) string {
 
 // Login runs the authorization-code + PKCE flow on a loopback listener.
 // openBrowser may be nil (--no-browser); the URL is always written to out.
-func Login(ctx context.Context, apiURL string, openBrowser func(string) error, out io.Writer) (*Credentials, error) {
-	md, err := Discover(ctx, apiURL)
+func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrowser func(string) error, out io.Writer) (*Credentials, error) {
+	md, err := Discover(ctx, httpClient, apiURL)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func Login(ctx context.Context, apiURL string, openBrowser func(string) error, o
 		return nil, ctx.Err()
 	}
 
-	tok, err := postToken(ctx, md.TokenEndpoint, url.Values{
+	tok, err := postToken(ctx, httpClient, md.TokenEndpoint, url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"redirect_uri":  {redirectURI},
@@ -210,18 +210,18 @@ func credentialsFromToken(apiURL string, tok *tokenResponse) *Credentials {
 // EnsureFresh refreshes the access token if it is expired or about to expire.
 // The server rotates refresh tokens (120s grace), so refreshed credentials
 // must be saved by the caller.
-func EnsureFresh(ctx context.Context, c *Credentials) (creds *Credentials, refreshed bool, err error) {
+func EnsureFresh(ctx context.Context, httpClient *http.Client, c *Credentials) (creds *Credentials, refreshed bool, err error) {
 	if c.EffectiveKind() != KindOAuth {
 		return c, false, nil
 	}
 	if time.Until(c.ExpiresAt) > 30*time.Second {
 		return c, false, nil
 	}
-	md, err := Discover(ctx, c.APIURL)
+	md, err := Discover(ctx, httpClient, c.APIURL)
 	if err != nil {
 		return nil, false, err
 	}
-	tok, err := postToken(ctx, md.TokenEndpoint, url.Values{
+	tok, err := postToken(ctx, httpClient, md.TokenEndpoint, url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {c.RefreshToken},
 		"client_id":     {ClientID},
@@ -233,8 +233,8 @@ func EnsureFresh(ctx context.Context, c *Credentials) (creds *Credentials, refre
 }
 
 // Revoke invalidates the refresh token (and its access tokens) server-side.
-func Revoke(ctx context.Context, c *Credentials) error {
-	md, err := Discover(ctx, c.APIURL)
+func Revoke(ctx context.Context, httpClient *http.Client, c *Credentials) error {
+	md, err := Discover(ctx, httpClient, c.APIURL)
 	if err != nil {
 		return err
 	}
@@ -253,7 +253,7 @@ func Revoke(ctx context.Context, c *Credentials) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}

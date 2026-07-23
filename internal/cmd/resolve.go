@@ -62,7 +62,7 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 			"no environment — pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`")
 	}
 
-	envs, err := api.Environments(cmd.Context(), apiURL, cred.auth, projectID)
+	envs, err := cred.client().Environments(cmd.Context(), projectID)
 	if err != nil {
 		return api.Environment{}, err
 	}
@@ -106,7 +106,7 @@ func resolveProjectID(cmd *cobra.Command, pc *projectContext, cred *activeCreden
 	if err != nil {
 		return 0, err
 	}
-	projects, err := api.Projects(cmd.Context(), apiURL, cred.auth, orgID)
+	projects, err := cred.client().Projects(cmd.Context(), orgID)
 	if err != nil {
 		return 0, err
 	}
@@ -131,7 +131,7 @@ func resolveOrganisationID(cmd *cobra.Command, pc *projectContext, cred *activeC
 	if id, ok := pc.Organisation.Value.(int); ok {
 		return id, nil
 	}
-	orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {
 		return 0, err
 	}

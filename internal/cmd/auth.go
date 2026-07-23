@@ -44,11 +44,19 @@ var authCmd = &cobra.Command{
 
 // activeCredential is the resolved Admin API credential for this invocation.
 type activeCredential struct {
-	kind    auth.Kind
-	auth    api.Auth
-	token   string
-	source  string
-	expires time.Time // zero when not applicable
+	kind      auth.Kind
+	auth      api.Auth
+	token     string
+	source    string
+	expires   time.Time   // zero when not applicable
+	apiClient *api.Client // built once in loadCredential, before the cred is shared
+}
+
+// client returns the Admin API client for this credential. It is built eagerly
+// in loadCredential (before the cred is memoised and shared across goroutines),
+// so reading it here needs no lock.
+func (c *activeCredential) client() *api.Client {
+	return c.apiClient
 }
 
 // resolveCredential returns the Admin API credential for the current
@@ -84,6 +92,7 @@ func loadCredential(ctx context.Context) (*activeCredential, error) {
 		} else {
 			cred.auth = api.Bearer(v)
 		}
+		cred.apiClient = newAPIClient(cred.auth)
 		return cred, nil
 	}
 
@@ -91,7 +100,7 @@ func loadCredential(ctx context.Context) (*activeCredential, error) {
 	if err != nil {
 		return nil, err
 	}
-	creds, refreshed, err := auth.EnsureFresh(ctx, creds)
+	creds, refreshed, err := auth.EnsureFresh(ctx, sharedHTTPClient(), creds)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +120,7 @@ func loadCredential(ctx context.Context) (*activeCredential, error) {
 	} else {
 		cred.auth = api.Bearer(cred.token)
 	}
+	cred.apiClient = newAPIClient(cred.auth)
 	return cred, nil
 }
 
@@ -143,7 +153,7 @@ var authStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+		orgs, err := cred.client().Organisations(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -151,7 +161,7 @@ var authStatusCmd = &cobra.Command{
 
 		email := ""
 		if cred.kind != auth.KindMaster {
-			user, err := api.UsersMe(cmd.Context(), apiURL, cred.auth)
+			user, err := cred.client().UsersMe(cmd.Context())
 			if err != nil {
 				return err
 			}

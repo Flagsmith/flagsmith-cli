@@ -238,7 +238,7 @@ func apiDo(ctx context.Context, method, u string, body []byte, contentType strin
 		}
 	}
 	applyAuth(req)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := sharedHTTPClient().Do(req)
 	if err != nil {
 		return nil, nil, err
 	}

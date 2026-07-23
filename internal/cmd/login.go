@@ -19,6 +19,9 @@ func newLoginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Flagsmith in your browser",
+		// The browser round-trip can take minutes; opt out of the overall
+		// per-invocation deadline (auth.Login has its own loginTimeout).
+		Annotations: map[string]string{annotationLongRunning: "true"},
 		Example: `  flagsmith login
 
   # print the URL instead of opening a browser (headless)
@@ -52,14 +55,16 @@ func browserLogin(cmd *cobra.Command) error {
 	if noBrowser || !stdinIsTTY() {
 		open = nil // without a TTY the CLI never opens a browser (02)
 	}
-	creds, err := auth.Login(cmd.Context(), apiURL, open, cmd.OutOrStdout())
+	creds, err := auth.Login(cmd.Context(), sharedHTTPClient(), apiURL, open, cmd.OutOrStdout())
 	if err != nil {
 		return err
 	}
 	if err := auth.Save(creds); err != nil {
 		return fmt.Errorf("storing credentials: %w", err)
 	}
-	user, err := api.UsersMe(cmd.Context(), creds.APIURL, api.Bearer(creds.AccessToken))
+	loggedIn := api.NewClient(creds.APIURL, api.Bearer(creds.AccessToken),
+		api.WithHTTPClient(sharedHTTPClient()), api.WithUserAgent(userAgent()))
+	user, err := loggedIn.UsersMe(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("logged in, but fetching identity failed: %w", err)
 	}

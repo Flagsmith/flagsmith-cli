@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -13,6 +16,35 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
+
+// annotationLongRunning marks a command that manages its own long wait (e.g. a
+// browser login) and so opts out of the overall per-invocation deadline.
+const annotationLongRunning = "longRunning"
+
+// defaultTimeout is the overall deadline applied to a command's context, so a
+// stuck network call fails instead of hanging indefinitely.
+const defaultTimeout = 60 * time.Second
+
+// commandTimeout is the per-invocation deadline. FLAGSMITH_TIMEOUT overrides it
+// with a whole number of seconds; an explicit 0 disables the cap (context
+// cancellation still works). A malformed value falls back to the default.
+func commandTimeout() time.Duration {
+	if v := os.Getenv("FLAGSMITH_TIMEOUT"); v != "" {
+		secs, err := strconv.Atoi(v)
+		if err != nil {
+			return defaultTimeout
+		}
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	return defaultTimeout
+}
+
+// cancelTimeout releases the deadline installed by PersistentPreRunE; Execute
+// calls it once the command has run.
+var cancelTimeout context.CancelFunc
 
 // singleLineUsage rewrites cobra's default two-line Usage block (one line for
 // running the command bare, another for a subcommand) into a single
@@ -70,6 +102,16 @@ var rootCmd = &cobra.Command{
 	// (matters in-process, e.g. tests reusing rootCmd across Execute calls).
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		resetCredentialCache()
+		// Give the command a sane overall deadline so a stuck network call
+		// fails instead of hanging. Long-running commands (browser login) opt
+		// out; cancellation via the parent context still propagates.
+		if cmd.Annotations[annotationLongRunning] != "true" {
+			if d := commandTimeout(); d > 0 {
+				ctx, cancel := context.WithTimeout(cmd.Context(), d)
+				cmd.SetContext(ctx)
+				cancelTimeout = cancel
+			}
+		}
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,6 +146,10 @@ func Execute() {
 	// ExecuteC returns the command that actually ran (or failed to parse), so a
 	// usageError can print the nearest command's usage — not the root's.
 	cmd, err := rootCmd.ExecuteC()
+	if cancelTimeout != nil {
+		cancelTimeout()
+		cancelTimeout = nil
+	}
 	if err == nil {
 		return
 	}

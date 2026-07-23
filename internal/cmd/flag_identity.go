@@ -23,7 +23,7 @@ type identityFlagView struct {
 // useEdgeIdentities reports whether the project's identity overrides live on
 // the edge (DynamoDB) endpoints rather than the core ones.
 func useEdgeIdentities(cmd *cobra.Command, cred *activeCredential, projectID int) (bool, error) {
-	project, err := api.GetProject(cmd.Context(), apiURL, cred.auth, projectID)
+	project, err := cred.client().GetProject(cmd.Context(), projectID)
 	if err != nil {
 		return false, err
 	}
@@ -34,17 +34,17 @@ func useEdgeIdentities(cmd *cobra.Command, cred *activeCredential, projectID int
 // when the identity or the override does not exist.
 func readIdentityOverride(cmd *cobra.Command, cred *activeCredential, envKey string, featureID int, identifier string, edge bool) (*api.IdentityFeatureState, error) {
 	if edge {
-		uuid, found, err := api.EdgeIdentityUUID(cmd.Context(), apiURL, cred.auth, envKey, identifier)
+		uuid, found, err := cred.client().EdgeIdentityUUID(cmd.Context(), envKey, identifier)
 		if err != nil || !found {
 			return nil, err
 		}
-		return api.EdgeIdentityOverride(cmd.Context(), apiURL, cred.auth, envKey, uuid, featureID)
+		return cred.client().EdgeIdentityOverride(cmd.Context(), envKey, uuid, featureID)
 	}
-	id, found, err := api.IdentityByIdentifier(cmd.Context(), apiURL, cred.auth, envKey, identifier)
+	id, found, err := cred.client().IdentityByIdentifier(cmd.Context(), envKey, identifier)
 	if err != nil || !found {
 		return nil, err
 	}
-	return api.IdentityOverride(cmd.Context(), apiURL, cred.auth, envKey, id, featureID)
+	return cred.client().IdentityOverride(cmd.Context(), envKey, id, featureID)
 }
 
 // nativeScalar converts a typed value into the native scalar the identity
@@ -138,14 +138,14 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	}
 
 	if edge {
-		err = api.SetEdgeIdentityOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, identifier, feature.ID, enabled, value)
+		err = cred.client().SetEdgeIdentityOverride(cmd.Context(), env.APIKey, identifier, feature.ID, enabled, value)
 	} else {
-		id, found, ferr := api.IdentityByIdentifier(cmd.Context(), apiURL, cred.auth, env.APIKey, identifier)
+		id, found, ferr := cred.client().IdentityByIdentifier(cmd.Context(), env.APIKey, identifier)
 		if ferr != nil {
 			return ferr
 		}
 		if !found {
-			if id, err = api.CreateIdentity(cmd.Context(), apiURL, cred.auth, env.APIKey, identifier); err != nil {
+			if id, err = cred.client().CreateIdentity(cmd.Context(), env.APIKey, identifier); err != nil {
 				return err
 			}
 		}
@@ -153,7 +153,7 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 		if current != nil {
 			fsID = current.ID
 		}
-		err = api.SetIdentityOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, id, feature.ID, fsID, enabled, value)
+		err = cred.client().SetIdentityOverride(cmd.Context(), env.APIKey, id, feature.ID, fsID, enabled, value)
 	}
 	if err != nil {
 		return err
@@ -178,7 +178,7 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 
 // runIdentityDelete removes an identity override, branching core vs edge.
 func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Environment, projectID int, name, identifier string) error {
-	features, err := api.Features(cmd.Context(), apiURL, cred.auth, projectID, env.ID, 0)
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, 0)
 	if err != nil {
 		return err
 	}
@@ -201,23 +201,23 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	}
 
 	if edge {
-		err = api.DeleteEdgeIdentityOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, identifier, feature.ID)
+		err = cred.client().DeleteEdgeIdentityOverride(cmd.Context(), env.APIKey, identifier, feature.ID)
 	} else {
-		id, found, ferr := api.IdentityByIdentifier(cmd.Context(), apiURL, cred.auth, env.APIKey, identifier)
+		id, found, ferr := cred.client().IdentityByIdentifier(cmd.Context(), env.APIKey, identifier)
 		if ferr != nil {
 			return ferr
 		}
 		if !found {
 			return fmt.Errorf("identity %q not found in %s", identifier, environmentLabel(env))
 		}
-		override, oerr := api.IdentityOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, id, feature.ID)
+		override, oerr := cred.client().IdentityOverride(cmd.Context(), env.APIKey, id, feature.ID)
 		if oerr != nil {
 			return oerr
 		}
 		if override == nil {
 			return fmt.Errorf("%q has no override for identifier %q in %s", name, identifier, environmentLabel(env))
 		}
-		err = api.DeleteIdentityOverride(cmd.Context(), apiURL, cred.auth, env.APIKey, id, override.ID)
+		err = cred.client().DeleteIdentityOverride(cmd.Context(), env.APIKey, id, override.ID)
 	}
 	if err != nil {
 		return err

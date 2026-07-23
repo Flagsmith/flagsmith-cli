@@ -37,7 +37,7 @@ func resolveOrganisationRefID(cmd *cobra.Command, cred *activeCredential, ref st
 	if id, err := strconv.Atoi(ref); err == nil {
 		return id, nil
 	}
-	orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {
 		return 0, err
 	}
@@ -88,7 +88,7 @@ var organisationListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+		orgs, err := cred.client().Organisations(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ var organisationGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		org, err := api.GetOrganisation(cmd.Context(), apiURL, cred.auth, id)
+		org, err := cred.client().GetOrganisation(cmd.Context(), id)
 		if err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ var organisationCreateCmd = &cobra.Command{
 		}
 		body := orgBodyFromFlags(cmd)
 		body["name"] = args[0]
-		org, err := api.CreateOrganisation(cmd.Context(), apiURL, cred.auth, body)
+		org, err := cred.client().CreateOrganisation(cmd.Context(), body)
 		if err != nil {
 			return err
 		}
@@ -172,7 +172,7 @@ var organisationUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		org, err := api.UpdateOrganisation(cmd.Context(), apiURL, cred.auth, id, body)
+		org, err := cred.client().UpdateOrganisation(cmd.Context(), id, body)
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ var organisationDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteOrganisation(cmd.Context(), apiURL, cred.auth, id); err != nil {
+		if err := cred.client().DeleteOrganisation(cmd.Context(), id); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted organisation %s (%d)", args[0], id)

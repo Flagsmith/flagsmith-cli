@@ -27,7 +27,7 @@ func resolveProjectRefID(cmd *cobra.Command, cred *activeCredential, ref string)
 	if id, err := strconv.Atoi(ref); err == nil {
 		return id, nil
 	}
-	projects, err := api.Projects(cmd.Context(), apiURL, cred.auth, 0)
+	projects, err := cred.client().Projects(cmd.Context(), 0)
 	if err != nil {
 		return 0, err
 	}
@@ -49,7 +49,7 @@ func resolveProjectRefID(cmd *cobra.Command, cred *activeCredential, ref string)
 // orgNameMap maps organisation id → name for display (best effort).
 func orgNameMap(cmd *cobra.Command, cred *activeCredential) map[int]string {
 	m := map[int]string{}
-	orgs, err := api.Organisations(cmd.Context(), apiURL, cred.auth)
+	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {
 		return m
 	}
@@ -111,7 +111,7 @@ var projectListCmd = &cobra.Command{
 				return err
 			}
 		}
-		projects, err := api.Projects(cmd.Context(), apiURL, cred.auth, orgID)
+		projects, err := cred.client().Projects(cmd.Context(), orgID)
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ var projectGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		p, err := api.GetProject(cmd.Context(), apiURL, cred.auth, id)
+		p, err := cred.client().GetProject(cmd.Context(), id)
 		if err != nil {
 			return err
 		}
@@ -177,7 +177,7 @@ var projectCreateCmd = &cobra.Command{
 		body := projectBodyFromFlags(cmd)
 		body["name"] = args[0]
 		body["organisation"] = orgID
-		p, err := api.CreateProject(cmd.Context(), apiURL, cred.auth, body)
+		p, err := cred.client().CreateProject(cmd.Context(), body)
 		if err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ var projectUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		p, err := api.UpdateProject(cmd.Context(), apiURL, cred.auth, id, body)
+		p, err := cred.client().UpdateProject(cmd.Context(), id, body)
 		if err != nil {
 			return err
 		}
@@ -235,7 +235,7 @@ var projectDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteProject(cmd.Context(), apiURL, cred.auth, id); err != nil {
+		if err := cred.client().DeleteProject(cmd.Context(), id); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted project %s (%d)", args[0], id)

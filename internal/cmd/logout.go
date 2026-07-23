@@ -12,10 +12,11 @@ import (
 
 func newLogoutCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "logout",
-		Short:   "Log out of an instance and revoke the stored session",
-		Example: "  flagsmith logout",
-		RunE:    runLogout,
+		Use:         "logout",
+		Short:       "Log out of an instance and revoke the stored session",
+		Annotations: map[string]string{annotationLongRunning: "true"},
+		Example:     "  flagsmith logout",
+		RunE:        runLogout,
 	}
 }
 
@@ -32,7 +33,7 @@ func runLogout(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if creds.EffectiveKind() == auth.KindOAuth {
-		if err := auth.Revoke(cmd.Context(), creds); err != nil {
+		if err := auth.Revoke(cmd.Context(), sharedHTTPClient(), creds); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(),
 				"Warning: could not revoke session server-side: %v\n", err)
 		}

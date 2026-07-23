@@ -11,6 +11,12 @@ import (
 	"testing"
 )
 
+// testClient builds a Client pointed at a test server, using the server's own
+// HTTP client so requests stay in-process.
+func testClient(baseURL string, auth Auth, srv *httptest.Server) *Client {
+	return NewClient(baseURL, auth, WithHTTPClient(srv.Client()))
+}
+
 func TestUsersMe(t *testing.T) {
 	t.Run("happy path with bearer auth", func(t *testing.T) {
 		// Given
@@ -25,8 +31,8 @@ func TestUsersMe(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		// When
-		user, err := UsersMe(context.Background(), srv.URL+"/", Bearer("access-1"))
+		// When — base URL carries a trailing slash to prove NewClient trims it.
+		user, err := testClient(srv.URL+"/", Bearer("access-1"), srv).UsersMe(context.Background())
 
 		// Then
 		if err != nil {
@@ -45,7 +51,7 @@ func TestUsersMe(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		_, err := UsersMe(context.Background(), srv.URL, Bearer("expired"))
+		_, err := testClient(srv.URL, Bearer("expired"), srv).UsersMe(context.Background())
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "401") {
@@ -57,7 +63,7 @@ func TestUsersMe(t *testing.T) {
 func TestProjects(t *testing.T) {
 	t.Run("follows pagination across pages", func(t *testing.T) {
 		// Given two pages: page 1's "next" points at a bogus host to prove
-		// getList reuses apiURL and only carries over next's path + query.
+		// getList reuses the base URL and only carries over next's path + query.
 		var hits int
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits++
@@ -76,7 +82,7 @@ func TestProjects(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		projects, err := Projects(context.Background(), srv.URL, Bearer("t"), 3)
+		projects, err := testClient(srv.URL, Bearer("t"), srv).Projects(context.Background(), 3)
 
 		// Then
 		if err != nil {
@@ -102,7 +108,7 @@ func TestProjects(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		projects, err := Projects(context.Background(), srv.URL, Bearer("t"), 3)
+		projects, err := testClient(srv.URL, Bearer("t"), srv).Projects(context.Background(), 3)
 
 		// Then
 		if err != nil {
@@ -136,7 +142,7 @@ func TestCreateProject(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	p, err := CreateProject(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "acme-web", "organisation": 3})
+	p, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "acme-web", "organisation": 3})
 
 	// Then
 	if err != nil {
@@ -205,7 +211,7 @@ func TestResponseErrorPlanGated(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := CreateProject(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "x", "organisation": 1})
+	_, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "x", "organisation": 1})
 	if !errors.Is(err, ErrPlanGated) {
 		t.Fatalf("err = %v, want ErrPlanGated", err)
 	}
@@ -222,7 +228,7 @@ func TestResponseErrorSurfacesDetail(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := CreateProject(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "x"})
+	_, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "x"})
 	if err == nil || errors.Is(err, ErrPlanGated) {
 		t.Fatalf("err = %v, want a plain error", err)
 	}
@@ -244,7 +250,7 @@ func TestEnvironments(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	envs, err := Environments(context.Background(), srv.URL, APIKey("k.s"), 101)
+	envs, err := testClient(srv.URL, APIKey("k.s"), srv).Environments(context.Background(), 101)
 
 	// Then
 	if err != nil {
@@ -278,7 +284,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		features, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 0)
+		features, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0)
 
 		// Then
 		if err != nil {
@@ -306,7 +312,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		_, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 0)
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "403") {
@@ -324,7 +330,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		if _, err := Features(context.Background(), srv.URL, APIKey("k.s"), 101, 1, 12); err != nil {
+		if _, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 12); err != nil {
 			t.Fatal(err)
 		}
 
@@ -350,7 +356,7 @@ func TestDeleteSegmentOverride(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		err := DeleteSegmentOverride(context.Background(), srv.URL, APIKey("k.s"), "envkey", "max_items", 12)
+		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", "max_items", 12)
 
 		// Then
 		if err != nil {
@@ -370,7 +376,7 @@ func TestDeleteSegmentOverride(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		err := DeleteSegmentOverride(context.Background(), srv.URL, APIKey("k.s"), "envkey", "max_items", 12)
+		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", "max_items", 12)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "segment 12") {
@@ -401,7 +407,7 @@ func TestCreateEnvironment(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	env, err := CreateEnvironment(context.Background(), srv.URL, Bearer("t"), map[string]any{"name": "Development", "project": 101})
+	env, err := testClient(srv.URL, Bearer("t"), srv).CreateEnvironment(context.Background(), map[string]any{"name": "Development", "project": 101})
 
 	// Then
 	if err != nil {
@@ -427,7 +433,7 @@ func TestOrganisations(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		orgs, err := Organisations(context.Background(), srv.URL, APIKey("AbCd1234.secret"))
+		orgs, err := testClient(srv.URL, APIKey("AbCd1234.secret"), srv).Organisations(context.Background())
 
 		// Then
 		if err != nil {
@@ -449,7 +455,7 @@ func TestOrganisations(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		orgs, err := Organisations(context.Background(), srv.URL, Bearer("access-1"))
+		orgs, err := testClient(srv.URL, Bearer("access-1"), srv).Organisations(context.Background())
 
 		// Then
 		if err != nil {
@@ -468,7 +474,7 @@ func TestOrganisations(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		_, err := Organisations(context.Background(), srv.URL, APIKey("bad.key"))
+		_, err := testClient(srv.URL, APIKey("bad.key"), srv).Organisations(context.Background())
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "403") {
@@ -496,7 +502,7 @@ func TestCreateSegment(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	seg, err := CreateSegment(context.Background(), srv.URL, Bearer("t"), 101, Segment{
+	seg, err := testClient(srv.URL, Bearer("t"), srv).CreateSegment(context.Background(), 101, Segment{
 		Name:  "us-adults",
 		Rules: []SegmentRule{{Type: "ALL"}},
 	})
@@ -528,7 +534,7 @@ func TestUpdateSegment(t *testing.T) {
 	defer srv.Close()
 
 	// When
-	_, err := UpdateSegment(context.Background(), srv.URL, Bearer("t"), 101, 42, Segment{
+	_, err := testClient(srv.URL, Bearer("t"), srv).UpdateSegment(context.Background(), 101, 42, Segment{
 		Name:  "us-adults",
 		Rules: []SegmentRule{{Type: "ALL"}},
 	})
@@ -561,7 +567,7 @@ func TestUpdateMVOption(t *testing.T) {
 
 	// When
 	w := 40.0
-	_, err := UpdateMVOption(context.Background(), srv.URL, Bearer("t"), 101, 5, 9,
+	_, err := testClient(srv.URL, Bearer("t"), srv).UpdateMVOption(context.Background(), 101, 5, 9,
 		MultivariateOption{DefaultPercentageAllocation: &w})
 
 	// Then
@@ -593,7 +599,7 @@ func TestEdgeIdentityUUID(t *testing.T) {
 			switch r.URL.Query().Get("last_evaluated_key") {
 			case "":
 				// First page: no count, cursor points at a bogus host to
-				// prove getList reuses apiURL and only carries path + query.
+				// prove getList reuses the base URL and only carries path + query.
 				fmt.Fprint(w, `{"next":"http://edge.invalid/api/v1/environments/env.key/edge-identities/?q=%22user%40acme.io%22&last_evaluated_key=eyJpZCI6MX0=","previous":null,"results":[{"identity_uuid":"uuid-1","identifier":"someone-else"}]}`)
 			case "eyJpZCI6MX0=":
 				fmt.Fprint(w, `{"next":null,"previous":null,"results":[{"identity_uuid":"uuid-2","identifier":"user@acme.io"}]}`)
@@ -604,7 +610,7 @@ func TestEdgeIdentityUUID(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		uuid, found, err := EdgeIdentityUUID(context.Background(), srv.URL, APIKey("k.s"), "env.key", "user@acme.io")
+		uuid, found, err := testClient(srv.URL, APIKey("k.s"), srv).EdgeIdentityUUID(context.Background(), "env.key", "user@acme.io")
 
 		// Then
 		if err != nil {

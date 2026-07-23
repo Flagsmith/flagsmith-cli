@@ -29,7 +29,7 @@ var (
 // resolveEnvironmentRef turns an environment reference (name or api_key) into
 // its full record, scoped to the project.
 func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID int, ref string) (*api.Environment, error) {
-	envs, err := api.Environments(cmd.Context(), apiURL, cred.auth, projectID)
+	envs, err := cred.client().Environments(cmd.Context(), projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func versioningLabel(v2 bool) string {
 func renderEnvironment(cmd *cobra.Command, cred *activeCredential, e *api.Environment) error {
 	return output.Render(cmd.OutOrStdout(), e, outputOpts(), func(w io.Writer) error {
 		projLabel := strconv.Itoa(e.Project)
-		if p, err := api.GetProject(cmd.Context(), apiURL, cred.auth, e.Project); err == nil && p.Name != "" {
+		if p, err := cred.client().GetProject(cmd.Context(), e.Project); err == nil && p.Name != "" {
 			projLabel = fmt.Sprintf("%s (%d)", p.Name, e.Project)
 		}
 		return output.Detail(w, []output.Field{
@@ -109,7 +109,7 @@ var environmentListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		envs, err := api.Environments(cmd.Context(), apiURL, cred.auth, projectID)
+		envs, err := cred.client().Environments(cmd.Context(), projectID)
 		if err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ var environmentGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		env, err := api.GetEnvironment(cmd.Context(), apiURL, cred.auth, ref.APIKey)
+		env, err := cred.client().GetEnvironment(cmd.Context(), ref.APIKey)
 		if err != nil {
 			return err
 		}
@@ -167,7 +167,7 @@ var environmentCreateCmd = &cobra.Command{
 		body := envBodyFromFlags(cmd)
 		body["name"] = args[0]
 		body["project"] = projectID
-		env, err := api.CreateEnvironment(cmd.Context(), apiURL, cred.auth, body)
+		env, err := cred.client().CreateEnvironment(cmd.Context(), body)
 		if err != nil {
 			return err
 		}
@@ -195,7 +195,7 @@ var environmentUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		env, err := api.UpdateEnvironment(cmd.Context(), apiURL, cred.auth, ref.APIKey, body)
+		env, err := cred.client().UpdateEnvironment(cmd.Context(), ref.APIKey, body)
 		if err != nil {
 			return err
 		}
@@ -225,7 +225,7 @@ var environmentDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteEnvironment(cmd.Context(), apiURL, cred.auth, ref.APIKey); err != nil {
+		if err := cred.client().DeleteEnvironment(cmd.Context(), ref.APIKey); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted environment %s (%s)", ref.Name, ref.APIKey)
@@ -247,7 +247,7 @@ var environmentCloneCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		clone, err := api.CloneEnvironment(cmd.Context(), apiURL, cred.auth, ref.APIKey, map[string]any{"name": args[1]})
+		clone, err := cred.client().CloneEnvironment(cmd.Context(), ref.APIKey, map[string]any{"name": args[1]})
 		if err != nil {
 			return err
 		}
@@ -290,7 +290,7 @@ var environmentDocumentCmd = &cobra.Command{
 			}
 			apiKey = env.APIKey
 		}
-		doc, err := api.EnvironmentDocument(cmd.Context(), apiURL, cred.auth, apiKey)
+		doc, err := cred.client().EnvironmentDocument(cmd.Context(), apiKey)
 		if err != nil {
 			return err
 		}
@@ -331,7 +331,7 @@ var environmentKeyListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		keys, err := api.EnvironmentAPIKeys(cmd.Context(), apiURL, cred.auth, ref.APIKey)
+		keys, err := cred.client().EnvironmentAPIKeys(cmd.Context(), ref.APIKey)
 		if err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ var environmentKeyCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("name") {
 			body["name"] = envKeyNameFlag
 		}
-		key, err := api.CreateEnvironmentAPIKey(cmd.Context(), apiURL, cred.auth, ref.APIKey, body)
+		key, err := cred.client().CreateEnvironmentAPIKey(cmd.Context(), ref.APIKey, body)
 		if err != nil {
 			return err
 		}
@@ -406,7 +406,7 @@ var environmentKeyDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
 			return nil
 		}
-		if err := api.DeleteEnvironmentAPIKey(cmd.Context(), apiURL, cred.auth, ref.APIKey, keyID); err != nil {
+		if err := cred.client().DeleteEnvironmentAPIKey(cmd.Context(), ref.APIKey, keyID); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted server-side key %d from %s", keyID, ref.Name)
