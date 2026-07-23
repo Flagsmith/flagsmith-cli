@@ -39,6 +39,38 @@ State     on
 Value     orange
 ```
 
+For a multivariate feature, the view grows a Variants block:
+
+```
+$ flagsmith flag get banner-copy
+Feature              banner-copy
+Description          A/B banner text
+Type                 multivariate
+State                on
+Value                hello
+Segment overrides    1
+Identity overrides   0
+Code references      0
+Lifecycle stage      new
+
+Variants
+  VALUE     WEIGHT  KEY   ID
+  headline  25%     hero  30011
+  subhead   75%     sub   30010
+
+$ flagsmith flag get banner-copy --segment 101
+Feature   banner-copy
+Type      multivariate
+Segment   101
+State     on
+Value     hello
+
+Variants
+  VALUE     WEIGHT  KEY   ID
+  headline  100%    hero  30011
+  subhead   0%      sub   30010
+```
+
 A detail human result view includes:
 - Feature name
 - Feature description
@@ -49,6 +81,7 @@ A detail human result view includes:
 - Number of identity overrides
 - Number of code references
 - Lifecycle stage
+- Variants with this scope's weights (multivariate only)
 
 JSON output includes the above curated field list:
 
@@ -67,6 +100,8 @@ JSON output includes the above curated field list:
 ```
 
 A segment override (`--segment`) has its own curated shape: `feature`, `type`, `segment`, `enabled`, `value`.
+
+Multivariate features add `"variants": [{"id", "key", "value", "weight"}]` with the weights of the requested scope.
 
 ## 2. Mutation
 
@@ -142,6 +177,50 @@ State        on
 Value        orange
 ```
 
+Re-weight a multivariate flag's distribution with `--weight <key|id>=<n>`. The flag can be repeated:
+
+```
+$ flagsmith flag update banner-copy --weight hero=25 --weight sub=75 --yes
+✓ Set banner-copy weights to hero=25, sub=75 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature              banner-copy
+Description          A/B banner text
+Type                 multivariate
+State                on
+Value                hello
+Segment overrides    1
+Identity overrides   0
+Code references      0
+Lifecycle stage      new
+
+Variants
+  VALUE     WEIGHT  KEY   ID
+  headline  25%     hero  30011
+  subhead   75%     sub   30010
+```
+
+Weights compose with the other mutations in the same single request:
+
+```
+$ flagsmith flag update banner-copy --enable --value hello --weight hero=50 --yes
+```
+
+Per segment, the same flag re-weights the override:
+
+```
+$ flagsmith flag update banner-copy --segment 101 --weight hero=100,sub=0 --yes
+✓ Set banner-copy weights to hero=100, sub=0 for segment 101 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature   banner-copy
+Type      multivariate
+Segment   101
+State     on
+Value     hello
+
+Variants
+  VALUE     WEIGHT  KEY   ID
+  headline  100%    hero  30011
+  subhead   0%      sub   30010
+```
+
 Delete a segment override:
 
 ```
@@ -150,6 +229,19 @@ $ flagsmith flag delete checkout-v2 --segment 1147496 --yes
 ```
 
 All flag mutations are powered by `/api/experiments/environments/{environment_key}/update-flag-v2/`. 
+
+### Variant weights
+
+Depends on [Flagsmith/flagsmith#7955](https://github.com/Flagsmith/flagsmith/pull/7955) and [Flagsmith/flagsmith#8000](https://github.com/Flagsmith/flagsmith/pull/8000) (MV support and key-based variant identification in the update-flag endpoints).
+
+- Weights only. Variant existence, value, and key are project-level and belong to `feature variant` (09-features.md); `flag` never adds, deletes, or revalues a variant, even though the endpoint allows it.
+- A single `flag update` sends one request with one valid distribution, hence the `--weight` flag rather than a `flag variant update` subcommand.
+- The endpoint's env-level `multivariate_feature_state_values` list is absolute; omitting a variant deletes it. The CLI therefore fetches the current variants, overlays the given weights, and sends the full list. A partial `--weight` re-weights what it names, keeps the rest, and never deletes anything.
+- The merged weights must sum to ≤ 100, validated client-side before the request.
+- `control` is rejected as a key.
+- A numeric left-hand side is a variant id (for keyless variants). An unknown key or id exits 2 pointing at `feature variant add`.
+- `--weight` on a standard feature exits 2 pointing at `feature variant add`. `--weight` with `--identifier` always exits 2.
+- Resetting a segment's custom weights back to the environment's is deleting the override: `flag delete --segment`.
 
 ## 3. `flag list`
 
