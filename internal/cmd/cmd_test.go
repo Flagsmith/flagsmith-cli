@@ -4450,11 +4450,11 @@ func TestEnvMasterKey(t *testing.T) {
 	}
 }
 
-func TestEnvBearerToken(t *testing.T) {
+func TestEnvAccessToken(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", bearerToken)
+	t.Setenv("FLAGSMITH_ACCESS_TOKEN", bearerToken)
 
 	// When
 	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
@@ -4463,10 +4463,44 @@ func TestEnvBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auth status: %v", err)
 	}
-	for _, want := range []string{"kim@example.com", "$FLAGSMITH_API_KEY"} {
+	for _, want := range []string{"kim@example.com", "$FLAGSMITH_ACCESS_TOKEN"} {
 		if !strings.Contains(statusOut, want) {
 			t.Errorf("auth status output = %q, want it to contain %q", statusOut, want)
 		}
+	}
+}
+
+func TestEnvMasterKeyRejectsAccessToken(t *testing.T) {
+	// Given — a bearer/dotless token in the master-key variable
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	t.Setenv("FLAGSMITH_API_KEY", bearerToken)
+
+	// When
+	_, err := run("", "auth", "status", "--api", f.srv.URL)
+
+	// Then — rejected, pointing at the variable that fits
+	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ACCESS_TOKEN") {
+		t.Errorf("err = %v, want it to point at FLAGSMITH_ACCESS_TOKEN", err)
+	}
+}
+
+func TestEnvMasterKeyBeatsAccessToken(t *testing.T) {
+	// Given — both set; the master key takes precedence
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	t.Setenv("FLAGSMITH_ACCESS_TOKEN", bearerToken)
+
+	// When
+	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
+
+	// Then
+	if err != nil {
+		t.Fatalf("auth status: %v", err)
+	}
+	if !strings.Contains(statusOut, "$FLAGSMITH_API_KEY") {
+		t.Errorf("auth status output = %q, want FLAGSMITH_API_KEY to win", statusOut)
 	}
 }
 

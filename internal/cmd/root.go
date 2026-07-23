@@ -133,7 +133,7 @@ func nudgeInit(cmd *cobra.Command) bool {
 	if err != nil || pc.ConfigPath.Value != nil {
 		return false
 	}
-	if os.Getenv(envAPIKey) != "" {
+	if os.Getenv(envAPIKey) != "" || os.Getenv(envAccessToken) != "" {
 		return false
 	}
 	if _, err := auth.Load(pc.apiURL()); !errors.Is(err, auth.ErrNotLoggedIn) {

@@ -18,7 +18,10 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
-const envAPIKey = "FLAGSMITH_API_KEY"
+const (
+	envAPIKey      = "FLAGSMITH_API_KEY"
+	envAccessToken = "FLAGSMITH_ACCESS_TOKEN"
+)
 
 // credMu guards a per-invocation memo of the resolved credential, keyed by
 // instance URL. It collapses concurrent resolutions into one: the first caller
@@ -78,20 +81,22 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 }
 
 // loadCredential applies the credential precedence chain:
-// $FLAGSMITH_API_KEY first, then the stored login for the instance
-// (refreshing and re-saving the session when expired).
+// $FLAGSMITH_API_KEY (Master API key), then $FLAGSMITH_ACCESS_TOKEN
+// (OAuth-style bearer, OIDC-exchanged in CI), then the stored login for the
+// instance (refreshing and re-saving the session when expired). Each env var
+// maps to exactly one credential kind — no shape-guessing.
 func loadCredential(ctx context.Context) (*activeCredential, error) {
 	if v := os.Getenv(envAPIKey); v != "" {
-		kind, err := auth.ClassifyAPIKey(v)
-		if err != nil {
+		if err := auth.ValidateMasterKey(v); err != nil {
 			return nil, err
 		}
-		cred := &activeCredential{kind: kind, token: v, source: "$" + envAPIKey}
-		if kind == auth.KindMaster {
-			cred.auth = api.APIKey(v)
-		} else {
-			cred.auth = api.Bearer(v)
-		}
+		cred := &activeCredential{kind: auth.KindMaster, token: v, source: "$" + envAPIKey, auth: api.APIKey(v)}
+		cred.apiClient = newAPIClient(cred.auth)
+		return cred, nil
+	}
+
+	if v := os.Getenv(envAccessToken); v != "" {
+		cred := &activeCredential{kind: auth.KindBearer, token: v, source: "$" + envAccessToken, auth: api.Bearer(v)}
 		cred.apiClient = newAPIClient(cred.auth)
 		return cred, nil
 	}

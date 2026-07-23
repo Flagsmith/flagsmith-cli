@@ -5,36 +5,30 @@ import (
 	"testing"
 )
 
-func TestClassifyAPIKey(t *testing.T) {
-	t.Run("dotted value is a master API key", func(t *testing.T) {
+func TestValidateMasterKey(t *testing.T) {
+	t.Run("dotted value is a valid master API key", func(t *testing.T) {
 		// Given
 		value := "AbCd1234.0123456789abcdefABCDEF0123456789"
 
 		// When
-		kind, err := ClassifyAPIKey(value)
+		err := ValidateMasterKey(value)
 
 		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
-		if kind != KindMaster {
-			t.Errorf("kind = %q, want %q", kind, KindMaster)
-		}
 	})
 
-	t.Run("dotless value is a bearer token", func(t *testing.T) {
+	t.Run("dotless value is rejected and points at FLAGSMITH_ACCESS_TOKEN", func(t *testing.T) {
 		// Given
 		value := "IpuuPoNaSCXPoXi2uc4QkgDCEytYDu"
 
 		// When
-		kind, err := ClassifyAPIKey(value)
+		err := ValidateMasterKey(value)
 
 		// Then
-		if err != nil {
-			t.Fatal(err)
-		}
-		if kind != KindBearer {
-			t.Errorf("kind = %q, want %q", kind, KindBearer)
+		if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ACCESS_TOKEN") {
+			t.Errorf("err = %v, want it to point at FLAGSMITH_ACCESS_TOKEN", err)
 		}
 	})
 
@@ -43,7 +37,7 @@ func TestClassifyAPIKey(t *testing.T) {
 		value := "ser.AbCdEf1234"
 
 		// When
-		_, err := ClassifyAPIKey(value)
+		err := ValidateMasterKey(value)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
@@ -56,27 +50,11 @@ func TestClassifyAPIKey(t *testing.T) {
 		value := "0123456789abcdef0123456789abcdef01234567"
 
 		// When
-		_, err := ClassifyAPIKey(value)
+		err := ValidateMasterKey(value)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "not supported") {
 			t.Errorf("err = %v, want an unsupported-authtoken error", err)
-		}
-	})
-
-	t.Run("40 alphanumeric non-hex chars is still a bearer token", func(t *testing.T) {
-		// Given
-		value := strings.Repeat("Zz9x", 10)
-
-		// When
-		kind, err := ClassifyAPIKey(value)
-
-		// Then
-		if err != nil {
-			t.Fatal(err)
-		}
-		if kind != KindBearer {
-			t.Errorf("kind = %q, want %q", kind, KindBearer)
 		}
 	})
 }

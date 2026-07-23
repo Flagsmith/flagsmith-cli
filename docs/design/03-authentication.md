@@ -60,7 +60,7 @@ Admin API exposes a `POST /api/v1/auth/oidc/token/` exchange endpoint which vali
 
 ### CLI
 
-Unless `FLAGSMITH_API_KEY` is set explicitly, the `Flagsmith/setup-cli@v1` action fetches the Actions OIDC token, exchanges it, and stores the result under `FLAGSMITH_API_KEY` environment variable.
+Unless a static credential is set explicitly, the `Flagsmith/setup-cli@v1` action fetches the Actions OIDC token, exchanges it, and stores the resulting short-lived bearer under the `FLAGSMITH_ACCESS_TOKEN` environment variable.
 
 ## 5. SDK API auth
 
@@ -72,9 +72,9 @@ Unless `FLAGSMITH_API_KEY` is set explicitly, the `Flagsmith/setup-cli@v1` actio
 Admin API:
 
 1. Command-line flags
-2. `FLAGSMITH_API_KEY`
-3. OIDC
-4. Logged-in profile (keychain)
+2. `FLAGSMITH_API_KEY` — Master API key → `Authorization: Api-Key …`
+3. `FLAGSMITH_ACCESS_TOKEN` — OAuth-style access token (OIDC-exchanged in CI) → `Authorization: Bearer …`
+4. Logged-in profile (keychain) — OAuth session
 
 SDK API (sent as `X-Environment-Key`):
 
@@ -83,11 +83,15 @@ SDK API (sent as `X-Environment-Key`):
 3. `FLAGSMITH_ENVIRONMENT` (default environment: client-side key)
 4. `environment` in the nearest `flagsmith.json`
 
-`FLAGSMITH_API_KEY` accepts either Admin API credential. The CLI picks the header by token shape:
+Each Admin API variable maps to one credential kind:
 
-- contains a dot → Master API key (`{8-char prefix}.{32-char secret}`, alphabet a-zA-Z0-9) → `Authorization: Api-Key …`.
-- dotless → user/OAuth access token (30 alphanumeric chars, includes OIDC-exchanged tokens) → `Authorization: Bearer …`.
-- starts with `ser.` → error pointing at `FLAGSMITH_ENVIRONMENT_KEY`.
+- `FLAGSMITH_API_KEY` is Master API key, sent as `Authorization: Api-Key …`.
+- `FLAGSMITH_ACCESS_TOKEN` is OAuth-style access token, sent as `Authorization: Bearer …`.
+
+`FLAGSMITH_API_KEY` is validated on read to turn the common mistakes into actionable errors:
+
+- starts with `ser.`: a server-side environment key in the wrong variable. Point at `FLAGSMITH_ENVIRONMENT_KEY`.
+- a legacy 40-char hex authtoken: point at `flagsmith login` or a Master API key.
 
 `flagsmith auth status` always prints which source is active.
 
