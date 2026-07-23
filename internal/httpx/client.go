@@ -7,9 +7,12 @@ package httpx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -43,9 +46,42 @@ func New(userAgent string) *http.Client {
 	}).DialContext
 	base.TLSHandshakeTimeout = tlsHandshakeTimeout
 	base.ResponseHeaderTimeout = responseHeaderTimeout
-	return &http.Client{
-		Transport: &transport{base: base, userAgent: userAgent},
+	var rt http.RoundTripper = base
+	// FLAGSMITH_DEBUG turns on per-request tracing to stderr. Wrapping the base
+	// transport (rather than the retrying one) means every attempt is traced
+	// individually, retries included.
+	if os.Getenv("FLAGSMITH_DEBUG") != "" {
+		rt = &tracer{base: rt, out: os.Stderr}
 	}
+	return &http.Client{
+		Transport: &transport{base: rt, userAgent: userAgent},
+	}
+}
+
+// tracer logs one line per HTTP round trip — method, URL, status, wall-clock
+// duration, and time-to-first-byte — to out. It never logs request headers or
+// bodies, so the Authorization credential stays out of the trace. Enabled via
+// FLAGSMITH_DEBUG; see New.
+type tracer struct {
+	base http.RoundTripper
+	out  io.Writer
+}
+
+func (tr *tracer) RoundTrip(req *http.Request) (*http.Response, error) {
+	start := time.Now()
+	var ttfb time.Duration
+	ctx := httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		GotFirstResponseByte: func() { ttfb = time.Since(start) },
+	})
+	resp, err := tr.base.RoundTrip(req.WithContext(ctx))
+	total := time.Since(start).Round(time.Millisecond)
+	if err != nil {
+		fmt.Fprintf(tr.out, "[flagsmith http] %s %s -> error: %v (%s)\n", req.Method, req.URL, err, total)
+		return resp, err
+	}
+	fmt.Fprintf(tr.out, "[flagsmith http] %s %s -> %d (%s, ttfb %s)\n",
+		req.Method, req.URL, resp.StatusCode, total, ttfb.Round(time.Millisecond))
+	return resp, err
 }
 
 // transport sets the User-Agent and retries reads. It wraps a base

@@ -1,10 +1,13 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -147,6 +150,78 @@ func TestContextCancellationStopsBackoff(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > baseBackoff {
 		t.Errorf("waited %v, want near-immediate return", elapsed)
 	}
+}
+
+func TestDebugTracing(t *testing.T) {
+	stubOK := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     http.Header{},
+			Request:    r,
+		}, nil
+	})
+
+	t.Run("logs method, url and status for each call", func(t *testing.T) {
+		// Given a tracer writing to a buffer
+		var buf bytes.Buffer
+		tr := &tracer{base: stubOK, out: &buf}
+		req, _ := http.NewRequest(http.MethodGet, "https://api.flagsmith.com/api/v1/environments/", nil)
+
+		// When
+		resp, err := tr.RoundTrip(req)
+
+		// Then the response passes through unchanged and the call is traced
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		line := buf.String()
+		for _, want := range []string{"GET", "https://api.flagsmith.com/api/v1/environments/", "200"} {
+			if !strings.Contains(line, want) {
+				t.Errorf("trace %q missing %q", line, want)
+			}
+		}
+	})
+
+	t.Run("traces every retry attempt", func(t *testing.T) {
+		// Given tracing composed under the retrying transport, over a base that
+		// fails twice with 503 then succeeds
+		var buf bytes.Buffer
+		var hits int32
+		base := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			code := http.StatusOK
+			if atomic.AddInt32(&hits, 1) <= 2 {
+				code = http.StatusServiceUnavailable
+			}
+			return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}, Request: r}, nil
+		})
+		tr := &transport{base: &tracer{base: base, out: &buf}}
+		req, _ := http.NewRequest(http.MethodGet, "https://api.flagsmith.com/x", nil)
+
+		// When
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		// Then all three attempts are traced (two 503s, one 200)
+		if got := strings.Count(buf.String(), "GET https://api.flagsmith.com/x"); got != 3 {
+			t.Errorf("traced attempts = %d, want 3\n%s", got, buf.String())
+		}
+	})
+
+	t.Run("New enables tracing only when FLAGSMITH_DEBUG is set", func(t *testing.T) {
+		t.Setenv("FLAGSMITH_DEBUG", "")
+		if _, ok := New("ua").Transport.(*transport).base.(*tracer); ok {
+			t.Error("tracing must be off when FLAGSMITH_DEBUG is unset")
+		}
+		t.Setenv("FLAGSMITH_DEBUG", "1")
+		if _, ok := New("ua").Transport.(*transport).base.(*tracer); !ok {
+			t.Error("tracing must be on when FLAGSMITH_DEBUG is set")
+		}
+	})
 }
 
 func TestParseRetryAfter(t *testing.T) {
