@@ -2102,6 +2102,57 @@ func TestInitPreservesExistingOrganisation(t *testing.T) {
 	}
 }
 
+func TestInitPreservesSDKAPIURL(t *testing.T) {
+	// Given — a file pinning a custom SDK endpoint
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "sdkApiUrl": "https://sdk.acme.internal"}`)
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — non-interactive re-init that never mentions the SDK endpoint
+	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
+
+	// Then — the custom SDK endpoint must survive the rewrite, not be dropped
+	if err != nil {
+		t.Fatalf("init: %v\noutput: %s", err, out)
+	}
+	if written := loadWritten(t, root); written.SDKAPIURL != "https://sdk.acme.internal" {
+		t.Errorf("sdkApiUrl = %q, want it preserved", written.SDKAPIURL)
+	}
+}
+
+func TestInitRefusesToOverwriteMalformedFile(t *testing.T) {
+	// Given — an unparseable flagsmith.json at the write target, while context
+	// is resolved from a valid file elsewhere (so init reaches the point where
+	// it would otherwise substitute an empty config and clobber the target).
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	const malformed = "{ this is not valid json"
+	writeConfig(t, root, malformed)
+	valid := filepath.Join(t.TempDir(), "valid.json")
+	if err := os.WriteFile(valid, []byte(`{"project": 12345}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+	// When — a non-interactive init that would otherwise overwrite the target
+	_, err := run("", "init", "--api-url", f.srv.URL, "--config-path", valid, "--project", "12345", "--yes")
+
+	// Then — init fails hard and leaves the malformed file byte-for-byte intact
+	if err == nil {
+		t.Fatal("expected init to refuse to overwrite a malformed file")
+	}
+	got, readErr := os.ReadFile(filepath.Join(root, "flagsmith.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != malformed {
+		t.Errorf("file was modified: %q, want it left untouched", got)
+	}
+}
+
 func TestInitReinitReoffersOrgPicker(t *testing.T) {
 	// Given — a multi-org user re-initialising; current org is NOT first
 	isolateStorage(t)

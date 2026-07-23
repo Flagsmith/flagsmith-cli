@@ -336,6 +336,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if pc.APIURL.Value.(string) != defaultAPIURL {
 		newFile.APIURL = pc.APIURL.Value.(string)
 	}
+	// Persist a non-default SDK endpoint. A default source means the value is
+	// either Edge or re-derived from apiUrl on load, so it needn't be written;
+	// anything set explicitly (flag, env, or the existing file) is carried
+	// forward so re-init never silently drops a custom SDK endpoint.
+	if pc.SDKAPIURL.Source != sourceDefault {
+		newFile.SDKAPIURL = pc.SDKAPIURL.Value.(string)
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -345,8 +352,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(target); err == nil {
 		old, _, loadErr := config.Load(target)
 		if loadErr != nil {
-			old = &config.File{}
+			// A file we can't parse might hold hand-edited settings; refuse to
+			// clobber it rather than replacing it with a fresh one.
+			return fmt.Errorf(
+				"%s already exists but could not be parsed: %w\nrefusing to overwrite it — fix or remove the file, then re-run init",
+				config.FileName, loadErr)
 		}
+		// Preserve any fields this CLI doesn't recognise across the rewrite.
+		newFile.Extra = old.Extra
 		if stdinIsTTY() && !yesFlag {
 			fmt.Fprintf(out, "%s exists — updating it.\n\n%s\n", config.FileName, fileDiff(old, newFile))
 		}
@@ -360,11 +373,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	encoded, err := json.MarshalIndent(newFile, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(target, append(encoded, '\n'), 0o644); err != nil {
+	if err := newFile.Save(target); err != nil {
 		return err
 	}
 	_ = cache.Merge(apiURL, names)

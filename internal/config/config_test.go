@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -228,6 +229,89 @@ func TestLoad(t *testing.T) {
 			t.Error("expected a parse error")
 		}
 	})
+}
+
+func TestSavePreservesUnknownFields(t *testing.T) {
+	// Given — a file with fields this CLI doesn't recognise
+	path := filepath.Join(t.TempDir(), "flagsmith.json")
+	write(t, path, `{
+		"$schema": "https://example.com/schema.json",
+		"project": 1,
+		"futureFlag": {"nested": true},
+		"anotherUnknown": "keep me"
+	}`)
+	f, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When — a known field changes and the file is saved back
+	f.Environment = "WqXhZk8sVY3dGgTqZ9pJmN"
+	if err := f.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Then — the unknown fields survived the round trip verbatim
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("re-parsing saved file: %v\n%s", err, raw)
+	}
+	compact := func(b json.RawMessage) string {
+		var buf bytes.Buffer
+		if err := json.Compact(&buf, b); err != nil {
+			t.Fatalf("compacting %s: %v", b, err)
+		}
+		return buf.String()
+	}
+	if compact(got["futureFlag"]) != `{"nested":true}` {
+		t.Errorf("futureFlag = %s, want it preserved", got["futureFlag"])
+	}
+	if compact(got["anotherUnknown"]) != `"keep me"` {
+		t.Errorf("anotherUnknown = %s, want it preserved", got["anotherUnknown"])
+	}
+	if compact(got["environment"]) != `"WqXhZk8sVY3dGgTqZ9pJmN"` {
+		t.Errorf("environment = %s, want the updated value", got["environment"])
+	}
+}
+
+func TestSaveIsAtomic(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	path := filepath.Join(dir, "flagsmith.json")
+	f := &File{Schema: "https://example.com/schema.json", Project: &Ref{ID: 7}}
+
+	// When
+	if err := f.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Then — the file parses back to what we wrote, ends in a newline, and no
+	// temp file was left behind alongside it
+	reread, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("reloading saved file: %v", err)
+	}
+	if reread.Project.ID != 7 {
+		t.Errorf("project = %d, want 7", reread.Project.ID)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) == 0 || raw[len(raw)-1] != '\n' {
+		t.Errorf("file does not end in a newline: %q", raw)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("dir has %d entries, want only flagsmith.json (a temp file leaked): %v", len(entries), entries)
+	}
 }
 
 func TestRefParsing(t *testing.T) {

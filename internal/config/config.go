@@ -23,6 +23,78 @@ type File struct {
 	Environment  string `json:"environment,omitempty"`
 	APIURL       string `json:"apiUrl,omitempty"`
 	SDKAPIURL    string `json:"sdkApiUrl,omitempty"`
+
+	// Extra holds fields the CLI does not recognise, captured verbatim by
+	// Load so they survive a Save round trip instead of being silently
+	// dropped (a newer file edited by an older CLI, say). Never marshalled
+	// via the struct tags — MarshalJSON re-emits it after the known fields.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// MarshalJSON emits the known fields in their declared order, then appends any
+// Extra (unknown) fields so a Load/Save round trip preserves them.
+func (f File) MarshalJSON() ([]byte, error) {
+	type alias File // no MarshalJSON — plain struct-tag encoding
+	known, err := json.Marshal(alias(f))
+	if err != nil {
+		return nil, err
+	}
+	if len(f.Extra) == 0 {
+		return known, nil
+	}
+	keys := make([]string, 0, len(f.Extra))
+	for k := range f.Extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var extra bytes.Buffer
+	for _, k := range keys {
+		if extra.Len() > 0 {
+			extra.WriteByte(',')
+		}
+		key, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		extra.Write(key)
+		extra.WriteByte(':')
+		extra.Write(f.Extra[k])
+	}
+	if bytes.Equal(bytes.TrimSpace(known), []byte("{}")) {
+		return append([]byte("{"), append(extra.Bytes(), '}')...), nil
+	}
+	out := known[:len(known)-1] // drop the closing brace
+	out = append(out, ',')
+	out = append(out, extra.Bytes()...)
+	return append(out, '}'), nil
+}
+
+// Save writes f to path as indented JSON, atomically: it writes a temp file in
+// the same directory and renames it into place, so an interrupted write never
+// leaves a truncated or partial flagsmith.json.
+func (f *File) Save(path string) error {
+	encoded, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return err
+	}
+	encoded = append(encoded, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".flagsmith-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename succeeds
+	if _, err := tmp.Write(encoded); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // Ref is a project or organisation reference: either a numeric ID or a name.
@@ -160,9 +232,13 @@ func Load(path string) (*File, []string, error) {
 		return nil, nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	var warnings []string
-	for field := range all {
+	for field, raw := range all {
 		if !knownFields[field] {
 			warnings = append(warnings, fmt.Sprintf("unknown field %q in %s", field, path))
+			if f.Extra == nil {
+				f.Extra = map[string]json.RawMessage{}
+			}
+			f.Extra[field] = raw
 		}
 	}
 	sort.Strings(warnings)
