@@ -348,6 +348,6 @@ func init() {
 	flagListCmd.Flags().IntVar(&flagListSegmentFlag, "segment", 0, "list overrides for this segment id")
 	flagGetCmd.Flags().IntVar(&flagGetSegmentFlag, "segment", 0, "show the override for this segment id")
 	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
-	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagDeleteCmd, flagCreateCmd)
+	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagEnableCmd, flagDisableCmd, flagDeleteCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)
 }

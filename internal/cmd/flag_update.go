@@ -40,30 +40,45 @@ var flagUpdateCmd = &cobra.Command{
 }
 
 func runFlagUpdate(cmd *cobra.Command, args []string) error {
-	name := args[0]
-	enable := cmd.Flags().Changed("enable")
-	disable := cmd.Flags().Changed("disable")
-	setValue := cmd.Flags().Changed("value")
-
-	segmentID := flagUpdateSegment
-	identifier := flagUpdateIdentifier
-
+	m := flagMutation{
+		enable:     cmd.Flags().Changed("enable"),
+		disable:    cmd.Flags().Changed("disable"),
+		setValue:   cmd.Flags().Changed("value"),
+		segmentID:  flagUpdateSegment,
+		identifier: flagUpdateIdentifier,
+	}
 	switch {
-	case segmentID != 0 && identifier != "":
+	case m.segmentID != 0 && m.identifier != "":
 		return usageErrorf("--segment and --identifier are mutually exclusive")
-	case enable && disable:
+	case m.enable && m.disable:
 		return usageErrorf("--enable and --disable are mutually exclusive")
-	case !enable && !disable && !setValue:
+	case !m.enable && !m.disable && !m.setValue:
 		return usageErrorf("nothing to update — pass --enable, --disable, or --value")
-	case cmd.Flags().Changed("type") && !setValue:
+	case cmd.Flags().Changed("type") && !m.setValue:
 		return usageErrorf("--type only applies together with --value")
 	}
+	return applyFlagMutation(cmd, args[0], m)
+}
 
+// flagMutation is the state change a flag command applies to one feature — some
+// combination of enable/disable/set-value, optionally scoped to a segment or
+// identity override. `flag update` builds it from its flags; `flag enable` and
+// `flag disable` are shorthands that preset it.
+type flagMutation struct {
+	enable, disable, setValue bool
+	segmentID                 int
+	identifier                string
+}
+
+// applyFlagMutation resolves the feature and applies m via update-flag-v2 (which
+// requires the whole environment default, so the rest is carried forward
+// unchanged), then reprints the resulting flag.
+func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	_, cred, projectID, env, err := flagContext(cmd)
 	if err != nil {
 		return err
 	}
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, m.segmentID)
 	if err != nil {
 		return err
 	}
@@ -74,12 +89,10 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 			hintFlagList)
 	}
 
-	if identifier != "" {
-		return runIdentityUpdate(cmd, cred, env, projectID, feature, identifier, enable, disable, setValue)
+	if m.identifier != "" {
+		return runIdentityUpdate(cmd, cred, env, projectID, feature, m.identifier, m.enable, m.disable, m.setValue)
 	}
 
-	// update-flag-v2 always requires the whole environment default, so carry it
-	// forward unchanged.
 	req := api.UpdateFlagRequest{
 		Feature: api.FeatureRef{Name: name},
 		EnvironmentDefault: api.EnvironmentDefault{
@@ -91,16 +104,16 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	// The state being changed: the environment default, or a segment override.
 	target := feature.EnvironmentState
 	scope := "environment " + environmentLabel(env)
-	if segmentID != 0 {
+	if m.segmentID != 0 {
 		target = feature.SegmentState // nil when the override does not exist yet
-		scope = fmt.Sprintf("segment %d in environment %s", segmentID, environmentLabel(env))
+		scope = fmt.Sprintf("segment %d in environment %s", m.segmentID, environmentLabel(env))
 	}
 
 	enabled := flagEnabled(target)
-	if enable {
+	if m.enable {
 		enabled = true
 	}
-	if disable {
+	if m.disable {
 		enabled = false
 	}
 	// A new segment override with no explicit value inherits the environment
@@ -109,17 +122,17 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	if target != nil {
 		value = featureValueFromScalar(currentScalar(target))
 	}
-	if setValue {
+	if m.setValue {
 		if value, err = inferFeatureValue(flagValueFlag, flagTypeFlag); err != nil {
 			return err
 		}
 	}
 
-	if segmentID == 0 {
+	if m.segmentID == 0 {
 		req.EnvironmentDefault.Enabled = enabled
 		req.EnvironmentDefault.Value = value
 	} else {
-		req.SegmentOverrides = []api.SegmentOverride{{SegmentID: segmentID, Enabled: enabled, Value: value}}
+		req.SegmentOverrides = []api.SegmentOverride{{SegmentID: m.segmentID, Enabled: enabled, Value: value}}
 	}
 
 	errOut := cmd.ErrOrStderr()
@@ -134,18 +147,18 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if setValue {
+	if m.setValue {
 		output.Success(errOut, "Set %s to %s in %s", name, displayValue(value), scope)
 	}
-	if enable {
+	if m.enable {
 		output.Success(errOut, "Enabled %s in %s", name, scope)
 	}
-	if disable {
+	if m.disable {
 		output.Success(errOut, "Disabled %s in %s", name, scope)
 	}
 
 	// Result model: an update also prints the resulting resource to stdout.
-	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, m.segmentID)
 	if err != nil {
 		return err
 	}
@@ -153,8 +166,8 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	if updated == nil {
 		return nil
 	}
-	if segmentID != 0 {
-		return renderSegmentDetail(cmd, updated, segmentID)
+	if m.segmentID != 0 {
+		return renderSegmentDetail(cmd, updated, m.segmentID)
 	}
 	return renderFlagDetail(cmd, updated)
 }
@@ -197,6 +210,46 @@ var flagDeleteCmd = &cobra.Command{
 		output.Success(errOut, "Deleted %s override for segment %d in environment %s", name, flagDeleteSegment, environmentLabel(env))
 		return nil
 	},
+}
+
+var (
+	flagToggleSegment    int
+	flagToggleIdentifier string
+)
+
+var flagEnableCmd = &cobra.Command{
+	Use:   "enable <feature>",
+	Short: "Enable a flag (shorthand for `flag update --enable`)",
+	Example: `  flagsmith flag enable onboarding
+
+  # target a segment or identity override
+  flagsmith flag enable onboarding --segment 12
+  flagsmith flag enable onboarding --identifier user-123`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error { return runFlagToggle(cmd, args[0], true) },
+}
+
+var flagDisableCmd = &cobra.Command{
+	Use:   "disable <feature>",
+	Short: "Disable a flag (shorthand for `flag update --disable`)",
+	Example: `  flagsmith flag disable onboarding
+  flagsmith flag disable onboarding --segment 12`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error { return runFlagToggle(cmd, args[0], false) },
+}
+
+// runFlagToggle powers `flag enable` / `flag disable`: shorthands for
+// `flag update --enable` / `--disable` that reuse the same update path.
+func runFlagToggle(cmd *cobra.Command, name string, enable bool) error {
+	if flagToggleSegment != 0 && flagToggleIdentifier != "" {
+		return usageErrorf("--segment and --identifier are mutually exclusive")
+	}
+	return applyFlagMutation(cmd, name, flagMutation{
+		enable:     enable,
+		disable:    !enable,
+		segmentID:  flagToggleSegment,
+		identifier: flagToggleIdentifier,
+	})
 }
 
 // flagCreateCmd is hidden: it exists only to intercept `flag create` with a
@@ -291,4 +344,8 @@ func init() {
 	flagUpdateCmd.Flags().StringVar(&flagUpdateIdentifier, "identifier", "", "target this identity's override instead of the environment default")
 	flagDeleteCmd.Flags().IntVar(&flagDeleteSegment, "segment", 0, "the segment id whose override to delete")
 	flagDeleteCmd.Flags().StringVar(&flagDeleteIdentifier, "identifier", "", "the identity whose override to delete")
+	for _, c := range []*cobra.Command{flagEnableCmd, flagDisableCmd} {
+		c.Flags().IntVar(&flagToggleSegment, "segment", 0, "target this segment's override instead of the environment default")
+		c.Flags().StringVar(&flagToggleIdentifier, "identifier", "", "target this identity's override instead of the environment default")
+	}
 }

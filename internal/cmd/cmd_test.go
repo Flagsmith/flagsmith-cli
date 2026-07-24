@@ -3135,6 +3135,59 @@ func TestFlagGetSegment(t *testing.T) {
 	})
 }
 
+func TestFlagEnableDisable(t *testing.T) {
+	t.Run("enable turns the environment default on, preserving value", func(t *testing.T) {
+		f := flagUpdateEnv(t) // max_items is off, integer 25
+		out, err := run("", "flag", "enable", "max_items", "--yes")
+		if err != nil {
+			t.Fatalf("flag enable: %v\noutput: %s", err, out)
+		}
+		def := f.lastUpdate["environment_default"].(map[string]any)
+		val := def["value"].(map[string]any)
+		if def["enabled"] != true || val["type"] != "integer" || val["value"] != "25" {
+			t.Errorf("environment_default = %+v, want enabled with the value carried", def)
+		}
+		if !strings.Contains(out, "Enabled max_items") {
+			t.Errorf("output = %q, want an Enabled confirmation", out)
+		}
+	})
+
+	t.Run("disable turns it off", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		out, err := run("", "flag", "disable", "max_items", "--yes")
+		if err != nil {
+			t.Fatalf("flag disable: %v", err)
+		}
+		if f.lastUpdate["environment_default"].(map[string]any)["enabled"] != false {
+			t.Errorf("environment_default = %+v, want disabled", f.lastUpdate["environment_default"])
+		}
+		if !strings.Contains(out, "Disabled max_items") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("enable targets a segment override", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, false)
+		if _, err := run("", "flag", "enable", "max_items", "--segment", "7", "--yes"); err != nil {
+			t.Fatalf("flag enable --segment: %v", err)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["segment_id"] != float64(7) || ov["enabled"] != true {
+			t.Errorf("segment override = %+v, want enabled for segment 7", ov)
+		}
+	})
+
+	t.Run("--segment and --identifier are mutually exclusive", func(t *testing.T) {
+		flagUpdateEnv(t)
+		_, err := run("", "flag", "enable", "max_items", "--segment", "7", "--identifier", "u1", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Errorf("err = %v, want a usageError", err)
+		}
+	})
+}
+
 func TestFlagUpdateSegment(t *testing.T) {
 	t.Run("updates the override and carries the env default unchanged", func(t *testing.T) {
 		// Given an existing segment override (enabled true, value "special")
