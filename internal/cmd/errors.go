@@ -26,6 +26,7 @@ import (
 // Common hints reused across the CLI.
 const (
 	hintPricing = "This isn't available on your current plan — see https://flagsmith.com/pricing"
+	hintQuota   = "Enterprise plans can raise this limit — get in touch: https://docs.flagsmith.com/support#getting-in-touch"
 	hintLogin   = "Run `flagsmith login`, or set FLAGSMITH_API_KEY for non-interactive use."
 
 	hintMasterKey        = "Set FLAGSMITH_API_KEY to use a Master API key instead."
@@ -95,6 +96,8 @@ func hintFor(err error) string {
 		return hintAccessToken
 	case errors.Is(err, auth.ErrServerSideKey), errors.Is(err, config.ErrServerSideKey):
 		return hintServerSideKey
+	case errors.Is(err, api.ErrQuotaExceeded):
+		return hintQuota
 	case errors.Is(err, api.ErrPlanGated):
 		return hintPricing
 	case errors.Is(err, api.ErrWorkflowGated):

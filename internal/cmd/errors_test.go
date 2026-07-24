@@ -24,6 +24,8 @@ func TestHintFor(t *testing.T) {
 		{"not logged in", auth.ErrNotLoggedIn, hintLogin},
 		{"plan gated", api.ErrPlanGated, hintPricing},
 		{"plan gated wrapped", fmt.Errorf("create project: %w", api.ErrPlanGated), hintPricing},
+		{"quota exceeded", api.ErrQuotaExceeded, hintQuota},
+		{"quota exceeded wrapped", fmt.Errorf("create segment: %w", api.ErrQuotaExceeded), hintQuota},
 		{"workflow gated", api.ErrWorkflowGated, docsHint("advanced-use/change-requests")},
 		{"keychain unavailable", auth.ErrKeychainUnavailable, hintMasterKey},
 		{"session refresh failed wrapped", fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom")), hintRelogin},

@@ -22,6 +22,7 @@ import (
 func TestEverySentinelHasAHintDecision(t *testing.T) {
 	sentinels := map[string]error{
 		"api.ErrPlanGated":            api.ErrPlanGated,
+		"api.ErrQuotaExceeded":        api.ErrQuotaExceeded,
 		"api.ErrWorkflowGated":        api.ErrWorkflowGated,
 		"auth.ErrNotLoggedIn":         auth.ErrNotLoggedIn,
 		"auth.ErrKeychainUnavailable": auth.ErrKeychainUnavailable,

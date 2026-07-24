@@ -245,16 +245,16 @@ func (c *Client) getList(ctx context.Context, path string, out any) error {
 
 // responseError builds an error from a non-2xx response. It surfaces the API's
 // own message (DRF returns {"detail": "..."} or {"field": ["..."]}) and
-// classifies plan/subscription limits as ErrPlanGated. Flagsmith ships no
-// machine-readable error code, so plan limits can only be told apart from RBAC
-// denials by their message text — see planGatedPhrases. As a result, 403 caps
-// (project count, experiment tier) are wire-identical to permission denials and
-// intentionally not classified here.
+// classifies plan limits as ErrPlanGated (upgrade) or ErrQuotaExceeded (raise on
+// request). Flagsmith ships no machine-readable error code, so limits can only be
+// told apart from RBAC denials by their message text — see classifyLimit. As a
+// result, 403 caps (project count, experiment tier) are wire-identical to
+// permission denials and intentionally not classified here.
 func responseError(method, u string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 	msg := apiMessage(body)
-	if isPlanGated(msg) {
-		return &planGated{msg: msg}
+	if e := classifyLimit(msg); e != nil {
+		return e
 	}
 	if msg != "" {
 		return bug.Mark(fmt.Errorf("%s %s returned %s: %s", method, u, resp.Status, msg))
@@ -295,32 +295,42 @@ func apiMessage(body []byte) string {
 	return strings.Join(msgs, "; ")
 }
 
-// planGatedPhrases are substrings (matched case-insensitively) that mark a
-// message as a plan/subscription limit rather than an RBAC denial. Derived from
-// the backend's exception detail strings; the only signal available on the wire.
-var planGatedPhrases = []string{
-	"upgrade your plan",   // seat limit
-	"maximum allowed",     // feature / segment / segment-override caps
-	"payment issue",       // Chargebee seat / API-usage upgrade failures
-	"has no subscription", // organisation with no paid subscription
-}
+// quotaPhrases mark a resource cap that can be raised on request → ErrQuotaExceeded.
+// upgradePhrases mark a self-serve plan limit → ErrPlanGated. Matched case-
+// insensitively against the API's detail message — the only signal on the wire.
+// Both derive from the backend's exception detail strings.
+var (
+	quotaPhrases   = []string{"maximum allowed"}                                           // feature / segment / segment-override caps
+	upgradePhrases = []string{"upgrade your plan", "payment issue", "has no subscription"} // seats / payment / no subscription
+)
 
-func isPlanGated(msg string) bool {
-	msg = strings.ToLower(msg)
-	for _, p := range planGatedPhrases {
-		if strings.Contains(msg, p) {
-			return true
+// classifyLimit returns a plan-limit error for a recognised message, or nil.
+// Quota caps are checked first; they are the enterprise-negotiable ones.
+func classifyLimit(msg string) error {
+	m := strings.ToLower(msg)
+	for _, p := range quotaPhrases {
+		if strings.Contains(m, p) {
+			return &planLimited{msg: msg, target: ErrQuotaExceeded}
 		}
 	}
-	return false
+	for _, p := range upgradePhrases {
+		if strings.Contains(m, p) {
+			return &planLimited{msg: msg, target: ErrPlanGated}
+		}
+	}
+	return nil
 }
 
-// planGated is an ErrPlanGated-matching error whose message is the API's own
-// reason, so the user sees the specific limit and the CLI adds a pricing hint.
-type planGated struct{ msg string }
+// planLimited carries the API's own reason and matches (via errors.Is) exactly
+// one sentinel — ErrQuotaExceeded or ErrPlanGated — so the CLI can pick the right
+// recovery hint while still showing the specific limit.
+type planLimited struct {
+	msg    string
+	target error
+}
 
-func (e *planGated) Error() string        { return e.msg }
-func (e *planGated) Is(target error) bool { return target == ErrPlanGated }
+func (e *planLimited) Error() string        { return e.msg }
+func (e *planLimited) Is(target error) bool { return target == e.target }
 
 // sendJSON issues a request with an optional JSON body and decodes an optional
 // JSON response. It treats any non-2xx status as an error.
@@ -676,11 +686,17 @@ func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey, feat
 // environment has change-request workflows enabled.
 var ErrWorkflowGated = fmt.Errorf("this environment uses change-request workflows; direct updates are disabled")
 
-// ErrPlanGated is returned when the API refuses an action because the
-// organisation's subscription plan does not permit it (a tier or quota limit),
-// as opposed to an ordinary RBAC permission denial. Wraps the server's detail
-// message so the reason still reaches the user; the CLI adds a pricing hint.
+// ErrPlanGated matches (via errors.Is) a self-serve plan limit a user lifts by
+// upgrading — seats, a payment problem, or no subscription. The CLI hints at
+// pricing. The error's own message is the API's specific reason.
 var ErrPlanGated = errors.New("not available on your organisation's current plan")
+
+// ErrQuotaExceeded matches (via errors.Is) a resource cap that is raised on
+// request rather than by self-serve upgrade — the feature, segment, and
+// segment-override limits, which enterprise plans can relax. The CLI hints at
+// support, not pricing. Distinguishing the two is by message text only (see
+// classifyLimit); Flagsmith ships no machine-readable error code.
+var ErrQuotaExceeded = errors.New("resource limit reached on your organisation's current plan")
 
 // UpdateFlag applies an environment-default change via the experimental
 // update-flag-v2 endpoint, keyed by the environment's client-side key. The

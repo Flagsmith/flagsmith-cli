@@ -175,36 +175,37 @@ func TestApiMessage(t *testing.T) {
 	}
 }
 
-func TestIsPlanGated(t *testing.T) {
-	// The exact backend detail strings a plan limit surfaces (see the research
-	// in errors.go): if these stop matching, plan hints silently disappear.
-	gated := []string{
-		"Please upgrade your plan to add additional seats/users",
-		"The Project has reached the maximum allowed features limit.",
-		"The project has reached the maximum allowed segments limit.",
-		"The environment has reached the maximum allowed segments overrides limit.",
-		"Joining the organisation has failed due to a payment issue. Please contact your organisation's admin.",
-		"Organisation has no subscription",
+func TestClassifyLimit(t *testing.T) {
+	// The exact backend detail strings, and which recovery each routes to (see
+	// errors.go): quota caps are enterprise-negotiable (→ support), upgrade
+	// limits are self-serve (→ pricing). If these stop matching, hints vanish.
+	tests := []struct {
+		msg  string
+		want error // ErrQuotaExceeded, ErrPlanGated, or nil
+	}{
+		{"The Project has reached the maximum allowed features limit.", ErrQuotaExceeded},
+		{"The project has reached the maximum allowed segments limit.", ErrQuotaExceeded},
+		{"The environment has reached the maximum allowed segments overrides limit.", ErrQuotaExceeded},
+		{"Please upgrade your plan to add additional seats/users", ErrPlanGated},
+		{"Joining the organisation has failed due to a payment issue. Please contact your organisation's admin.", ErrPlanGated},
+		{"Organisation has no subscription", ErrPlanGated},
+		{"You do not have permission to perform this action.", nil},
+		{"Not found.", nil},
+		{"", nil},
 	}
-	for _, m := range gated {
-		if !isPlanGated(m) {
-			t.Errorf("isPlanGated(%q) = false, want true", m)
-		}
-	}
-	notGated := []string{
-		"You do not have permission to perform this action.",
-		"Not found.",
-		"",
-	}
-	for _, m := range notGated {
-		if isPlanGated(m) {
-			t.Errorf("isPlanGated(%q) = true, want false", m)
+	for _, tt := range tests {
+		got := classifyLimit(tt.msg)
+		switch {
+		case tt.want == nil && got != nil:
+			t.Errorf("classifyLimit(%q) = %v, want nil", tt.msg, got)
+		case tt.want != nil && !errors.Is(got, tt.want):
+			t.Errorf("classifyLimit(%q) = %v, want match %v", tt.msg, got, tt.want)
 		}
 	}
 }
 
-func TestResponseErrorPlanGated(t *testing.T) {
-	// A plan-limit 400 surfaces as ErrPlanGated carrying the API's own reason.
+func TestResponseErrorQuota(t *testing.T) {
+	// A quota-cap 400 surfaces as ErrQuotaExceeded carrying the API's own reason.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, `{"project":["The project has reached the maximum allowed segments limit."]}`)
@@ -212,11 +213,31 @@ func TestResponseErrorPlanGated(t *testing.T) {
 	defer srv.Close()
 
 	_, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "x", "organisation": 1})
-	if !errors.Is(err, ErrPlanGated) {
-		t.Fatalf("err = %v, want ErrPlanGated", err)
+	if !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatalf("err = %v, want ErrQuotaExceeded", err)
+	}
+	if errors.Is(err, ErrPlanGated) {
+		t.Errorf("a quota cap must not also match ErrPlanGated: %v", err)
 	}
 	if !strings.Contains(err.Error(), "maximum allowed segments limit") {
 		t.Errorf("err = %q, want the API reason", err)
+	}
+}
+
+func TestResponseErrorPlanGated(t *testing.T) {
+	// A self-serve upgrade limit surfaces as ErrPlanGated.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"detail":"Please upgrade your plan to add additional seats/users"}`)
+	}))
+	defer srv.Close()
+
+	_, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "x", "organisation": 1})
+	if !errors.Is(err, ErrPlanGated) {
+		t.Fatalf("err = %v, want ErrPlanGated", err)
+	}
+	if errors.Is(err, ErrQuotaExceeded) {
+		t.Errorf("a seat limit must not also match ErrQuotaExceeded: %v", err)
 	}
 }
 
