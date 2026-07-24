@@ -4403,12 +4403,16 @@ func TestAPI(t *testing.T) {
 func TestFlagCreateIsNudge(t *testing.T) {
 	// Given / When
 	f := flagUpdateEnv(t)
-	_, err := run("", "flag", "create", "brand-new")
+	out, err := run("", "flag", "create", "brand-new")
 
 	// Then — a usage error whose hint points at feature create
 	var ue *usageError
 	if !errors.As(err, &ue) || !strings.Contains(hintFor(err), "feature create brand-new") {
 		t.Errorf("err = %v (hint %q), want a hint nudging toward `feature create`", err, hintFor(err))
+	}
+	// ...but no usage block: `flag create` is a hidden redirect, not a real command.
+	if strings.Contains(out, "Usage:") {
+		t.Errorf("hidden redirect should not print a usage block:\n%s", out)
 	}
 	_ = f
 }

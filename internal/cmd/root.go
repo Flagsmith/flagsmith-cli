@@ -168,7 +168,12 @@ func reportError(cmd *cobra.Command, err error) int {
 	}
 	var usage *usageError
 	if errors.As(err, &usage) {
-		fmt.Fprint(errOut, cmd.UsageString())
+		// Hidden commands aren't advertised, so don't print their usage — e.g.
+		// the `flag create` redirect, which has no real usage to show. Still
+		// exit 2: it's incorrect input.
+		if !cmd.Hidden {
+			fmt.Fprint(errOut, cmd.UsageString())
+		}
 		return 2
 	}
 	return 1
