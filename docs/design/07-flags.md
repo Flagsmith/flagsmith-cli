@@ -148,6 +148,36 @@ Code references      0
 Lifecycle stage      new
 ```
 
+`flag enable` and `flag disable` are shorthand for that toggle:
+
+```
+$ flagsmith flag enable checkout-v2 --yes
+✓ Enabled checkout-v2 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature              checkout-v2
+Description          Checkout redesign
+Type                 standard
+State                on
+Value                green
+Segment overrides    1
+Identity overrides   1
+Code references      0
+Lifecycle stage      new
+```
+
+They take the same `--segment`/`--identifier` targeting, so an override toggles directly:
+
+```
+$ flagsmith flag disable checkout-v2 --segment 1147496 --yes
+✓ Disabled checkout-v2 for segment 1147496 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature   checkout-v2
+Type      standard
+Segment   1147496
+State     off
+Value     orange
+```
+
+To set a value while toggling, stay on `flag update`; `enable`/`disable` only flip the state.
+
 Set environment default value:
 
 ```
