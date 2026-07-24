@@ -256,10 +256,34 @@ func responseError(method, u string, resp *http.Response) error {
 	if e := classifyLimit(msg); e != nil {
 		return e
 	}
-	if msg != "" {
-		return bug.Mark(fmt.Errorf("%s %s returned %s: %s", method, u, resp.Status, msg))
+	return bug.Mark(&statusError{code: resp.StatusCode, status: resp.Status, message: msg, method: method, url: u})
+}
+
+// statusError is a non-2xx response the CLI didn't classify as a plan limit. It
+// carries the HTTP status so callers can special-case it (e.g. a 403 that is
+// really a project cap). bug.Mark wraps it, so it still reads as unexpected.
+type statusError struct {
+	code    int
+	status  string // e.g. "403 Forbidden"
+	message string // the API's detail, if any
+	method  string
+	url     string
+}
+
+func (e *statusError) Error() string {
+	if e.message != "" {
+		return fmt.Sprintf("%s %s returned %s: %s", e.method, e.url, e.status, e.message)
 	}
-	return bug.Mark(fmt.Errorf("%s %s returned %s", method, u, resp.Status))
+	return fmt.Sprintf("%s %s returned %s", e.method, e.url, e.status)
+}
+
+// statusOf returns the HTTP status carried by an API error, or 0 if it has none.
+func statusOf(err error) int {
+	var e *statusError
+	if errors.As(err, &e) {
+		return e.code
+	}
+	return 0
 }
 
 // apiMessage extracts a human-readable message from a DRF error body, or "".
@@ -417,14 +441,62 @@ func (c *Client) Projects(ctx context.Context, organisationID int) ([]Project, e
 	return projects, nil
 }
 
-// CreateProject creates a project from a flat field body (name + organisation
-// required).
-func (c *Client) CreateProject(ctx context.Context, body map[string]any) (*Project, error) {
-	p := &Project{}
-	if err := c.sendJSON(ctx, http.MethodPost, "/api/v1/projects/", body, p); err != nil {
+// SubscriptionMetadata is an organisation's plan limits. A nil field means the
+// plan sets no limit for it.
+type SubscriptionMetadata struct {
+	MaxSeats    *int `json:"max_seats"`
+	MaxAPICalls *int `json:"max_api_calls"`
+	MaxProjects *int `json:"max_projects"`
+}
+
+// GetSubscriptionMetadata returns the organisation's plan limits.
+func (c *Client) GetSubscriptionMetadata(ctx context.Context, orgID int) (*SubscriptionMetadata, error) {
+	m := &SubscriptionMetadata{}
+	path := fmt.Sprintf("/api/v1/organisations/%d/get-subscription-metadata/", orgID)
+	if err := c.get(ctx, path, m); err != nil {
 		return nil, err
 	}
-	return p, nil
+	return m, nil
+}
+
+// CreateProject creates a project from a flat field body (name + organisation
+// required).
+//
+// A project-cap denial arrives as a bare 403, identical to an RBAC "you
+// lack CREATE_PROJECT" denial. So on a 403 we check whether the org is actually
+// at its plan's project limit and, only then, surface it as ErrPlanGated.
+func (c *Client) CreateProject(ctx context.Context, body map[string]any) (*Project, error) {
+	p := &Project{}
+	err := c.sendJSON(ctx, http.MethodPost, "/api/v1/projects/", body, p)
+	if err == nil {
+		return p, nil
+	}
+	if statusOf(err) == http.StatusForbidden {
+		if orgID, ok := body["organisation"].(int); ok {
+			if limit, count, reached := c.projectCapReached(ctx, orgID); reached {
+				return nil, &planLimited{
+					msg:    fmt.Sprintf("this organisation's plan allows %d project(s), and it already has %d", limit, count),
+					target: ErrPlanGated,
+				}
+			}
+		}
+	}
+	return nil, err
+}
+
+// projectCapReached reports whether orgID is at its plan's project limit. It
+// fails safe: if the limit or the count can't be read, it returns reached=false,
+// so CreateProject keeps the original error rather than guess a plan limit.
+func (c *Client) projectCapReached(ctx context.Context, orgID int) (limit, count int, reached bool) {
+	meta, err := c.GetSubscriptionMetadata(ctx, orgID)
+	if err != nil || meta.MaxProjects == nil {
+		return 0, 0, false
+	}
+	projects, err := c.Projects(ctx, orgID)
+	if err != nil {
+		return 0, 0, false
+	}
+	return *meta.MaxProjects, len(projects), len(projects) >= *meta.MaxProjects
 }
 
 // UpdateProject patches a project's fields (organisation is immutable and

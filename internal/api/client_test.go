@@ -175,6 +175,56 @@ func TestApiMessage(t *testing.T) {
 	}
 }
 
+// capServer serves a project POST that 403s, plus the subscription-metadata and
+// project-list lookups CreateProject uses to disambiguate a project cap.
+func capServer(t *testing.T, maxProjects, existingProjects int) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"detail":"You do not have permission to perform this action."}`)
+	})
+	mux.HandleFunc("GET /api/v1/organisations/7/get-subscription-metadata/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"max_projects":%d}`, maxProjects)
+	})
+	mux.HandleFunc("GET /api/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
+		list := make([]string, existingProjects)
+		for i := range list {
+			list[i] = fmt.Sprintf(`{"id":%d,"name":"p%d"}`, i+1, i+1)
+		}
+		fmt.Fprintf(w, "[%s]", strings.Join(list, ","))
+	})
+	return httptest.NewServer(mux)
+}
+
+func TestCreateProjectProjectCap(t *testing.T) {
+	t.Run("at the cap surfaces ErrPlanGated with a clear reason", func(t *testing.T) {
+		srv := capServer(t, 1, 1)
+		defer srv.Close()
+
+		_, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "x", "organisation": 7})
+		if !errors.Is(err, ErrPlanGated) {
+			t.Fatalf("err = %v, want ErrPlanGated", err)
+		}
+		if !strings.Contains(err.Error(), "allows 1 project") || !strings.Contains(err.Error(), "already has 1") {
+			t.Errorf("err = %q, want the plan/count reason", err)
+		}
+	})
+
+	t.Run("a 403 below the cap stays a permission error", func(t *testing.T) {
+		srv := capServer(t, 5, 1) // room for more projects → the 403 is RBAC, not a cap
+		defer srv.Close()
+
+		_, err := testClient(srv.URL, Bearer("t"), srv).CreateProject(context.Background(), map[string]any{"name": "x", "organisation": 7})
+		if errors.Is(err, ErrPlanGated) {
+			t.Fatalf("err = %v, must not be ErrPlanGated below the cap", err)
+		}
+		if statusOf(err) != http.StatusForbidden || !strings.Contains(err.Error(), "do not have permission") {
+			t.Errorf("err = %q, want the original 403 permission error", err)
+		}
+	})
+}
+
 func TestClassifyLimit(t *testing.T) {
 	// The exact backend detail strings, and which recovery each routes to (see
 	// errors.go): quota caps are enterprise-negotiable (→ support), upgrade
