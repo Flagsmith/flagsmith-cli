@@ -39,4 +39,4 @@ Each command's help carries an examples block of representative invocations for 
 
 Errors may carry a hint. Any error, exit 1 or 2, can append an optional hint on its own line after `Error: ...` (before the usage block, when one is printed). A hint is one or both of:
 - a recovery command — what to run to fix the problem, retry, or reach the approximated goal (e.g. `Did you mean 'flagsmith feature create'?`, `Run 'flagsmith login' first.`).
-- context — a link that explains or unblocks. Plan limits split by how they're lifted: a self-serve upgrade (seats, billing) points at `https://flagsmith.com/pricing`; an enterprise-negotiable quota cap (feature / segment / segment-override limits) points at support, since those are raised on request, not by upgrading. Misuse the docs cover points at `https://docs.flagsmith.com/...`.
+- context — a link that explains or unblocks: `https://flagsmith.com/pricing` when an action is plan-gated, `https://docs.flagsmith.com/...` when the usage is wrong in a way the docs cover.
