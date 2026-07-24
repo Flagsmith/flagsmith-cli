@@ -47,9 +47,11 @@ func resolveOrganisationRefID(cmd *cobra.Command, cred *activeCredential, ref st
 	}
 	hits := matchByName(byID, ref)
 	if len(hits) == 0 {
-		return 0, fmt.Errorf("organisation %q not found", ref)
+		return 0, withHint(
+			fmt.Errorf("organisation %q not found", ref),
+			hintOrganisationList)
 	}
-	chosen, err := pickCandidate(cmd, "organisation", ref, hits, byID)
+	chosen, err := pickCandidate(cmd, "organisation", "id", ref, hits, byID)
 	if err != nil {
 		return 0, err
 	}

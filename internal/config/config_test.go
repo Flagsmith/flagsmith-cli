@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,9 +194,13 @@ func TestLoad(t *testing.T) {
 		// When
 		_, _, err := Load(path)
 
-		// Then
-		if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
-			t.Errorf("err = %v, want a server-side-key rejection", err)
+		// Then — recovery guidance is hinted at the command layer, so the
+		// error only needs to be recognisable, and name the offending file
+		if !errors.Is(err, ErrServerSideKey) {
+			t.Errorf("err = %v, want ErrServerSideKey", err)
+		}
+		if err == nil || !strings.Contains(err.Error(), path) {
+			t.Errorf("err = %v, want it to name %s", err, path)
 		}
 	})
 

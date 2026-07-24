@@ -44,9 +44,11 @@ func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID
 	}
 	hits := matchByName(byKey, ref)
 	if len(hits) == 0 {
-		return nil, fmt.Errorf("environment %q not found in project %d", ref, projectID)
+		return nil, withHint(
+			fmt.Errorf("environment %q not found in project %d", ref, projectID),
+			hintEnvironmentList)
 	}
-	chosen, err := pickCandidate(cmd, "environment", ref, hits, byKey)
+	chosen, err := pickCandidate(cmd, "environment", "key", ref, hits, byKey)
 	if err != nil {
 		return nil, err
 	}

@@ -251,7 +251,9 @@ var flagGetCmd = &cobra.Command{
 		}
 		feature := findFeature(features, name)
 		if feature == nil {
-			return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
+			return withHint(
+				fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
+				hintFlagList)
 		}
 		if flagGetIdentifierFlag != "" {
 			edge, err := useEdgeIdentities(cmd, cred, projectID)

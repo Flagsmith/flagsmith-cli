@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Flagsmith/flagsmith-cli/internal/bug"
 )
 
 const (
@@ -42,7 +44,7 @@ func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Met
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("reaching %s: %w", u, err)
+		return nil, bug.Mark(fmt.Errorf("reaching %s: %w", u, err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -50,10 +52,10 @@ func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Met
 	}
 	var md Metadata
 	if err := json.NewDecoder(resp.Body).Decode(&md); err != nil {
-		return nil, fmt.Errorf("decoding authorization server metadata: %w", err)
+		return nil, bug.Mark(fmt.Errorf("decoding authorization server metadata: %w", err))
 	}
 	if md.AuthorizationEndpoint == "" || md.TokenEndpoint == "" {
-		return nil, errors.New("authorization server metadata is missing required endpoints")
+		return nil, bug.Mark(errors.New("authorization server metadata is missing required endpoints"))
 	}
 	return &md, nil
 }
@@ -86,15 +88,15 @@ func postToken(ctx context.Context, httpClient *http.Client, endpoint string, fo
 		}
 		if json.Unmarshal(body, &oauthErr) == nil && oauthErr.Error != "" {
 			if oauthErr.Description != "" {
-				return nil, fmt.Errorf("%s: %s", oauthErr.Error, oauthErr.Description)
+				return nil, bug.Mark(fmt.Errorf("%s: %s", oauthErr.Error, oauthErr.Description))
 			}
-			return nil, errors.New(oauthErr.Error)
+			return nil, bug.Mark(errors.New(oauthErr.Error))
 		}
-		return nil, fmt.Errorf("token endpoint returned %s", resp.Status)
+		return nil, bug.Mark(fmt.Errorf("token endpoint returned %s", resp.Status))
 	}
 	var tok tokenResponse
 	if err := json.Unmarshal(body, &tok); err != nil {
-		return nil, fmt.Errorf("decoding token response: %w", err)
+		return nil, bug.Mark(fmt.Errorf("decoding token response: %w", err))
 	}
 	return &tok, nil
 }
@@ -124,7 +126,7 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 	// port-wildcard matching only applies to literal loopback IPs.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, fmt.Errorf("starting loopback listener: %w", err)
+		return nil, bug.Mark(fmt.Errorf("starting loopback listener: %w", err))
 	}
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 
@@ -148,13 +150,13 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 		q := r.URL.Query()
 		if q.Get("state") != state {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
-			results <- callback{err: errors.New("state mismatch in callback — possible interception, aborting")}
+			results <- callback{err: bug.Mark(errors.New("state mismatch in callback — possible interception, aborting"))}
 			return
 		}
 		if errCode := q.Get("error"); errCode != "" {
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, resultPage("Login failed", "You can close this tab and return to your terminal."))
-			results <- callback{err: fmt.Errorf("authorization failed: %s", errCode)}
+			results <- callback{err: bug.Mark(fmt.Errorf("authorization failed: %s", errCode))}
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
@@ -180,7 +182,7 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 		}
 		code = r.code
 	case <-time.After(loginTimeout):
-		return nil, errors.New("timed out waiting for browser login")
+		return nil, bug.Mark(errors.New("timed out waiting for browser login"))
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -193,7 +195,7 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 		"code_verifier": {verifier},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("exchanging authorization code: %w", err)
+		return nil, bug.Mark(fmt.Errorf("exchanging authorization code: %w", err))
 	}
 	return credentialsFromToken(apiURL, tok), nil
 }
@@ -206,6 +208,11 @@ func credentialsFromToken(apiURL string, tok *tokenResponse) *Credentials {
 		ExpiresAt:    time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second),
 	}
 }
+
+// ErrRefreshFailed means an expired session's refresh-token exchange failed,
+// so the stored session is unusable. The recovery (re-run `flagsmith login`)
+// is attached as a hint at the command layer (see internal/cmd hintFor).
+var ErrRefreshFailed = errors.New("refreshing session failed")
 
 // EnsureFresh refreshes the access token if it is expired or about to expire.
 // The server rotates refresh tokens (120s grace), so refreshed credentials
@@ -227,7 +234,7 @@ func EnsureFresh(ctx context.Context, httpClient *http.Client, c *Credentials) (
 		"client_id":     {ClientID},
 	})
 	if err != nil {
-		return nil, false, fmt.Errorf("refreshing session (run `flagsmith login` to re-authenticate): %w", err)
+		return nil, false, fmt.Errorf("%w: %w", ErrRefreshFailed, err)
 	}
 	return credentialsFromToken(c.APIURL, tok), true, nil
 }
@@ -259,7 +266,7 @@ func Revoke(ctx context.Context, httpClient *http.Client, c *Credentials) error 
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("revocation endpoint returned %s", resp.Status)
+		return bug.Mark(fmt.Errorf("revocation endpoint returned %s", resp.Status))
 	}
 	return nil
 }

@@ -1260,11 +1260,27 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		writeConfig(t, root, `{"project": 101, "environment": "Staging", "apiUrl": "`+f.srv.URL+`"}`)
 		t.Setenv("FLAGSMITH_API_KEY", masterKey)
 
-		// When / Then
+		// When / Then — environments are addressed by key, so that's the
+		// identifier the error offers
 		_, err := run("", "flag", "list")
 		var ue *usageError
-		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "ambiguous") {
-			t.Errorf("err = %v, want an ambiguity usage error (exit 2)", err)
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "use its key instead") {
+			t.Errorf("err = %v, want an ambiguity usage error offering the key (exit 2)", err)
+		}
+	})
+
+	t.Run("unknown environment name hints at environment list", func(t *testing.T) {
+		// Given a name matching nothing in the project
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "Nope", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When / Then
+		_, err := run("", "flag", "list")
+		if err == nil || !strings.Contains(hintFor(err), "flagsmith environment list") {
+			t.Errorf("err = %v (hint %q), want a hint offering `flagsmith environment list`", err, hintFor(err))
 		}
 	})
 
@@ -1673,10 +1689,10 @@ func TestConfigCommand(t *testing.T) {
 		isolateStorage(t)
 		tempRepo(t)
 
-		// When / Then
+		// When / Then — the recovery lives in the hint, not the message
 		if _, err := run("", "config", "-e", "ser.AbCd"); err == nil ||
-			!strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
-			t.Errorf("err = %v, want a pointer to FLAGSMITH_ENVIRONMENT_KEY", err)
+			!strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
+			t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 		}
 	})
 }
@@ -1771,13 +1787,13 @@ func TestInitNoCredentials(t *testing.T) {
 	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
 
-	// Then
+	// Then — the ways to supply credentials are hinted, not baked in
 	if err == nil {
 		t.Fatal("expected an error with no credentials")
 	}
 	for _, want := range []string{"FLAGSMITH_API_KEY", "flagsmith login"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("err = %v, want it to mention %q", err, want)
+		if !strings.Contains(hintFor(err), want) {
+			t.Errorf("err = %v (hint %q), want the hint to mention %q", err, hintFor(err), want)
 		}
 	}
 }
@@ -2443,9 +2459,9 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	// When — --no-input promises zero interaction; waiting on a browser is interaction
 	_, err := run("", "login", "--api-url", f.srv.URL, "--no-input")
 
-	// Then
-	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_API_KEY") {
-		t.Errorf("err = %v, want a refusal pointing at FLAGSMITH_API_KEY", err)
+	// Then — the refusal names --no-input; the FLAGSMITH_API_KEY recovery is hinted
+	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_API_KEY") {
+		t.Errorf("err = %v (hint %q), want a refusal hinting at FLAGSMITH_API_KEY", err, hintFor(err))
 	}
 }
 
@@ -2693,9 +2709,12 @@ func TestFlagsList(t *testing.T) {
 		// When
 		_, err := run("", "flag", "list")
 
-		// Then
+		// Then — with the ways to supply one hinted, not baked into the message
 		if err == nil || !strings.Contains(err.Error(), "environment") {
 			t.Errorf("err = %v, want a missing-environment error", err)
+		}
+		if hint := hintFor(err); !strings.Contains(hint, "-e") || !strings.Contains(hint, "flagsmith init") {
+			t.Errorf("hint = %q, want it to offer -e and `flagsmith init`", hint)
 		}
 	})
 
@@ -4386,10 +4405,10 @@ func TestFlagCreateIsNudge(t *testing.T) {
 	f := flagUpdateEnv(t)
 	_, err := run("", "flag", "create", "brand-new")
 
-	// Then — a usage error pointing at feature create
+	// Then — a usage error whose hint points at feature create
 	var ue *usageError
-	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "feature create brand-new") {
-		t.Errorf("err = %v, want a nudge toward `feature create`", err)
+	if !errors.As(err, &ue) || !strings.Contains(hintFor(err), "feature create brand-new") {
+		t.Errorf("err = %v (hint %q), want a hint nudging toward `feature create`", err, hintFor(err))
 	}
 	_ = f
 }
@@ -4491,9 +4510,9 @@ func TestEnvMasterKeyRejectsAccessToken(t *testing.T) {
 	// When
 	_, err := run("", "auth", "status", "--api", f.srv.URL)
 
-	// Then — rejected, pointing at the variable that fits
-	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ACCESS_TOKEN") {
-		t.Errorf("err = %v, want it to point at FLAGSMITH_ACCESS_TOKEN", err)
+	// Then — rejected, with a hint pointing at the variable that fits
+	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ACCESS_TOKEN") {
+		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ACCESS_TOKEN", err, hintFor(err))
 	}
 }
 
@@ -4525,9 +4544,9 @@ func TestEnvServerKeyRejected(t *testing.T) {
 	// When
 	_, err := run("", "auth", "status", "--api", f.srv.URL)
 
-	// Then
-	if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
-		t.Errorf("err = %v, want mention of FLAGSMITH_ENVIRONMENT_KEY", err)
+	// Then — the recovery lives in the hint, not the message
+	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
+		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 	}
 }
 
@@ -4569,8 +4588,8 @@ func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected fail-closed error, got success: %q", out)
 	}
-	if !strings.Contains(err.Error(), "FLAGSMITH_API_KEY") {
-		t.Errorf("err = %v, want it to point at FLAGSMITH_API_KEY", err)
+	if !strings.Contains(hintFor(err), "FLAGSMITH_API_KEY") {
+		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_API_KEY", err, hintFor(err))
 	}
 	if strings.Contains(out, "oauth/authorize") {
 		t.Errorf("output = %q — the OAuth flow started despite no keychain", out)

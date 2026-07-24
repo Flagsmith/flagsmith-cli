@@ -42,14 +42,14 @@ func browserLogin(cmd *cobra.Command) error {
 	// interaction. Master API keys go through FLAGSMITH_API_KEY. (--yes is
 	// authorization, not a liveness switch, so it does not block login.)
 	if noInput() {
-		return errors.New(
-			"browser login needs a terminal and cannot run with --no-input — set FLAGSMITH_API_KEY to use a Master API key instead")
+		return withHint(errors.New("browser login needs a terminal and cannot run with --no-input"),
+			hintMasterKey)
 	}
 	// The session lives in the OS keychain; without one, minting tokens we
 	// can't store would strand a live session — fail closed toward the env var.
 	if !auth.KeychainAvailable() {
-		return errors.New(
-			"no OS keychain available to store the session — set FLAGSMITH_API_KEY to use a Master API key instead")
+		return withHint(errors.New("no OS keychain available to store the session"),
+			hintMasterKey)
 	}
 	open := browser.OpenURL
 	if noBrowser || !stdinIsTTY() {

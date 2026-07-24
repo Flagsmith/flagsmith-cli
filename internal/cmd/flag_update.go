@@ -69,7 +69,9 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	}
 	feature := findFeature(features, name)
 	if feature == nil {
-		return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
+		return withHint(
+			fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
+			hintFlagList)
 	}
 
 	if identifier != "" {
@@ -210,8 +212,9 @@ var flagCreateCmd = &cobra.Command{
 		if len(args) > 0 {
 			name = args[0]
 		}
-		return usageErrorf(
-			"flags exist per environment, so there is nothing to create.\nTo create the feature itself, use `flagsmith feature create %s`.", name)
+		return hintf(
+			usageErrorf("flags exist per environment, so there is nothing to create"),
+			"To create the feature itself, run `flagsmith feature create %s`.", name)
 	},
 }
 

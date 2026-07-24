@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+
 	"github.com/Flagsmith/flagsmith-cli/internal/httpx"
 	"github.com/Flagsmith/flagsmith-cli/internal/version"
 )
@@ -227,7 +229,7 @@ func (c *Client) getList(ctx context.Context, path string, out any) error {
 		}
 		next, err := url.Parse(page.Next)
 		if err != nil {
-			return fmt.Errorf("parsing pagination next link %q: %w", page.Next, err)
+			return bug.Mark(fmt.Errorf("parsing pagination next link %q: %w", page.Next, err))
 		}
 		path = next.Path
 		if next.RawQuery != "" {
@@ -255,9 +257,9 @@ func responseError(method, u string, resp *http.Response) error {
 		return &planGated{msg: msg}
 	}
 	if msg != "" {
-		return fmt.Errorf("%s %s returned %s: %s", method, u, resp.Status, msg)
+		return bug.Mark(fmt.Errorf("%s %s returned %s: %s", method, u, resp.Status, msg))
 	}
-	return fmt.Errorf("%s %s returned %s", method, u, resp.Status)
+	return bug.Mark(fmt.Errorf("%s %s returned %s", method, u, resp.Status))
 }
 
 // apiMessage extracts a human-readable message from a DRF error body, or "".

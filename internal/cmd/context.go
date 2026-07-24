@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -139,8 +140,9 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 		pc.Environment = resolved{Value: nil, Source: sourceDefault}
 	}
 	if key, ok := pc.Environment.Value.(string); ok && strings.HasPrefix(key, "ser.") {
-		return nil, fmt.Errorf(
-			"the environment context takes a client-side key; server-side keys are secrets — provide them via FLAGSMITH_ENVIRONMENT_KEY")
+		return nil, withHint(
+			errors.New("the environment context takes a client-side key"),
+			hintServerSideKey)
 	}
 
 	// apiUrl

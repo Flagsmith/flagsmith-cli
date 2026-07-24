@@ -29,13 +29,15 @@ func matchByName(canonicalToName map[string]string, ref string) []string {
 
 // pickCandidate resolves an ambiguous name to a single canonical value:
 // one match returns directly; several are disambiguated per 05 §2 (pick in a
-// TTY, usage error otherwise).
-func pickCandidate(cmd *cobra.Command, entity, ref string, candidates []string, names map[string]string) (string, error) {
+// TTY, usage error otherwise). idKind names the entity's canonical
+// identifier — "key" for environments, "id" for everything else — so the
+// error offers exactly the identifier that works.
+func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []string, names map[string]string) (string, error) {
 	if len(candidates) == 1 {
 		return candidates[0], nil
 	}
 	if !interactive() {
-		return "", usageErrorf("%s %q is ambiguous (%d matches) — use its id/key instead", entity, ref, len(candidates))
+		return "", usageErrorf("%s %q is ambiguous (%d matches) — use its %s instead", entity, ref, len(candidates), idKind)
 	}
 	options := make([]string, len(candidates))
 	for i, c := range candidates {
@@ -58,8 +60,8 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 		ref = os.Getenv("FLAGSMITH_ENVIRONMENT_KEY")
 	}
 	if ref == "" {
-		return api.Environment{}, errors.New(
-			"no environment — pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`")
+		return api.Environment{}, withHint(errors.New("no environment"),
+			"Pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`.")
 	}
 
 	envs, err := cred.client().Environments(cmd.Context(), projectID)
@@ -79,9 +81,11 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 	}
 	hits := matchByName(byKey, ref)
 	if len(hits) == 0 {
-		return api.Environment{}, fmt.Errorf("environment %q not found in project %d", ref, projectID)
+		return api.Environment{}, withHint(
+			fmt.Errorf("environment %q not found in project %d", ref, projectID),
+			hintEnvironmentList)
 	}
-	chosen, err := pickCandidate(cmd, "environment", ref, hits, byKey)
+	chosen, err := pickCandidate(cmd, "environment", "key", ref, hits, byKey)
 	if err != nil {
 		return api.Environment{}, err
 	}
@@ -90,7 +94,9 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 			return e, nil
 		}
 	}
-	return api.Environment{}, fmt.Errorf("environment %q not found in project %d", ref, projectID)
+	return api.Environment{}, withHint(
+		fmt.Errorf("environment %q not found in project %d", ref, projectID),
+		hintEnvironmentList)
 }
 
 // resolveProjectID turns the project reference (an id or a name) into an id.
@@ -100,7 +106,8 @@ func resolveProjectID(cmd *cobra.Command, pc *projectContext, cred *activeCreden
 	}
 	name, ok := pc.Project.Value.(string)
 	if !ok || name == "" {
-		return 0, errors.New("no project — set --project or `project` in flagsmith.json")
+		return 0, withHint(errors.New("no project"),
+			"Set --project, or `project` in flagsmith.json.")
 	}
 	orgID, err := resolveOrganisationID(cmd, pc, cred)
 	if err != nil {
@@ -116,9 +123,11 @@ func resolveProjectID(cmd *cobra.Command, pc *projectContext, cred *activeCreden
 	}
 	hits := matchByName(byID, name)
 	if len(hits) == 0 {
-		return 0, fmt.Errorf("project %q not found in organisation %d", name, orgID)
+		return 0, withHint(
+			fmt.Errorf("project %q not found in organisation %d", name, orgID),
+			hintProjectList)
 	}
-	chosen, err := pickCandidate(cmd, "project", name, hits, byID)
+	chosen, err := pickCandidate(cmd, "project", "id", name, hits, byID)
 	if err != nil {
 		return 0, err
 	}
@@ -142,9 +151,11 @@ func resolveOrganisationID(cmd *cobra.Command, pc *projectContext, cred *activeC
 		}
 		hits := matchByName(byID, name)
 		if len(hits) == 0 {
-			return 0, fmt.Errorf("organisation %q not found", name)
+			return 0, withHint(
+				fmt.Errorf("organisation %q not found", name),
+				hintOrganisationList)
 		}
-		chosen, err := pickCandidate(cmd, "organisation", name, hits, byID)
+		chosen, err := pickCandidate(cmd, "organisation", "id", name, hits, byID)
 		if err != nil {
 			return 0, err
 		}
@@ -153,5 +164,6 @@ func resolveOrganisationID(cmd *cobra.Command, pc *projectContext, cred *activeC
 	if len(orgs) == 1 {
 		return orgs[0].ID, nil
 	}
-	return 0, errors.New("multiple organisations — set --organisation to resolve a project name")
+	return 0, withHint(errors.New("multiple organisations are accessible with these credentials"),
+		"Set --organisation to resolve a project name.")
 }

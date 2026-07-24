@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+
 	"github.com/zalando/go-keyring"
 )
 
@@ -91,7 +93,7 @@ func Load(apiURL string) (*Credentials, error) {
 	}
 	c := &Credentials{}
 	if err := json.Unmarshal([]byte(raw), c); err != nil {
-		return nil, fmt.Errorf("corrupt credentials in keychain: %w", err)
+		return nil, bug.Mark(fmt.Errorf("corrupt credentials in keychain: %w", err))
 	}
 	return c, nil
 }

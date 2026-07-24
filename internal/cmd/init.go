@@ -67,7 +67,9 @@ func resolveOrganisation(cmd *cobra.Command, pc *projectContext, cred *activeCre
 		names.Organisations[strconv.Itoa(o.ID)] = o.Name
 	}
 	if len(orgs) == 0 {
-		return api.Organisation{}, false, errors.New("no organisations are accessible with these credentials")
+		return api.Organisation{}, false, withHint(
+			errors.New("no organisations are accessible with these credentials"),
+			hintWrongAccount)
 	}
 	ambiguous := len(orgs) > 1
 	if v, ok := explicitValue(pc.Organisation); ok {
@@ -77,7 +79,9 @@ func resolveOrganisation(cmd *cobra.Command, pc *projectContext, cred *activeCre
 				return o, ambiguous, nil
 			}
 		}
-		return api.Organisation{}, false, fmt.Errorf("organisation %d is not accessible with these credentials", want)
+		return api.Organisation{}, false, withHint(
+			fmt.Errorf("organisation %d is not accessible with these credentials", want),
+			hintWrongAccount)
 	}
 	if len(orgs) == 1 {
 		return orgs[0], false, nil
@@ -128,8 +132,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	cred, err := resolveCredential(ctx)
 	if errors.Is(err, auth.ErrNotLoggedIn) {
 		if !interactive() {
-			return errors.New(
-				"no credentials found, and a browser login needs a TTY.\nSet FLAGSMITH_API_KEY, run in a CI OIDC context with an org trust relationship, or run `flagsmith login` interactively first")
+			return withHint(errors.New("no credentials found, and a browser login needs a TTY"),
+				"Set FLAGSMITH_API_KEY, run in a CI OIDC context with an org trust relationship, or run `flagsmith login` interactively first.")
 		}
 		if err := browserLogin(cmd); err != nil {
 			return err
@@ -196,8 +200,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// use the explicitly provided project
 	default:
 		if !interactive() {
-			return usageErrorf(
-				"no TTY and no --project/--create-project given.\nUsage: flagsmith init --project <id> | --create-project <name> [--environment <key>] --yes")
+			return withHint(
+				usageErrorf("no TTY and no --project/--create-project given"),
+				"Non-interactively: flagsmith init --project <id> | --create-project <name> [--environment <key>] --yes")
 		}
 		org, ambiguous, err := resolveOrganisation(cmd, pc, cred, names)
 		if err != nil {
@@ -355,9 +360,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if loadErr != nil {
 			// A file we can't parse might hold hand-edited settings; refuse to
 			// clobber it rather than replacing it with a fresh one.
-			return fmt.Errorf(
-				"%s already exists but could not be parsed: %w\nrefusing to overwrite it — fix or remove the file, then re-run init",
-				config.FileName, loadErr)
+			return withHint(fmt.Errorf(
+				"%s already exists but could not be parsed, refusing to overwrite it: %w",
+				config.FileName, loadErr),
+				"Fix or remove the file, then re-run `flagsmith init`.")
 		}
 		// Preserve any fields this CLI doesn't recognise across the rewrite.
 		newFile.Extra = old.Extra

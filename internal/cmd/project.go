@@ -37,9 +37,11 @@ func resolveProjectRefID(cmd *cobra.Command, cred *activeCredential, ref string)
 	}
 	hits := matchByName(byID, ref)
 	if len(hits) == 0 {
-		return 0, fmt.Errorf("project %q not found", ref)
+		return 0, withHint(
+			fmt.Errorf("project %q not found", ref),
+			hintProjectList)
 	}
-	chosen, err := pickCandidate(cmd, "project", ref, hits, byID)
+	chosen, err := pickCandidate(cmd, "project", "id", ref, hits, byID)
 	if err != nil {
 		return 0, err
 	}

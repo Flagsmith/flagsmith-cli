@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"strings"
+	"errors"
 	"testing"
 )
 
@@ -19,7 +19,10 @@ func TestValidateMasterKey(t *testing.T) {
 		}
 	})
 
-	t.Run("dotless value is rejected and points at FLAGSMITH_ACCESS_TOKEN", func(t *testing.T) {
+	// Recovery guidance (which env var to use instead) is attached as a hint
+	// at the command layer via these sentinels — see internal/cmd hintFor.
+
+	t.Run("dotless value is rejected as not a master key", func(t *testing.T) {
 		// Given
 		value := "IpuuPoNaSCXPoXi2uc4QkgDCEytYDu"
 
@@ -27,12 +30,12 @@ func TestValidateMasterKey(t *testing.T) {
 		err := ValidateMasterKey(value)
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ACCESS_TOKEN") {
-			t.Errorf("err = %v, want it to point at FLAGSMITH_ACCESS_TOKEN", err)
+		if !errors.Is(err, ErrNotMasterKey) {
+			t.Errorf("err = %v, want ErrNotMasterKey", err)
 		}
 	})
 
-	t.Run("server-side environment key is rejected with pointer to the right variable", func(t *testing.T) {
+	t.Run("server-side environment key is rejected", func(t *testing.T) {
 		// Given
 		value := "ser.AbCdEf1234"
 
@@ -40,8 +43,8 @@ func TestValidateMasterKey(t *testing.T) {
 		err := ValidateMasterKey(value)
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
-			t.Errorf("err = %v, want mention of FLAGSMITH_ENVIRONMENT_KEY", err)
+		if !errors.Is(err, ErrServerSideKey) {
+			t.Errorf("err = %v, want ErrServerSideKey", err)
 		}
 	})
 
@@ -53,8 +56,8 @@ func TestValidateMasterKey(t *testing.T) {
 		err := ValidateMasterKey(value)
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "not supported") {
-			t.Errorf("err = %v, want an unsupported-authtoken error", err)
+		if !errors.Is(err, ErrLegacyAuthtoken) {
+			t.Errorf("err = %v, want ErrLegacyAuthtoken", err)
 		}
 	})
 }

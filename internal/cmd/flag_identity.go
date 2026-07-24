@@ -184,7 +184,9 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	}
 	feature := findFeature(features, name)
 	if feature == nil {
-		return fmt.Errorf("feature %q not found in %s", name, environmentLabel(env))
+		return withHint(
+			fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
+			hintFlagList)
 	}
 	edge, err := useEdgeIdentities(cmd, cred, projectID)
 	if err != nil {

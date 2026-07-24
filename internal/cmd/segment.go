@@ -271,9 +271,11 @@ func resolveSegmentID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	}
 	hits := matchByName(byID, ref)
 	if len(hits) == 0 {
-		return 0, fmt.Errorf("segment %q not found in project %d", ref, projectID)
+		return 0, withHint(
+			fmt.Errorf("segment %q not found in project %d", ref, projectID),
+			hintSegmentList)
 	}
-	chosen, err := pickCandidate(cmd, "segment", ref, hits, byID)
+	chosen, err := pickCandidate(cmd, "segment", "id", ref, hits, byID)
 	if err != nil {
 		return 0, err
 	}
@@ -293,7 +295,9 @@ func resolveFeatureID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	if f := findFeature(features, ref); f != nil {
 		return f.ID, nil
 	}
-	return 0, fmt.Errorf("feature %q not found in project %d", ref, projectID)
+	return 0, withHint(
+		fmt.Errorf("feature %q not found in project %d", ref, projectID),
+		hintFeatureList)
 }
 
 // rulesForWrite parses a --rules argument (a single SegmentRule), validates

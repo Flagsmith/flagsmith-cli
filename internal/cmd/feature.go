@@ -499,7 +499,9 @@ var featureVariantUpdateCmd = &cobra.Command{
 		}
 		variant := findVariant(feat, args[1])
 		if variant == nil {
-			return fmt.Errorf("variant %q not found on %s", args[1], args[0])
+			return hintf(
+				fmt.Errorf("variant %q not found on %s", args[1], args[0]),
+				"Run `flagsmith feature variant list %s` to see its variants.", args[0])
 		}
 		o := api.MultivariateOption{}
 		if cmd.Flags().Changed("value") {
@@ -542,7 +544,9 @@ var featureVariantDeleteCmd = &cobra.Command{
 		}
 		variant := findVariant(feat, args[1])
 		if variant == nil {
-			return fmt.Errorf("variant %q not found on %s", args[1], args[0])
+			return hintf(
+				fmt.Errorf("variant %q not found on %s", args[1], args[0]),
+				"Run `flagsmith feature variant list %s` to see its variants.", args[0])
 		}
 		errOut := cmd.ErrOrStderr()
 		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete variant %s (%d) from %s", variantLabel(variant), variant.ID, args[0])); err != nil {

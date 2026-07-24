@@ -11,6 +11,8 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+	"github.com/Flagsmith/flagsmith-cli/internal/config"
 )
 
 func TestHintFor(t *testing.T) {
@@ -23,6 +25,14 @@ func TestHintFor(t *testing.T) {
 		{"plan gated", api.ErrPlanGated, hintPricing},
 		{"plan gated wrapped", fmt.Errorf("create project: %w", api.ErrPlanGated), hintPricing},
 		{"workflow gated", api.ErrWorkflowGated, docsHint("advanced-use/change-requests")},
+		{"keychain unavailable", auth.ErrKeychainUnavailable, hintMasterKey},
+		{"session refresh failed wrapped", fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom")), hintRelogin},
+		{"server-side key in FLAGSMITH_API_KEY", auth.ErrServerSideKey, hintServerSideKey},
+		{"legacy authtoken", auth.ErrLegacyAuthtoken, hintMasterKeyOrLogin},
+		{"not a master key", auth.ErrNotMasterKey, hintAccessToken},
+		{"server-side key in config file", fmt.Errorf("flagsmith.json: %w", config.ErrServerSideKey), hintServerSideKey},
+		{"marked unexpected", bug.Mark(errors.New("boom")), hintReportIssue},
+		{"specific hint beats report-issue", bug.Mark(fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom"))), hintRelogin},
 		{"explicit hint wins over automatic", withHint(api.ErrPlanGated, "custom"), "custom"},
 		{"explicit hint on plain error", hintf(errors.New("boom"), "run %s", "flagsmith login"), "run flagsmith login"},
 		{"no hint", errors.New("plain"), ""},

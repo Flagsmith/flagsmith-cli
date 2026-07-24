@@ -457,7 +457,7 @@ func TestEnsureFresh(t *testing.T) {
 		}
 	})
 
-	t.Run("revoked refresh token points at re-login", func(t *testing.T) {
+	t.Run("revoked refresh token is a recognisable refresh failure", func(t *testing.T) {
 		// Given
 		f := newFakeAuthServer(t)
 		f.tokenHandler = func(url.Values) (int, any) {
@@ -468,9 +468,10 @@ func TestEnsureFresh(t *testing.T) {
 		// When
 		_, _, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
-		// Then
-		if err == nil || !strings.Contains(err.Error(), "flagsmith login") {
-			t.Errorf("err = %v, want a hint to run `flagsmith login`", err)
+		// Then — the re-login hint is attached at the command layer, so the
+		// error only needs to be recognisable as a refresh failure
+		if !errors.Is(err, ErrRefreshFailed) {
+			t.Errorf("err = %v, want ErrRefreshFailed", err)
 		}
 	})
 }

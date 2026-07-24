@@ -4,6 +4,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,12 @@ import (
 
 // FileName is the project config file discovered in the working tree.
 const FileName = "flagsmith.json"
+
+// ErrServerSideKey means the file's `environment` field holds a server-side
+// (ser.) key, which is a secret and must not be committed. The recovery
+// (use FLAGSMITH_ENVIRONMENT_KEY) is attached as a hint at the command layer
+// (see internal/cmd hintFor), not baked into the message.
+var ErrServerSideKey = errors.New("`environment` holds a server-side key, which is a secret")
 
 // File is the parsed flagsmith.json. Zero values mean "not set".
 type File struct {
@@ -224,8 +231,7 @@ func Load(path string) (*File, []string, error) {
 		return nil, nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	if strings.HasPrefix(f.Environment, "ser.") {
-		return nil, nil, fmt.Errorf(
-			"%s: environment holds a server-side key — server-side keys are secrets; provide them via FLAGSMITH_ENVIRONMENT_KEY instead", path)
+		return nil, nil, fmt.Errorf("%s: %w", path, ErrServerSideKey)
 	}
 	var all map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &all); err != nil {

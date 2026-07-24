@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
@@ -114,7 +116,8 @@ func sdkEnvironmentKey(pc *projectContext) (string, error) {
 	if k, ok := pc.Environment.Value.(string); ok && k != "" {
 		return k, nil
 	}
-	return "", errors.New("no environment key — set FLAGSMITH_ENVIRONMENT_KEY or pass -e")
+	return "", withHint(errors.New("no environment key"),
+		"Set FLAGSMITH_ENVIRONMENT_KEY, or pass -e.")
 }
 
 // apiRequestBody builds the request body (or query params) and resolves the
@@ -261,7 +264,7 @@ func apiError(cmd *cobra.Command, method, u string, resp *http.Response, body []
 			fmt.Fprintln(errOut)
 		}
 	}
-	return fmt.Errorf("%s %s returned %s", method, u, resp.Status)
+	return bug.Mark(fmt.Errorf("%s %s returned %s", method, u, resp.Status))
 }
 
 func writeStatusLine(w io.Writer, resp *http.Response) {
