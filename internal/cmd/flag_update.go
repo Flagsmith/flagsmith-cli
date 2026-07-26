@@ -172,7 +172,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		return nil
 	}
 	if segmentID != 0 {
-		return renderSegmentDetail(cmd, updated, segmentID)
+		return renderSegmentDetail(cmd, cred, env, updated, segmentID)
 	}
 	return renderFlagDetail(cmd, updated)
 }

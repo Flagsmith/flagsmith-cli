@@ -139,6 +139,8 @@ type fakeInstance struct {
 	nextSegmentID   int
 	lastSegmentBody map[string]any // last segment create/update body
 
+	featureSegments map[string][]map[string]any // feature id -> feature-segment rows (priority order)
+
 	nextFeatureID   int
 	lastFeatureBody map[string]any // last feature create/update body
 	nextMVID        int
@@ -1095,6 +1097,25 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		delete(f.segments, id)
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// feature-segments lists a feature's segment overrides (priority + segment
+	// name metadata), ordered by priority, for one environment.
+	mux.HandleFunc("GET /api/v1/features/feature-segments/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Query().Get("environment") == "" || r.URL.Query().Get("feature") == "" {
+			w.WriteHeader(http.StatusBadRequest) // both are required upstream
+			return
+		}
+		f.mu.Lock()
+		rows := f.featureSegments[r.URL.Query().Get("feature")]
+		f.mu.Unlock()
+		if rows == nil {
+			rows = []map[string]any{}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"count": len(rows), "results": rows})
 	})
 	// echo reflects the request back, for exercising `flagsmith api`.
 	mux.HandleFunc("/api/v1/echo/", func(w http.ResponseWriter, r *http.Request) {
@@ -2806,6 +2827,9 @@ func TestFlagListSegment(t *testing.T) {
 	t.Run("--json is the segment-override shape", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1,
+		})
 
 		out, err := run("", "flag", "list", "--segment", "12", "--json")
 		if err != nil {
@@ -2815,9 +2839,15 @@ func TestFlagListSegment(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &arr); err != nil {
 			t.Fatalf("parsing %q: %v", out, err)
 		}
-		if len(arr) != 1 || arr[0]["feature"] != "max_items" ||
-			arr[0]["segment"] != float64(12) || arr[0]["enabled"] != true {
+		if len(arr) != 1 || arr[0]["feature"] != "max_items" || arr[0]["enabled"] != true {
 			t.Errorf("items = %+v", arr)
+		}
+		seg, _ := arr[0]["segment"].(map[string]any)
+		if seg == nil || seg["id"] != float64(12) || seg["name"] != "powerusers" {
+			t.Errorf("segment = %+v, want an {id, name} object", arr[0]["segment"])
+		}
+		if arr[0]["priority"] != float64(1) {
+			t.Errorf("priority = %v, want 1", arr[0]["priority"])
 		}
 	})
 
@@ -3085,6 +3115,17 @@ func TestFlagUpdate(t *testing.T) {
 	})
 }
 
+// withFeatureSegments registers the feature-segment rows (segment name +
+// priority metadata) the fake returns for one feature.
+func withFeatureSegments(f *fakeInstance, featureID int, rows ...map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.featureSegments == nil {
+		f.featureSegments = map[string][]map[string]any{}
+	}
+	f.featureSegments[strconv.Itoa(featureID)] = rows
+}
+
 // withSegmentOverride sets project 101's features to a single max_items
 // feature carrying an environment default and, optionally, a segment override.
 func withSegmentOverride(f *fakeInstance, withOverride bool) {
@@ -3131,6 +3172,81 @@ func TestFlagGetSegment(t *testing.T) {
 		_, err := run("", "flag", "get", "max_items", "--segment", "99")
 		if err == nil || !strings.Contains(err.Error(), "segment 99") {
 			t.Errorf("err = %v, want a no-override error naming the segment", err)
+		}
+	})
+}
+
+func TestSegmentOverridePriorityView(t *testing.T) {
+	// Per 07 §1, a segment override view carries the override's priority and
+	// the segment as {id, name}, read from the feature-segments endpoint.
+	overrideMeta := func(f *fakeInstance) {
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1,
+		})
+	}
+
+	t.Run("get --segment shows the priority and segment name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		out, err := run("", "flag", "get", "max_items", "--segment", "12")
+		if err != nil {
+			t.Fatalf("flag get --segment: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"Priority", "1", "powerusers (12)"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("get --segment --json carries segment {id,name} and priority", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		out, err := run("", "flag", "get", "max_items", "--segment", "12", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		seg, _ := v["segment"].(map[string]any)
+		if seg == nil || seg["id"] != float64(12) || seg["name"] != "powerusers" {
+			t.Errorf("segment = %+v, want an {id, name} object", v["segment"])
+		}
+		if v["priority"] != float64(1) {
+			t.Errorf("priority = %v, want 1", v["priority"])
+		}
+	})
+
+	t.Run("update --segment reprints the detail with priority", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--value", "new", "--yes")
+		if err != nil {
+			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Priority") || !strings.Contains(out, "powerusers (12)") {
+			t.Errorf("output = %q, want the detail view with Priority and the segment name", out)
+		}
+	})
+
+	t.Run("missing metadata degrades to the bare id", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true) // no feature-segments row registered
+
+		out, err := run("", "flag", "get", "max_items", "--segment", "12")
+		if err != nil {
+			t.Fatalf("flag get --segment: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "12") || strings.Contains(out, "(12)") {
+			t.Errorf("output = %q, want the bare segment id without a name", out)
 		}
 	})
 }

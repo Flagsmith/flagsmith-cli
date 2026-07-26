@@ -685,6 +685,27 @@ func (c *Client) Features(ctx context.Context, projectID, environmentID, segment
 	return features, nil
 }
 
+// FeatureSegment links a feature to one segment override in an environment:
+// the override's priority plus the segment's id and name. The endpoint returns
+// rows in priority order and reflects the live version transparently.
+type FeatureSegment struct {
+	ID          int    `json:"id"`
+	Segment     int    `json:"segment"`
+	SegmentName string `json:"segment_name"`
+	Priority    int    `json:"priority"`
+}
+
+// FeatureSegments lists a feature's segment overrides in one environment, in
+// priority order. Both filters are required by the endpoint.
+func (c *Client) FeatureSegments(ctx context.Context, environmentID, featureID int) ([]FeatureSegment, error) {
+	var fss []FeatureSegment
+	path := fmt.Sprintf("/api/v1/features/feature-segments/?environment=%d&feature=%d", environmentID, featureID)
+	if err := c.getList(ctx, path, &fss); err != nil {
+		return nil, err
+	}
+	return fss, nil
+}
+
 // FeatureRef targets a feature by name or id (exactly one) in update-flag-v2.
 type FeatureRef struct {
 	Name string `json:"name,omitempty"`

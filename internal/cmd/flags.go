@@ -46,23 +46,56 @@ func newFlagView(f *api.Feature) flagView {
 	}
 }
 
-// segmentFlagView is the curated shape for a flag's state in one segment.
-type segmentFlagView struct {
-	Feature string `json:"feature"`
-	Type    string `json:"type"`
-	Segment int    `json:"segment"`
-	Enabled bool   `json:"enabled"`
-	Value   any    `json:"value"`
+// segmentRef identifies a segment in the curated JSON shapes.
+type segmentRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
-func newSegmentFlagView(f *api.Feature, segmentID int) segmentFlagView {
-	return segmentFlagView{
-		Feature: f.Name,
-		Type:    featureTypeLabel(f.Type),
-		Segment: segmentID,
-		Enabled: flagEnabled(f.SegmentState),
-		Value:   stateValue(f.SegmentState),
+// display renders a segment as "name (id)", degrading to the bare id when the
+// name is unknown.
+func (s segmentRef) display() string {
+	if s.Name != "" {
+		return fmt.Sprintf("%s (%d)", s.Name, s.ID)
 	}
+	return strconv.Itoa(s.ID)
+}
+
+// segmentFlagView is the curated shape for a flag's state in one segment.
+type segmentFlagView struct {
+	Feature  string     `json:"feature"`
+	Type     string     `json:"type"`
+	Segment  segmentRef `json:"segment"`
+	Priority int        `json:"priority"`
+	Enabled  bool       `json:"enabled"`
+	Value    any        `json:"value"`
+}
+
+func newSegmentFlagView(f *api.Feature, segment segmentRef, priority int) segmentFlagView {
+	return segmentFlagView{
+		Feature:  f.Name,
+		Type:     featureTypeLabel(f.Type),
+		Segment:  segment,
+		Priority: priority,
+		Enabled:  flagEnabled(f.SegmentState),
+		Value:    stateValue(f.SegmentState),
+	}
+}
+
+// segmentOverrideMeta reads the segment's name and the override's priority
+// from the feature-segments endpoint. A missing row (e.g. an override created
+// a moment ago) degrades to the bare id and priority 0 rather than failing.
+func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environmentID, featureID, segmentID int) (segmentRef, int, error) {
+	fss, err := cred.client().FeatureSegments(cmd.Context(), environmentID, featureID)
+	if err != nil {
+		return segmentRef{}, 0, err
+	}
+	for _, fs := range fss {
+		if fs.Segment == segmentID {
+			return segmentRef{ID: segmentID, Name: fs.SegmentName}, fs.Priority, nil
+		}
+	}
+	return segmentRef{ID: segmentID}, 0, nil
 }
 
 func flagEnabled(fs *api.FeatureState) bool {
@@ -168,7 +201,7 @@ var flagListCmd = &cobra.Command{
 			return err
 		}
 		if segmentID != 0 {
-			return listSegmentOverrides(cmd, features, segmentID)
+			return listSegmentOverrides(cmd, cred, env, features, segmentID)
 		}
 		views := make([]flagView, len(features))
 		for i := range features {
@@ -200,12 +233,17 @@ var flagListCmd = &cobra.Command{
 
 // listSegmentOverrides renders only the flags overridden for a segment,
 // showing the override's state rather than the environment default.
-func listSegmentOverrides(cmd *cobra.Command, features []api.Feature, segmentID int) error {
+func listSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environment, features []api.Feature, segmentID int) error {
 	views := []segmentFlagView{}
 	for i := range features {
-		if features[i].SegmentState != nil {
-			views = append(views, newSegmentFlagView(&features[i], segmentID))
+		if features[i].SegmentState == nil {
+			continue
 		}
+		segment, priority, err := segmentOverrideMeta(cmd, cred, env.ID, features[i].ID, segmentID)
+		if err != nil {
+			return err
+		}
+		views = append(views, newSegmentFlagView(&features[i], segment, priority))
 	}
 	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
 		if len(views) == 0 {
@@ -290,7 +328,7 @@ var flagGetCmd = &cobra.Command{
 			if feature.SegmentState == nil {
 				return fmt.Errorf("%q has no override for segment %d in %s", name, segmentID, environmentLabel(env))
 			}
-			return renderSegmentDetail(cmd, feature, segmentID)
+			return renderSegmentDetail(cmd, cred, env, feature, segmentID)
 		}
 		return renderFlagDetail(cmd, feature)
 	},
@@ -326,13 +364,18 @@ func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
 }
 
 // renderSegmentDetail prints a flag's curated state for one segment override.
-func renderSegmentDetail(cmd *cobra.Command, feature *api.Feature, segmentID int) error {
-	v := newSegmentFlagView(feature, segmentID)
+func renderSegmentDetail(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) error {
+	segment, priority, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
+	if err != nil {
+		return err
+	}
+	v := newSegmentFlagView(feature, segment, priority)
 	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
 			{Label: "Feature", Value: v.Feature},
 			{Label: "Type", Value: v.Type},
-			{Label: "Segment", Value: strconv.Itoa(v.Segment)},
+			{Label: "Segment", Value: v.Segment.display()},
+			{Label: "Priority", Value: strconv.Itoa(v.Priority)},
 			{Label: "State", Value: boolState(v.Enabled)},
 			{Label: "Value", Value: valueDisplay(v.Value)},
 		})
