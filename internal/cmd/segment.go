@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
@@ -269,6 +270,7 @@ func resolveSegmentID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	for _, s := range segs {
 		byID[strconv.Itoa(s.ID)] = s.Name
 	}
+	_ = cache.Merge(apiURL, &cache.Names{Segments: byID}) // opportunistic (04 §3)
 	hits := matchByName(byID, ref)
 	if len(hits) == 0 {
 		return 0, withHint(

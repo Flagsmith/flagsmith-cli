@@ -3537,6 +3537,34 @@ func TestFlagSegmentByName(t *testing.T) {
 		}
 	})
 
+	t.Run("resolution seeds the segment name cache", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		if _, err := run("", "flag", "list", "--segment", "us-adults"); err != nil {
+			t.Fatalf("flag list --segment us-adults: %v", err)
+		}
+		names := cache.Load(f.srv.URL)
+		if names.Segments["42"] != "us-adults" || names.Segments["57"] != "beta-optin" {
+			t.Errorf("cached segments = %+v, want the listed segments merged", names.Segments)
+		}
+	})
+
+	t.Run("delete names the segment from the cache", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		// Resolving the name lists segments, which warms the cache the
+		// delete message reads.
+		out, err := run("", "flag", "delete", "max_items", "--segment", "us-adults", "--yes")
+		if err != nil {
+			t.Fatalf("flag delete --segment us-adults: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Deleted max_items override for segment us-adults (42) in environment") {
+			t.Errorf("output = %q, want the segment named from the cache", out)
+		}
+	})
+
 	t.Run("unknown segment name errors with the segment list hint", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 

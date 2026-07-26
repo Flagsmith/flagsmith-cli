@@ -300,7 +300,7 @@ Delete a segment override:
 
 ```
 $ flagsmith flag delete checkout-v2 --segment 1147496 --yes
-✓ Deleted checkout-v2 override for segment 1147496 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+✓ Deleted checkout-v2 override for segment us-adults (1147496) in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
 ```
 
 All flag mutations are powered by `/api/experiments/environments/{environment_key}/update-flag-v2/`. 

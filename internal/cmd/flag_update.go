@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
@@ -243,8 +244,12 @@ var flagDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// This path fetches nothing that carries the segment's name, so the
+		// display comes from the name cache (the resolution above just seeded
+		// it when a name was given) and degrades to the bare id.
+		segmentLabel := label(cache.Load(apiURL).Segments[strconv.Itoa(segmentID)], segmentID)
 		errOut := cmd.ErrOrStderr()
-		prompt := fmt.Sprintf("delete %s override for segment %d in %s", name, segmentID, environmentLabel(env))
+		prompt := fmt.Sprintf("delete %s override for segment %s in %s", name, segmentLabel, environmentLabel(env))
 		if ok, err := confirmOrYes(cmd, prompt+"?"); err != nil {
 			return err
 		} else if !ok {
@@ -254,7 +259,7 @@ var flagDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, featureRefFor(name), segmentID); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted %s override for segment %d in environment %s", name, segmentID, environmentLabel(env))
+		output.Success(errOut, "Deleted %s override for segment %s in environment %s", name, segmentLabel, environmentLabel(env))
 		return nil
 	},
 }

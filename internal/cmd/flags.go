@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
@@ -80,13 +81,19 @@ func newSegmentFlagView(f *api.Feature, segment segmentRef, priority int) segmen
 }
 
 // segmentOverrideMeta reads the segment's name and the override's priority
-// from the feature-segments endpoint. A missing row (e.g. an override created
-// a moment ago) degrades to the bare id and priority 0 rather than failing.
+// from the feature-segments endpoint, seeding the name cache on the way. A
+// missing row (e.g. an override created a moment ago) degrades to the bare id
+// and priority 0 rather than failing.
 func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environmentID, featureID, segmentID int) (segmentRef, int, error) {
 	fss, err := cred.client().FeatureSegments(cmd.Context(), environmentID, featureID)
 	if err != nil {
 		return segmentRef{}, 0, err
 	}
+	names := make(map[string]string, len(fss))
+	for _, fs := range fss {
+		names[strconv.Itoa(fs.Segment)] = fs.SegmentName
+	}
+	_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic (04 §3)
 	for _, fs := range fss {
 		if fs.Segment == segmentID {
 			return segmentRef{ID: segmentID, Name: fs.SegmentName}, fs.Priority, nil

@@ -1,7 +1,7 @@
 // Package cache is the local name cache: display names for organisations,
-// projects (stored as IDs) and environments (stored as client-side keys).
-// Strictly cosmetic — never consulted for authorisation or resolution; a
-// miss degrades to showing the bare ID/key.
+// projects, segments (stored as IDs) and environments (stored as client-side
+// keys). Strictly cosmetic — never consulted for authorisation or resolution;
+// a miss degrades to showing the bare ID/key.
 package cache
 
 import (
@@ -12,12 +12,13 @@ import (
 )
 
 // Names maps identifiers to display names for one Flagsmith instance.
-// Map keys are stringified IDs (organisations, projects) or client-side
-// keys (environments).
+// Map keys are stringified IDs (organisations, projects, segments) or
+// client-side keys (environments).
 type Names struct {
 	Organisations map[string]string `json:"organisations,omitempty"`
 	Projects      map[string]string `json:"projects,omitempty"`
 	Environments  map[string]string `json:"environments,omitempty"`
+	Segments      map[string]string `json:"segments,omitempty"`
 }
 
 // Path is the cache file, keyed by instance API URL.
@@ -81,6 +82,7 @@ func Merge(apiURL string, update *Names) error {
 	merge(&names.Organisations, update.Organisations)
 	merge(&names.Projects, update.Projects)
 	merge(&names.Environments, update.Environments)
+	merge(&names.Segments, update.Segments)
 
 	path, err := Path()
 	if err != nil {
