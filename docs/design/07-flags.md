@@ -32,11 +32,12 @@ State        on
 Value        orange
 
 $ flagsmith flag get checkout-v2 --segment 1147496
-Feature   checkout-v2
-Type      standard
-Segment   1147496
-State     on
-Value     orange
+Feature    checkout-v2
+Type       standard
+Segment    1147496
+Priority   0
+State      on
+Value      orange
 ```
 
 For a multivariate feature, the view grows a Variants block:
@@ -59,11 +60,12 @@ Variants
   subhead   75%     sub   30010
 
 $ flagsmith flag get banner-copy --segment 101
-Feature   banner-copy
-Type      multivariate
-Segment   101
-State     on
-Value     hello
+Feature    banner-copy
+Type       multivariate
+Segment    101
+Priority   0
+State      on
+Value      hello
 
 Variants
   VALUE     WEIGHT  KEY   ID
@@ -99,9 +101,37 @@ JSON output includes the above curated field list:
 }
 ```
 
-A segment override (`--segment`) has its own curated shape: `feature`, `type`, `segment`, `enabled`, `value`.
+A segment override (`--segment`) has its own curated shape: `feature`, `type`, `segment` (an `{id, name}` object), `priority`, `enabled`, `value`:
 
-Multivariate features add `"variants": [{"id", "key", "value", "weight"}]` with the weights of the requested scope.
+```json
+{
+  "feature": "checkout-v2",
+  "type": "standard",
+  "segment": { "id": 1147496, "name": "us-adults" },
+  "priority": 0,
+  "enabled": true,
+  "value": "orange"
+}
+```
+
+Multivariate features add `"variants": [{"id", "key", "value", "weight"}]` . The control value is passed under `value`:
+
+```json
+{
+  "feature": "banner-copy",
+  "type": "multivariate",
+  "segment": { "id": 101, "name": "early-adopters" },
+  "priority": 0,
+  "enabled": true,
+  "value": "hello",
+  "variants": [
+    { "id": 30011, "key": "hero", "value": "headline", "weight": 100.0 },
+    { "id": 30010, "key": "sub", "value": "subhead", "weight": 0.0 }
+  ]
+}
+```
+
+These shapes are universal: `flag get` returns the object, and every `flag list` mode returns an array of it.
 
 ## 2. Mutation
 
@@ -169,11 +199,12 @@ They take the same `--segment`/`--identifier` targeting, so an override toggles 
 ```
 $ flagsmith flag disable checkout-v2 --segment 1147496 --yes
 ✓ Disabled checkout-v2 for segment 1147496 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
-Feature   checkout-v2
-Type      standard
-Segment   1147496
-State     off
-Value     orange
+Feature    checkout-v2
+Type       standard
+Segment    1147496
+Priority   0
+State      off
+Value      orange
 ```
 
 To set a value while toggling, stay on `flag update`; `enable`/`disable` only flip the state.
@@ -239,16 +270,30 @@ Per segment, the same flag re-weights the override:
 ```
 $ flagsmith flag update banner-copy --segment 101 --weight hero=100,sub=0 --yes
 ✓ Set banner-copy weights to hero=100, sub=0 for segment 101 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
-Feature   banner-copy
-Type      multivariate
-Segment   101
-State     on
-Value     hello
+Feature    banner-copy
+Type       multivariate
+Segment    101
+Priority   0
+State      on
+Value      hello
 
 Variants
   VALUE     WEIGHT  KEY   ID
   headline  100%    hero  30011
   subhead   0%      sub   30010
+```
+
+Update a segment override priority:
+
+```
+$ flagsmith flag update checkout-v2 --segment beta-optin --priority 0 --yes
+✓ Set checkout-v2 priority to 0 for segment beta-optin in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+Feature    checkout-v2
+Type       standard
+Segment    beta-optin (1147497)
+Priority   0
+State      on
+Value      blue
 ```
 
 Delete a segment override:
@@ -302,9 +347,57 @@ $ flagsmith flag list --segment 1147496 --json
   {
     "feature": "checkout-v2",
     "type": "standard",
-    "segment": 1147496,
+    "segment": { "id": 1147496, "name": "us-adults" },
+    "priority": 0,
     "enabled": true,
     "value": "orange"
   }
 ]
+```
+
+`--feature <id>` lists all segment overrides for a given feature, in order of priority:
+
+```
+$ flagsmith flag list --feature banner-copy
+PRIORITY  SEGMENT               STATE  VALUE  VARIANTS
+0         beta-optin (1147497)  on     hello  hero 40%, sub 35%
+1         us-adults (1147496)   off    hello  hero 0%, sub 0%
+
+2 overrides
+```
+
+`--json` output is an array of §1's curated segment-override shape, one entry per override, in priority order.
+
+`--feature <id> --identity` lists all identity overrides:
+
+```
+$ flagsmith flag list --feature banner-copy --identity
+IDENTIFIER  STATE  VALUE
+id-123      on     hero
+id-456      off    hello
+
+2 overrides
+```
+
+## 4. `flag reorder`
+
+Use `flag reorder <feature> <seg1> <seg2> ...` to assign a new set of priorities to segment overrides, in the input order:
+
+```
+$ flagsmith flag reorder checkout-v2 beta-optin us-adults eu-adults apac-adults --yes
+✓ Reordered 4 segment overrides for checkout-v2 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+PRIORITY  SEGMENT                STATE  VALUE
+0         beta-optin (1147497)   on     blue
+1         us-adults (1147496)    on     orange
+2         eu-adults (1147498)    off    green
+3         apac-adults (1147499)  off    green
+
+4 overrides
+```
+
+A missing, unknown, or duplicated segment exits 2:
+
+```
+$ flagsmith flag reorder checkout-v2 beta-optin us-adults --yes
+Error: a reorder must list every overridden segment for checkout-v2 (missing: eu-adults, apac-adults)
 ```
