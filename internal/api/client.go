@@ -706,6 +706,110 @@ func (c *Client) FeatureSegments(ctx context.Context, environmentID, featureID i
 	return fss, nil
 }
 
+// TypedValue is the nested feature_state_value wire form the admin
+// featurestates endpoints return: {type, string_value, integer_value,
+// boolean_value} with type one of "unicode", "int", "bool".
+type TypedValue struct {
+	Type         string  `json:"type"`
+	StringValue  *string `json:"string_value"`
+	IntegerValue *int    `json:"integer_value"`
+	BooleanValue *bool   `json:"boolean_value"`
+}
+
+// Scalar converts the typed wire form to the bare scalar the curated views show.
+func (v TypedValue) Scalar() any {
+	switch v.Type {
+	case "int":
+		if v.IntegerValue != nil {
+			return *v.IntegerValue
+		}
+	case "bool":
+		if v.BooleanValue != nil {
+			return *v.BooleanValue
+		}
+	default: // "unicode"
+		if v.StringValue != nil {
+			return *v.StringValue
+		}
+	}
+	return nil
+}
+
+// EnvironmentFeatureState is one row of the admin featurestates list: a
+// feature's state for the environment default (feature_segment null), one
+// segment override, or (in v2-versioned environments) an identity override.
+type EnvironmentFeatureState struct {
+	ID             int        `json:"id"`
+	Enabled        bool       `json:"enabled"`
+	FeatureSegment *int       `json:"feature_segment"`
+	Identity       *int       `json:"identity"`
+	Value          TypedValue `json:"feature_state_value"`
+}
+
+// FeatureStates lists a feature's live states in one environment. Callers join
+// segment overrides onto FeatureSegments rows via FeatureSegment.
+func (c *Client) FeatureStates(ctx context.Context, environmentID, featureID int) ([]EnvironmentFeatureState, error) {
+	var states []EnvironmentFeatureState
+	path := fmt.Sprintf("/api/v1/features/featurestates/?environment=%d&feature=%d", environmentID, featureID)
+	if err := c.getList(ctx, path, &states); err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
+// IdentityOverrideRow is one identity's override of a feature, as listed by
+// the core or edge override endpoints. Value is a bare scalar.
+type IdentityOverrideRow struct {
+	Identifier string
+	Enabled    bool
+	Value      any
+}
+
+// CoreIdentityOverrides lists every core (Postgres) identity override for a
+// feature, via the environment featurestates list's identity mode.
+func (c *Client) CoreIdentityOverrides(ctx context.Context, envKey string, featureID int) ([]IdentityOverrideRow, error) {
+	var raw []struct {
+		Identity struct {
+			Identifier string `json:"identifier"`
+		} `json:"identity"`
+		Enabled bool `json:"enabled"`
+		Value   any  `json:"feature_state_value"`
+	}
+	path := fmt.Sprintf("/api/v1/environments/%s/featurestates/?anyIdentity=1&feature=%d", envKey, featureID)
+	if err := c.getList(ctx, path, &raw); err != nil {
+		return nil, err
+	}
+	rows := make([]IdentityOverrideRow, len(raw))
+	for i, r := range raw {
+		rows[i] = IdentityOverrideRow{Identifier: r.Identity.Identifier, Enabled: r.Enabled, Value: r.Value}
+	}
+	return rows, nil
+}
+
+// EdgeIdentityOverrides lists every edge (DynamoDB) identity override for a
+// feature. The endpoint has no trailing slash and no pagination — replicated
+// verbatim.
+func (c *Client) EdgeIdentityOverrides(ctx context.Context, envKey string, featureID int) ([]IdentityOverrideRow, error) {
+	var raw struct {
+		Results []struct {
+			Identifier   string `json:"identifier"`
+			FeatureState struct {
+				Enabled bool `json:"enabled"`
+				Value   any  `json:"feature_state_value"`
+			} `json:"feature_state"`
+		} `json:"results"`
+	}
+	path := fmt.Sprintf("/api/v1/environments/%s/edge-identity-overrides?feature=%d", envKey, featureID)
+	if err := c.get(ctx, path, &raw); err != nil {
+		return nil, err
+	}
+	rows := make([]IdentityOverrideRow, len(raw.Results))
+	for i, r := range raw.Results {
+		rows[i] = IdentityOverrideRow{Identifier: r.Identifier, Enabled: r.FeatureState.Enabled, Value: r.FeatureState.Value}
+	}
+	return rows, nil
+}
+
 // FeatureRef targets a feature by name or id (exactly one) in update-flag-v2.
 type FeatureRef struct {
 	Name string `json:"name,omitempty"`

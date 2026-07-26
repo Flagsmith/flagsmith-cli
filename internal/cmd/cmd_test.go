@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -140,6 +141,7 @@ type fakeInstance struct {
 	lastSegmentBody map[string]any // last segment create/update body
 
 	featureSegments map[string][]map[string]any // feature id -> feature-segment rows (priority order)
+	featureStates   map[string][]map[string]any // feature id -> admin featurestates rows
 
 	nextFeatureID   int
 	lastFeatureBody map[string]any // last feature create/update body
@@ -1116,6 +1118,84 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			rows = []map[string]any{}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"count": len(rows), "results": rows})
+	})
+	// featurestates lists a feature's states in one environment (the default
+	// plus one row per segment override), with the typed value wire form.
+	mux.HandleFunc("GET /api/v1/features/featurestates/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Query().Get("environment") == "" {
+			w.WriteHeader(http.StatusBadRequest) // required upstream
+			return
+		}
+		f.mu.Lock()
+		rows := f.featureStates[r.URL.Query().Get("feature")]
+		f.mu.Unlock()
+		if rows == nil {
+			rows = []map[string]any{}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"count": len(rows), "results": rows})
+	})
+	// The environment featurestates list with ?anyIdentity= is how core
+	// identity overrides for one feature are enumerated.
+	mux.HandleFunc("GET /api/v1/environments/{env}/featurestates/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Query().Get("anyIdentity") == "" {
+			w.WriteHeader(http.StatusBadRequest) // the CLI only uses the identity mode
+			return
+		}
+		featureID, _ := strconv.Atoi(r.URL.Query().Get("feature"))
+		f.mu.Lock()
+		identifiers := make([]string, 0, len(f.coreIdentities))
+		for identifier := range f.coreIdentities {
+			identifiers = append(identifiers, identifier)
+		}
+		sort.Strings(identifiers)
+		results := []map[string]any{}
+		for _, identifier := range identifiers {
+			id := f.coreIdentities[identifier]
+			if fs := f.coreOverrides[id][featureID]; fs != nil {
+				results = append(results, map[string]any{
+					"id": fs.id, "enabled": fs.enabled, "feature_state_value": fs.value,
+					"identity": map[string]any{"id": id, "identifier": identifier},
+					"feature":  featureID,
+				})
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"count": len(results), "results": results})
+	})
+	// Edge identity overrides: no trailing slash, no pagination.
+	mux.HandleFunc("GET /api/v1/environments/{env}/edge-identity-overrides", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		featureID, _ := strconv.Atoi(r.URL.Query().Get("feature"))
+		f.mu.Lock()
+		identifiers := make([]string, 0, len(f.edgeOverrides))
+		for identifier := range f.edgeOverrides {
+			identifiers = append(identifiers, identifier)
+		}
+		sort.Strings(identifiers)
+		results := []map[string]any{}
+		for _, identifier := range identifiers {
+			if fs := f.edgeOverrides[identifier][featureID]; fs != nil {
+				results = append(results, map[string]any{
+					"identifier": identifier,
+					"feature_state": map[string]any{
+						"enabled": fs.enabled, "feature_state_value": fs.value, "feature": featureID,
+					},
+				})
+			}
+		}
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"results": results})
 	})
 	// echo reflects the request back, for exercising `flagsmith api`.
 	mux.HandleFunc("/api/v1/echo/", func(w http.ResponseWriter, r *http.Request) {
@@ -3126,6 +3206,17 @@ func withFeatureSegments(f *fakeInstance, featureID int, rows ...map[string]any)
 	f.featureSegments[strconv.Itoa(featureID)] = rows
 }
 
+// withFeatureStates registers the admin featurestates rows the fake returns
+// for one feature.
+func withFeatureStates(f *fakeInstance, featureID int, rows ...map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.featureStates == nil {
+		f.featureStates = map[string][]map[string]any{}
+	}
+	f.featureStates[strconv.Itoa(featureID)] = rows
+}
+
 // withSegmentOverride sets project 101's features to a single max_items
 // feature carrying an environment default and, optionally, a segment override.
 func withSegmentOverride(f *fakeInstance, withOverride bool) {
@@ -3435,6 +3526,204 @@ func TestFlagSegmentByName(t *testing.T) {
 		}
 		if hint := hintFor(err); !strings.Contains(hint, "segment list") {
 			t.Errorf("hint = %q, want the segment list hint", hint)
+		}
+		_ = f
+	})
+}
+
+// withFeatureOverridesFixture arranges max_items (feature 2) with two segment
+// overrides: beta-optin (57) at priority 0 value "blue", us-adults (42) at
+// priority 1 value 25 (disabled). Row 9000 is the environment default, which
+// override listings must skip.
+func withFeatureOverridesFixture(f *fakeInstance) {
+	withSegmentOverride(f, true)
+	withFeatureSegments(f, 2,
+		map[string]any{"id": 1200, "segment": 57, "segment_name": "beta-optin", "priority": 0, "environment": 1},
+		map[string]any{"id": 1201, "segment": 42, "segment_name": "us-adults", "priority": 1, "environment": 1},
+	)
+	str := func(s string) map[string]any { return map[string]any{"type": "unicode", "string_value": s} }
+	withFeatureStates(f, 2,
+		map[string]any{"id": 9000, "feature_segment": nil, "enabled": false, "feature_state_value": str("default")},
+		map[string]any{"id": 9001, "feature_segment": 1200, "enabled": true, "feature_state_value": str("blue")},
+		map[string]any{"id": 9002, "feature_segment": 1201, "enabled": false, "feature_state_value": map[string]any{"type": "int", "integer_value": 25}},
+	)
+}
+
+func TestFlagListFeatureOverrides(t *testing.T) {
+	t.Run("lists a feature's overrides in priority order", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		out, err := run("", "flag", "list", "--feature", "max_items")
+		if err != nil {
+			t.Fatalf("flag list --feature: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{
+			"PRIORITY", "SEGMENT", "STATE", "VALUE",
+			"beta-optin (57)", "us-adults (42)", "blue", "25", "2 overrides",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if beta, us := strings.Index(out, "beta-optin"), strings.Index(out, "us-adults"); beta > us {
+			t.Errorf("output = %q, want beta-optin (priority 0) before us-adults (priority 1)", out)
+		}
+		if strings.Contains(out, "default") {
+			t.Errorf("output = %q, want the environment default row skipped", out)
+		}
+	})
+
+	t.Run("--json is an array of the override shape in priority order", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		out, err := run("", "flag", "list", "--feature", "max_items", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var arr []map[string]any
+		if err := json.Unmarshal([]byte(out), &arr); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if len(arr) != 2 {
+			t.Fatalf("items = %+v, want 2 overrides", arr)
+		}
+		first := arr[0]
+		seg, _ := first["segment"].(map[string]any)
+		if first["feature"] != "max_items" || first["priority"] != float64(0) ||
+			seg == nil || seg["id"] != float64(57) || seg["name"] != "beta-optin" ||
+			first["enabled"] != true || first["value"] != "blue" {
+			t.Errorf("first = %+v", first)
+		}
+		if arr[1]["value"] != float64(25) || arr[1]["enabled"] != false {
+			t.Errorf("second = %+v, want the typed int value as a scalar", arr[1])
+		}
+	})
+
+	t.Run("--feature accepts an id", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		out, err := run("", "flag", "list", "--feature", "2")
+		if err != nil {
+			t.Fatalf("flag list --feature 2: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "beta-optin") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--feature and --segment are mutually exclusive", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "list", "--feature", "max_items", "--segment", "12")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		_ = f
+	})
+
+	t.Run("unknown feature errors with the flag list hint", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "list", "--feature", "ghost")
+		if err == nil || !strings.Contains(err.Error(), "ghost") {
+			t.Errorf("err = %v, want a not-found error", err)
+		}
+		if hint := hintFor(err); !strings.Contains(hint, "flag list") {
+			t.Errorf("hint = %q, want the flag list hint", hint)
+		}
+		_ = f
+	})
+
+	t.Run("no overrides", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true) // feature exists; no feature-segment rows
+
+		out, err := run("", "flag", "list", "--feature", "max_items")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "No segment overrides") {
+			t.Errorf("output = %q, want a no-overrides message", out)
+		}
+	})
+}
+
+func TestFlagListIdentityOverrides(t *testing.T) {
+	t.Run("lists core identity overrides", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		f.mu.Lock()
+		f.coreIdentities = map[string]int{"id-123": 501, "id-456": 502}
+		f.coreOverrides = map[int]map[int]*fakeFS{
+			501: {2: {id: 9100, enabled: true, value: "hero"}},
+			502: {2: {id: 9101, enabled: false, value: "hello"}},
+		}
+		f.mu.Unlock()
+
+		out, err := run("", "flag", "list", "--feature", "max_items", "--identity")
+		if err != nil {
+			t.Fatalf("flag list --feature --identity: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{
+			"IDENTIFIER", "STATE", "VALUE",
+			"id-123", "hero", "id-456", "hello", "2 overrides",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("--json is the identity override shape", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		f.mu.Lock()
+		f.coreIdentities = map[string]int{"id-123": 501}
+		f.coreOverrides = map[int]map[int]*fakeFS{501: {2: {id: 9100, enabled: true, value: "hero"}}}
+		f.mu.Unlock()
+
+		out, err := run("", "flag", "list", "--feature", "max_items", "--identity", "--json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var arr []map[string]any
+		if err := json.Unmarshal([]byte(out), &arr); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if len(arr) != 1 || arr[0]["identifier"] != "id-123" ||
+			arr[0]["enabled"] != true || arr[0]["value"] != "hero" ||
+			arr[0]["feature"] != "max_items" {
+			t.Errorf("items = %+v", arr)
+		}
+	})
+
+	t.Run("edge projects use the edge endpoint", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		f.mu.Lock()
+		f.useEdge = true
+		f.edgeOverrides = map[string]map[int]*fakeFS{
+			"edge-user": {2: {enabled: true, value: "x"}},
+		}
+		f.mu.Unlock()
+
+		out, err := run("", "flag", "list", "--feature", "max_items", "--identity")
+		if err != nil {
+			t.Fatalf("flag list --identity (edge): %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "edge-user") || !strings.Contains(out, "1 override") {
+			t.Errorf("output = %q, want the edge override listed", out)
+		}
+	})
+
+	t.Run("--identity without --feature exits 2", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "list", "--identity")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--feature") {
+			t.Errorf("err = %v, want a usage error naming --feature", err)
 		}
 		_ = f
 	})

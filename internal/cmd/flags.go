@@ -177,7 +177,11 @@ func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, a
 	return pc, cred, projectID, env, nil
 }
 
-var flagListSegmentFlag string
+var (
+	flagListSegmentFlag  string
+	flagListFeatureFlag  string
+	flagListIdentityFlag bool
+)
 
 var flagListCmd = &cobra.Command{
 	Use:   "list",
@@ -186,8 +190,18 @@ var flagListCmd = &cobra.Command{
   flagsmith flag list
 
   # only the flags overridden for a segment
-  flagsmith flag list --segment 12`,
+  flagsmith flag list --segment 12
+
+  # one feature's segment or identity overrides
+  flagsmith flag list --feature onboarding
+  flagsmith flag list --feature onboarding --identity`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		switch {
+		case flagListSegmentFlag != "" && flagListFeatureFlag != "":
+			return usageErrorf("--segment and --feature are mutually exclusive")
+		case flagListIdentityFlag && flagListFeatureFlag == "":
+			return usageErrorf("--identity only applies together with --feature")
+		}
 		_, cred, projectID, env, err := flagContext(cmd)
 		if err != nil {
 			return err
@@ -199,6 +213,18 @@ var flagListCmd = &cobra.Command{
 		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
 		if err != nil {
 			return err
+		}
+		if flagListFeatureFlag != "" {
+			feature := findFeatureByRef(features, flagListFeatureFlag)
+			if feature == nil {
+				return withHint(
+					fmt.Errorf("feature %q not found in %s", flagListFeatureFlag, environmentLabel(env)),
+					hintFlagList)
+			}
+			if flagListIdentityFlag {
+				return listFeatureIdentityOverrides(cmd, cred, env, projectID, feature)
+			}
+			return listFeatureSegmentOverrides(cmd, cred, env, feature)
 		}
 		if segmentID != 0 {
 			return listSegmentOverrides(cmd, cred, env, features, segmentID)
@@ -349,6 +375,110 @@ func findFeature(features []api.Feature, ref string) *api.Feature {
 	return nil
 }
 
+// findFeatureByRef matches a feature by reference: all-digit → id, anything
+// else → name (04 §3).
+func findFeatureByRef(features []api.Feature, ref string) *api.Feature {
+	id, err := strconv.Atoi(ref)
+	if err != nil {
+		return findFeature(features, ref)
+	}
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
+}
+
+// listFeatureSegmentOverrides renders one feature's segment overrides in
+// priority order, joining state and value onto the feature-segment rows.
+func listFeatureSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature) error {
+	fss, err := cred.client().FeatureSegments(cmd.Context(), env.ID, feature.ID)
+	if err != nil {
+		return err
+	}
+	states, err := cred.client().FeatureStates(cmd.Context(), env.ID, feature.ID)
+	if err != nil {
+		return err
+	}
+	stateByFS := make(map[int]api.EnvironmentFeatureState, len(states))
+	for _, s := range states {
+		if s.FeatureSegment != nil {
+			stateByFS[*s.FeatureSegment] = s
+		}
+	}
+	views := make([]segmentFlagView, len(fss)) // fss is already in priority order
+	for i, fs := range fss {
+		state := stateByFS[fs.ID]
+		views[i] = segmentFlagView{
+			Feature:  feature.Name,
+			Type:     featureTypeLabel(feature.Type),
+			Segment:  segmentRef{ID: fs.Segment, Name: fs.SegmentName},
+			Priority: fs.Priority,
+			Enabled:  state.Enabled,
+			Value:    state.Value.Scalar(),
+		}
+	}
+	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
+		if len(views) == 0 {
+			fmt.Fprintln(w, "No segment overrides.")
+			return nil
+		}
+		rows := make([][]string, len(views))
+		for i, v := range views {
+			rows[i] = []string{strconv.Itoa(v.Priority), v.Segment.display(), boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}
+		if err := output.Table(w, []string{"PRIORITY", "SEGMENT", "STATE", "VALUE"}, rows); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "override", "overrides"))
+		return nil
+	})
+}
+
+// listFeatureIdentityOverrides renders one feature's identity overrides,
+// branching core vs edge on the project's identity storage.
+func listFeatureIdentityOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environment, projectID int, feature *api.Feature) error {
+	edge, err := useEdgeIdentities(cmd, cred, projectID)
+	if err != nil {
+		return err
+	}
+	var overrides []api.IdentityOverrideRow
+	if edge {
+		overrides, err = cred.client().EdgeIdentityOverrides(cmd.Context(), env.APIKey, feature.ID)
+	} else {
+		overrides, err = cred.client().CoreIdentityOverrides(cmd.Context(), env.APIKey, feature.ID)
+	}
+	if err != nil {
+		return err
+	}
+	views := make([]identityFlagView, len(overrides))
+	for i, o := range overrides {
+		views[i] = identityFlagView{
+			Feature:    feature.Name,
+			Type:       featureTypeLabel(feature.Type),
+			Identifier: o.Identifier,
+			Enabled:    o.Enabled,
+			Value:      o.Value,
+		}
+	}
+	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
+		if len(views) == 0 {
+			fmt.Fprintln(w, "No identity overrides.")
+			return nil
+		}
+		rows := make([][]string, len(views))
+		for i, v := range views {
+			rows[i] = []string{v.Identifier, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}
+		if err := output.Table(w, []string{"IDENTIFIER", "STATE", "VALUE"}, rows); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "override", "overrides"))
+		return nil
+	})
+}
+
 // renderFlagDetail prints one flag's curated detail view (or its JSON).
 func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
 	v := newFlagView(feature)
@@ -415,6 +545,8 @@ func plural(n int, one, many string) string {
 
 func init() {
 	flagListCmd.Flags().StringVar(&flagListSegmentFlag, "segment", "", "list overrides for this segment (id or name)")
+	flagListCmd.Flags().StringVar(&flagListFeatureFlag, "feature", "", "list this feature's segment overrides (id or name), in priority order")
+	flagListCmd.Flags().BoolVar(&flagListIdentityFlag, "identity", false, "with --feature: list its identity overrides instead")
 	flagGetCmd.Flags().StringVar(&flagGetSegmentFlag, "segment", "", "show the override for this segment (id or name)")
 	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
 	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagEnableCmd, flagDisableCmd, flagDeleteCmd, flagCreateCmd)
