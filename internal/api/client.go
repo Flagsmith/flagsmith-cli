@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/bug"
@@ -667,17 +668,24 @@ func (f Feature) CodeReferences() int {
 // Features lists a project's features with their state in one environment, via
 // the Admin API. The environment is identified by its numeric ID. When
 // segmentID is non-zero, each feature also carries its segment_feature_state
-// for that segment.
-func (c *Client) Features(ctx context.Context, projectID, environmentID, segmentID int) ([]Feature, error) {
+// for that segment. A non-empty search narrows the list server-side — a
+// contains match on the name, so callers still pick their exact match — which
+// keeps single-feature commands off the full (expensive) project list.
+func (c *Client) Features(ctx context.Context, projectID, environmentID, segmentID int, search string) ([]Feature, error) {
 	var features []Feature
-	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
-	sep := "?"
+	q := url.Values{}
 	if environmentID != 0 {
-		path += fmt.Sprintf("%senvironment=%d", sep, environmentID)
-		sep = "&"
+		q.Set("environment", strconv.Itoa(environmentID))
 	}
 	if segmentID != 0 {
-		path += fmt.Sprintf("%ssegment=%d", sep, segmentID)
+		q.Set("segment", strconv.Itoa(segmentID))
+	}
+	if search != "" {
+		q.Set("search", search)
+	}
+	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
+	if len(q) > 0 {
+		path += "?" + q.Encode()
 	}
 	if err := c.getList(ctx, path, &features); err != nil {
 		return nil, err

@@ -290,7 +290,7 @@ func resolveFeatureID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	if id, err := strconv.Atoi(ref); err == nil {
 		return id, nil
 	}
-	features, err := cred.client().Features(cmd.Context(), projectID, 0, 0)
+	features, err := cred.client().Features(cmd.Context(), projectID, 0, 0, ref)
 	if err != nil {
 		return 0, err
 	}

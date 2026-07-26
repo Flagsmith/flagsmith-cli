@@ -91,7 +91,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if err != nil {
 		return err
 	}
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(name))
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	// Result model: an update also prints the resulting resource to stdout.
-	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(name))
 	if err != nil {
 		return err
 	}

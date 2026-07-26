@@ -121,6 +121,7 @@ type fakeInstance struct {
 	lastFeatEnv    string                      // last ?environment= seen by /features/
 	lastFeatSeg    string                      // last ?segment= seen by /features/
 	lastFeatArch   string                      // last ?is_archived= seen by /features/
+	lastFeatSearch string                      // last ?search= seen by /features/
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -527,7 +528,21 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.lastFeatEnv = r.URL.Query().Get("environment")
 		f.lastFeatSeg = r.URL.Query().Get("segment")
 		f.lastFeatArch = r.URL.Query().Get("is_archived")
+		f.lastFeatSearch = r.URL.Query().Get("search")
 		items := f.features[r.PathValue("project")]
+		// Like the backend, search is a case-insensitive contains match on the
+		// name — deliberately broader than the exact match the CLI wants, so
+		// tests exercise the client-side narrowing.
+		if search := r.URL.Query().Get("search"); search != "" {
+			filtered := []map[string]any{}
+			for _, it := range items {
+				name, _ := it["name"].(string)
+				if strings.Contains(strings.ToLower(name), strings.ToLower(search)) {
+					filtered = append(filtered, it)
+				}
+			}
+			items = filtered
+		}
 		if arch := r.URL.Query().Get("is_archived"); arch != "" {
 			want := arch == "true"
 			filtered := []map[string]any{}
@@ -1307,6 +1322,13 @@ func (f *fakeInstance) featuresSeg() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.lastFeatSeg
+}
+
+// featuresSearch returns the ?search= value the /features/ endpoint last saw.
+func (f *fakeInstance) featuresSearch() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastFeatSearch
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -4513,6 +4535,90 @@ func TestFeatureGet(t *testing.T) {
 		v0 := variants[0].(map[string]any)
 		if v0["value"] != "headline" || v0["weight"] != float64(30) || v0["key"] != "hero" {
 			t.Errorf("variant = %+v", v0)
+		}
+	})
+}
+
+// Single-feature commands narrow the features fetch server-side with the
+// search filter (a contains match on the name), keeping the exact-match
+// narrowing client-side. An id ref can't match a name search, so it fetches
+// unfiltered.
+func TestFeatureSearchNarrowsFetch(t *testing.T) {
+	t.Run("flag get by name sends search and matches exactly", func(t *testing.T) {
+		// Given two features sharing a prefix — a contains match returns both
+		f := flagUpdateEnv(t)
+		f.features["101"] = []map[string]any{
+			{"id": 7, "name": "checkout", "type": "STANDARD",
+				"num_segment_overrides": 0, "num_identity_overrides": 0,
+				"code_references_counts":    []any{},
+				"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": nil}},
+			{"id": 8, "name": "checkout_v2", "type": "STANDARD",
+				"num_segment_overrides": 0, "num_identity_overrides": 0,
+				"code_references_counts":    []any{},
+				"environment_feature_state": map[string]any{"enabled": false, "feature_state_value": nil}},
+		}
+
+		// When
+		out, err := run("", "flag", "get", "checkout")
+
+		// Then — the fetch was narrowed server-side and the exact name won
+		if err != nil {
+			t.Fatalf("flag get: %v\noutput: %s", err, out)
+		}
+		if got := f.featuresSearch(); got != "checkout" {
+			t.Errorf("search param = %q, want checkout", got)
+		}
+		if !strings.Contains(out, "checkout") || strings.Contains(out, "checkout_v2") {
+			t.Errorf("output = %q, want exactly checkout", out)
+		}
+	})
+
+	t.Run("an id ref sends no search", func(t *testing.T) {
+		// Given the stock features, where max_items has id 2
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "get", "2")
+
+		// Then — a name search can't match an id, so the fetch is unfiltered
+		if err != nil {
+			t.Fatalf("flag get: %v\noutput: %s", err, out)
+		}
+		if got := f.featuresSearch(); got != "" {
+			t.Errorf("search param = %q, want empty", got)
+		}
+	})
+
+	t.Run("feature get resolves a name via search", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+
+		// When
+		out, err := run("", "feature", "get", "banner-copy")
+
+		// Then
+		if err != nil {
+			t.Fatalf("feature get: %v\noutput: %s", err, out)
+		}
+		if got := f.featuresSearch(); got != "banner-copy" {
+			t.Errorf("search param = %q, want banner-copy", got)
+		}
+	})
+
+	t.Run("flag enable resolves a name via search", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "enable", "max_items", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag enable: %v\noutput: %s", err, out)
+		}
+		if got := f.featuresSearch(); got != "max_items" {
+			t.Errorf("search param = %q, want max_items", got)
 		}
 	})
 }

@@ -29,7 +29,7 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, 0)
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, 0, searchRef(name))
 	if err != nil {
 		return err
 	}

@@ -355,7 +355,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		features, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0)
+		features, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0, "")
 
 		// Then
 		if err != nil {
@@ -383,7 +383,7 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		_, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0)
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0, "")
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "403") {
@@ -401,13 +401,33 @@ func TestFeatures(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		if _, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 12); err != nil {
+		if _, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 12, ""); err != nil {
 			t.Fatal(err)
 		}
 
 		// Then
 		if gotSegment != "12" {
 			t.Errorf("segment = %q, want 12", gotSegment)
+		}
+	})
+
+	t.Run("search param is sent when non-empty, url-escaped", func(t *testing.T) {
+		// Given
+		var gotSearch string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotSearch = r.URL.Query().Get("search")
+			fmt.Fprint(w, `{"count":0,"results":[]}`)
+		}))
+		defer srv.Close()
+
+		// When
+		if _, err := testClient(srv.URL, APIKey("k.s"), srv).Features(context.Background(), 101, 1, 0, "my flag"); err != nil {
+			t.Fatal(err)
+		}
+
+		// Then
+		if gotSearch != "my flag" {
+			t.Errorf("search = %q, want my flag", gotSearch)
 		}
 	})
 }

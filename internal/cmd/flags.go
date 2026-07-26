@@ -214,7 +214,7 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(flagListFeatureFlag))
 		if err != nil {
 			return err
 		}
@@ -328,9 +328,9 @@ var flagGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// The server's search is a contains match, so fetch and narrow to the
-		// exact feature client-side.
-		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+		// The server's search is a contains match, so narrow to the exact
+		// feature client-side.
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(name))
 		if err != nil {
 			return err
 		}
@@ -377,6 +377,16 @@ func findFeature(features []api.Feature, ref string) *api.Feature {
 		}
 	}
 	return nil
+}
+
+// searchRef returns the server-side search term for a feature reference: the
+// ref itself for names, or "" for all-digit id refs, which a name search
+// would never match.
+func searchRef(ref string) string {
+	if _, err := strconv.Atoi(ref); err == nil {
+		return ""
+	}
+	return ref
 }
 
 // findFeatureByRef matches a feature by reference: all-digit → id, anything

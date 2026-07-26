@@ -178,7 +178,7 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 
 // runIdentityDelete removes an identity override, branching core vs edge.
 func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Environment, projectID int, name, identifier string) error {
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, 0)
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, 0, searchRef(name))
 	if err != nil {
 		return err
 	}
