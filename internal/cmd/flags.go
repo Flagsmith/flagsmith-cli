@@ -144,7 +144,7 @@ func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, a
 	return pc, cred, projectID, env, nil
 }
 
-var flagListSegmentFlag int
+var flagListSegmentFlag string
 
 var flagListCmd = &cobra.Command{
 	Use:   "list",
@@ -159,12 +159,16 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, flagListSegmentFlag)
+		segmentID, err := optionalSegmentID(cmd, cred, projectID, flagListSegmentFlag)
 		if err != nil {
 			return err
 		}
-		if flagListSegmentFlag != 0 {
-			return listSegmentOverrides(cmd, features, flagListSegmentFlag)
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
+		if err != nil {
+			return err
+		}
+		if segmentID != 0 {
+			return listSegmentOverrides(cmd, features, segmentID)
 		}
 		views := make([]flagView, len(features))
 		for i := range features {
@@ -221,9 +225,18 @@ func listSegmentOverrides(cmd *cobra.Command, features []api.Feature, segmentID 
 }
 
 var (
-	flagGetSegmentFlag    int
+	flagGetSegmentFlag    string
 	flagGetIdentifierFlag string
 )
+
+// optionalSegmentID resolves a --segment reference (id or name) when given,
+// or reports 0 for "not set".
+func optionalSegmentID(cmd *cobra.Command, cred *activeCredential, projectID int, ref string) (int, error) {
+	if ref == "" {
+		return 0, nil
+	}
+	return resolveSegmentID(cmd, cred, projectID, ref)
+}
 
 var flagGetCmd = &cobra.Command{
 	Use:   "get <feature>",
@@ -236,16 +249,20 @@ var flagGetCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if flagGetSegmentFlag != 0 && flagGetIdentifierFlag != "" {
+		if flagGetSegmentFlag != "" && flagGetIdentifierFlag != "" {
 			return usageErrorf("--segment and --identifier are mutually exclusive")
 		}
 		_, cred, projectID, env, err := flagContext(cmd)
 		if err != nil {
 			return err
 		}
+		segmentID, err := optionalSegmentID(cmd, cred, projectID, flagGetSegmentFlag)
+		if err != nil {
+			return err
+		}
 		// The server's search is a contains match, so fetch and narrow to the
 		// exact feature client-side.
-		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, flagGetSegmentFlag)
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
 		if err != nil {
 			return err
 		}
@@ -269,11 +286,11 @@ var flagGetCmd = &cobra.Command{
 			}
 			return renderIdentityDetail(cmd, feature, flagGetIdentifierFlag, override)
 		}
-		if flagGetSegmentFlag != 0 {
+		if segmentID != 0 {
 			if feature.SegmentState == nil {
-				return fmt.Errorf("%q has no override for segment %d in %s", name, flagGetSegmentFlag, environmentLabel(env))
+				return fmt.Errorf("%q has no override for segment %d in %s", name, segmentID, environmentLabel(env))
 			}
-			return renderSegmentDetail(cmd, feature, flagGetSegmentFlag)
+			return renderSegmentDetail(cmd, feature, segmentID)
 		}
 		return renderFlagDetail(cmd, feature)
 	},
@@ -345,8 +362,8 @@ func plural(n int, one, many string) string {
 }
 
 func init() {
-	flagListCmd.Flags().IntVar(&flagListSegmentFlag, "segment", 0, "list overrides for this segment id")
-	flagGetCmd.Flags().IntVar(&flagGetSegmentFlag, "segment", 0, "show the override for this segment id")
+	flagListCmd.Flags().StringVar(&flagListSegmentFlag, "segment", "", "list overrides for this segment (id or name)")
+	flagGetCmd.Flags().StringVar(&flagGetSegmentFlag, "segment", "", "show the override for this segment (id or name)")
 	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
 	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagEnableCmd, flagDisableCmd, flagDeleteCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)

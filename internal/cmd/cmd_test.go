@@ -3239,6 +3239,91 @@ func TestFlagUpdateSegment(t *testing.T) {
 	})
 }
 
+func TestFlagSegmentByName(t *testing.T) {
+	// Per 04 §3, every entity input is a reference: all-digit → id, anything
+	// else → name. The fake project has segments 42 "us-adults" and 57
+	// "beta-optin".
+	t.Run("flag list --segment resolves a name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		out, err := run("", "flag", "list", "--segment", "us-adults")
+		if err != nil {
+			t.Fatalf("flag list --segment us-adults: %v\noutput: %s", err, out)
+		}
+		if f.featuresSeg() != "42" {
+			t.Errorf("features segment = %q, want 42 resolved from the name", f.featuresSeg())
+		}
+	})
+
+	t.Run("flag get --segment resolves a name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		out, err := run("", "flag", "get", "max_items", "--segment", "us-adults")
+		if err != nil {
+			t.Fatalf("flag get --segment us-adults: %v\noutput: %s", err, out)
+		}
+		if f.featuresSeg() != "42" {
+			t.Errorf("features segment = %q, want 42 resolved from the name", f.featuresSeg())
+		}
+	})
+
+	t.Run("flag update --segment resolves a name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		_, err := run("", "flag", "update", "max_items", "--segment", "beta-optin", "--enable", "--yes")
+		if err != nil {
+			t.Fatalf("flag update --segment beta-optin: %v", err)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["segment_id"] != float64(57) {
+			t.Errorf("segment_id = %v, want 57 resolved from beta-optin", ov["segment_id"])
+		}
+	})
+
+	t.Run("flag disable --segment resolves a name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		_, err := run("", "flag", "disable", "max_items", "--segment", "us-adults", "--yes")
+		if err != nil {
+			t.Fatalf("flag disable --segment us-adults: %v", err)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["segment_id"] != float64(42) || ov["enabled"] != false {
+			t.Errorf("segment override = %+v, want segment 42 disabled", ov)
+		}
+	})
+
+	t.Run("flag delete --segment resolves a name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+
+		_, err := run("", "flag", "delete", "max_items", "--segment", "us-adults", "--yes")
+		if err != nil {
+			t.Fatalf("flag delete --segment us-adults: %v", err)
+		}
+		if f.lastDelete["segment"].(map[string]any)["id"] != float64(42) {
+			t.Errorf("delete body = %+v, want segment id 42", f.lastDelete)
+		}
+	})
+
+	t.Run("unknown segment name errors with the segment list hint", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+
+		_, err := run("", "flag", "list", "--segment", "ghost")
+		if err == nil || !strings.Contains(err.Error(), "ghost") {
+			t.Errorf("err = %v, want a not-found error naming the segment", err)
+		}
+		if hint := hintFor(err); !strings.Contains(hint, "segment list") {
+			t.Errorf("hint = %q, want the segment list hint", hint)
+		}
+		_ = f
+	})
+}
+
 func TestFlagDelete(t *testing.T) {
 	t.Run("deletes a segment override", func(t *testing.T) {
 		// Given
