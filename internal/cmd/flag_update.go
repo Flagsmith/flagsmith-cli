@@ -94,12 +94,13 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if err != nil {
 		return err
 	}
-	feature := findFeature(features, name)
+	feature := findFeatureByRef(features, name)
 	if feature == nil {
 		return withHint(
 			fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
 			hintFlagList)
 	}
+	name = feature.Name // canonical from here on: the wire ref and messages
 
 	if m.identifier != "" {
 		return runIdentityUpdate(cmd, cred, env, projectID, feature, m.identifier, m.enable, m.disable, m.setValue)
@@ -250,7 +251,7 @@ var flagDeleteCmd = &cobra.Command{
 			fmt.Fprintln(errOut, "Aborted; nothing changed.")
 			return nil
 		}
-		if err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, name, segmentID); err != nil {
+		if err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, featureRefFor(name), segmentID); err != nil {
 			return err
 		}
 		output.Success(errOut, "Deleted %s override for segment %d in environment %s", name, segmentID, environmentLabel(env))
@@ -315,6 +316,16 @@ var flagCreateCmd = &cobra.Command{
 			usageErrorf("flags exist per environment, so there is nothing to create"),
 			"To create the feature itself, run `flagsmith feature create %s`.", name)
 	},
+}
+
+// featureRefFor parses a feature reference into the update-flag wire form:
+// all-digit → id, anything else → name (04 §3). Used where no features fetch
+// happens, so the reference cannot be resolved client-side.
+func featureRefFor(ref string) api.FeatureRef {
+	if id, err := strconv.Atoi(ref); err == nil {
+		return api.FeatureRef{ID: id}
+	}
+	return api.FeatureRef{Name: ref}
 }
 
 // currentScalar returns a feature state's current value, or nil.

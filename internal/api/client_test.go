@@ -427,7 +427,7 @@ func TestDeleteSegmentOverride(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", "max_items", 12)
+		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", FeatureRef{Name: "max_items"}, 12)
 
 		// Then
 		if err != nil {
@@ -447,7 +447,7 @@ func TestDeleteSegmentOverride(t *testing.T) {
 		defer srv.Close()
 
 		// When
-		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", "max_items", 12)
+		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", FeatureRef{Name: "max_items"}, 12)
 
 		// Then
 		if err == nil || !strings.Contains(err.Error(), "segment 12") {

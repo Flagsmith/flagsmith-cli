@@ -3826,6 +3826,63 @@ func TestFlagUpdatePriority(t *testing.T) {
 	})
 }
 
+func TestFlagFeatureByID(t *testing.T) {
+	// Per 04 §3, the feature positional is a reference: all-digit → id.
+	// Default features: onboarding_banner (1), max_items (2).
+	t.Run("get accepts a feature id", func(t *testing.T) {
+		_ = flagUpdateEnv(t)
+
+		out, err := run("", "flag", "get", "2")
+		if err != nil {
+			t.Fatalf("flag get 2: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "max_items") {
+			t.Errorf("output = %q, want the feature resolved by id", out)
+		}
+	})
+
+	t.Run("update by id sends and prints the canonical name", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+
+		out, err := run("", "flag", "update", "2", "--enable", "--yes")
+		if err != nil {
+			t.Fatalf("flag update 2: %v\noutput: %s", err, out)
+		}
+		feature := f.lastUpdate["feature"].(map[string]any)
+		if feature["name"] != "max_items" {
+			t.Errorf("feature ref = %+v, want the canonical name on the wire", feature)
+		}
+		if !strings.Contains(out, "Enabled max_items") {
+			t.Errorf("output = %q, want the canonical name in the message", out)
+		}
+	})
+
+	t.Run("delete --segment by id targets the id on the wire", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+
+		_, err := run("", "flag", "delete", "2", "--segment", "12", "--yes")
+		if err != nil {
+			t.Fatalf("flag delete 2: %v", err)
+		}
+		if f.lastDelete["feature"].(map[string]any)["id"] != float64(2) {
+			t.Errorf("delete body = %+v, want the feature targeted by id", f.lastDelete)
+		}
+	})
+
+	t.Run("reorder accepts a feature id", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		_, err := run("", "flag", "reorder", "2", "us-adults", "beta-optin", "--yes")
+		if err != nil {
+			t.Fatalf("flag reorder 2: %v", err)
+		}
+		if f.lastUpdate["feature"].(map[string]any)["name"] != "max_items" {
+			t.Errorf("feature ref = %+v, want the canonical name on the wire", f.lastUpdate["feature"])
+		}
+	})
+}
+
 func TestFlagReorder(t *testing.T) {
 	// Fixture: max_items has overrides beta-optin (57, priority 0, "blue",
 	// on) and us-adults (42, priority 1, 25, off); env default off/25.

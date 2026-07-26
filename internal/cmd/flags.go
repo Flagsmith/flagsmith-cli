@@ -327,7 +327,7 @@ var flagGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		feature := findFeature(features, name)
+		feature := findFeatureByRef(features, name)
 		if feature == nil {
 			return withHint(
 				fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),

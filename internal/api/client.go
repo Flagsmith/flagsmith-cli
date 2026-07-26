@@ -851,9 +851,9 @@ type UpdateFlagRequest struct {
 
 // DeleteSegmentOverride removes a feature's override for one segment, via the
 // experimental delete-segment-override endpoint keyed by the environment key.
-func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey, featureName string, segmentID int) error {
+func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey string, feature FeatureRef, segmentID int) error {
 	body, err := json.Marshal(map[string]any{
-		"feature": FeatureRef{Name: featureName},
+		"feature": feature,
 		"segment": map[string]int{"id": segmentID},
 	})
 	if err != nil {

@@ -33,12 +33,13 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	feature := findFeature(features, name)
+	feature := findFeatureByRef(features, name)
 	if feature == nil {
 		return withHint(
 			fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
 			hintFlagList)
 	}
+	name = feature.Name // canonical from here on: the wire ref and messages
 
 	fss, err := cred.client().FeatureSegments(cmd.Context(), env.ID, feature.ID)
 	if err != nil {
