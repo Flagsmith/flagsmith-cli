@@ -17,6 +17,7 @@ var (
 	flagTypeFlag         string
 	flagUpdateSegment    string
 	flagUpdateIdentifier string
+	flagUpdatePriority   int
 	flagDeleteSegment    string
 	flagDeleteIdentifier string
 )
@@ -41,19 +42,23 @@ var flagUpdateCmd = &cobra.Command{
 
 func runFlagUpdate(cmd *cobra.Command, args []string) error {
 	m := flagMutation{
-		enable:     cmd.Flags().Changed("enable"),
-		disable:    cmd.Flags().Changed("disable"),
-		setValue:   cmd.Flags().Changed("value"),
-		segmentRef: flagUpdateSegment,
-		identifier: flagUpdateIdentifier,
+		enable:      cmd.Flags().Changed("enable"),
+		disable:     cmd.Flags().Changed("disable"),
+		setValue:    cmd.Flags().Changed("value"),
+		setPriority: cmd.Flags().Changed("priority"),
+		priority:    flagUpdatePriority,
+		segmentRef:  flagUpdateSegment,
+		identifier:  flagUpdateIdentifier,
 	}
 	switch {
 	case m.segmentRef != "" && m.identifier != "":
 		return usageErrorf("--segment and --identifier are mutually exclusive")
 	case m.enable && m.disable:
 		return usageErrorf("--enable and --disable are mutually exclusive")
-	case !m.enable && !m.disable && !m.setValue:
-		return usageErrorf("nothing to update — pass --enable, --disable, or --value")
+	case m.setPriority && m.segmentRef == "":
+		return usageErrorf("--priority only applies together with --segment")
+	case !m.enable && !m.disable && !m.setValue && !m.setPriority:
+		return usageErrorf("nothing to update — pass --enable, --disable, --value, or --priority")
 	case cmd.Flags().Changed("type") && !m.setValue:
 		return usageErrorf("--type only applies together with --value")
 	}
@@ -67,6 +72,8 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 // segment reference (id or name).
 type flagMutation struct {
 	enable, disable, setValue bool
+	setPriority               bool
+	priority                  int
 	segmentRef                string
 	identifier                string
 }
@@ -114,6 +121,19 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		scope = fmt.Sprintf("segment %d in environment %s", segmentID, environmentLabel(env))
 	}
 
+	// Priorities are a dense 0-based order; a new override joins it, growing
+	// the valid range by one. The server treats the write as a move, so only
+	// the bounds need checking here.
+	if m.setPriority {
+		limit := feature.NumSegmentOverrides
+		if target == nil {
+			limit++
+		}
+		if m.priority < 0 || m.priority >= limit {
+			return usageErrorf("--priority %d is out of range (0..%d)", m.priority, limit-1)
+		}
+	}
+
 	enabled := flagEnabled(target)
 	if m.enable {
 		enabled = true
@@ -137,7 +157,11 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		req.EnvironmentDefault.Enabled = enabled
 		req.EnvironmentDefault.Value = value
 	} else {
-		req.SegmentOverrides = []api.SegmentOverride{{SegmentID: segmentID, Enabled: enabled, Value: value}}
+		override := api.SegmentOverride{SegmentID: segmentID, Enabled: enabled, Value: value}
+		if m.setPriority {
+			override.Priority = &m.priority
+		}
+		req.SegmentOverrides = []api.SegmentOverride{override}
 	}
 
 	errOut := cmd.ErrOrStderr()
@@ -161,6 +185,9 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if m.disable {
 		output.Success(errOut, "Disabled %s in %s", name, scope)
 	}
+	if m.setPriority {
+		output.Success(errOut, "Set %s priority to %d for %s", name, m.priority, scope)
+	}
 
 	// Result model: an update also prints the resulting resource to stdout.
 	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, segmentID)
@@ -172,7 +199,11 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		return nil
 	}
 	if segmentID != 0 {
-		return renderSegmentDetail(cmd, cred, env, updated, segmentID)
+		v, err := buildSegmentFlagView(cmd, cred, env, updated, segmentID)
+		if err != nil {
+			return err
+		}
+		return renderSegmentDetail(cmd, v)
 	}
 	return renderFlagDetail(cmd, updated)
 }
@@ -351,6 +382,7 @@ func init() {
 	flagUpdateCmd.Flags().StringVar(&flagTypeFlag, "type", "", "force the value type: string, integer, or boolean")
 	flagUpdateCmd.Flags().StringVar(&flagUpdateSegment, "segment", "", "target this segment's override (id or name) instead of the environment default")
 	flagUpdateCmd.Flags().StringVar(&flagUpdateIdentifier, "identifier", "", "target this identity's override instead of the environment default")
+	flagUpdateCmd.Flags().IntVar(&flagUpdatePriority, "priority", 0, "move the segment override to this priority (0 is evaluated first)")
 	flagDeleteCmd.Flags().StringVar(&flagDeleteSegment, "segment", "", "the segment (id or name) whose override to delete")
 	flagDeleteCmd.Flags().StringVar(&flagDeleteIdentifier, "identifier", "", "the identity whose override to delete")
 	for _, c := range []*cobra.Command{flagEnableCmd, flagDisableCmd} {

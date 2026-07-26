@@ -3440,6 +3440,83 @@ func TestFlagSegmentByName(t *testing.T) {
 	})
 }
 
+func TestFlagUpdatePriority(t *testing.T) {
+	// max_items (feature 2) has one override, for segment 12 at priority 1.
+	overrideMeta := func(f *fakeInstance) {
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1,
+		})
+	}
+
+	t.Run("sends the priority in the segment override", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "0", "--yes")
+		if err != nil {
+			t.Fatalf("flag update --priority: %v\noutput: %s", err, out)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["priority"] != float64(0) {
+			t.Errorf("override = %+v, want priority 0", ov)
+		}
+		// The override's current state rides along unchanged.
+		ovVal := ov["value"].(map[string]any)
+		if ov["enabled"] != true || ovVal["value"] != "special" {
+			t.Errorf("override = %+v, want current state echoed", ov)
+		}
+		if !strings.Contains(out, "Set max_items priority to 0 for segment 12") {
+			t.Errorf("output = %q, want a priority confirmation", out)
+		}
+		if !strings.Contains(out, "Priority") {
+			t.Errorf("output = %q, want the detail reprint with Priority", out)
+		}
+	})
+
+	t.Run("composes with --enable in the same request", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		_, err := run("", "flag", "update", "max_items", "--segment", "12", "--disable", "--priority", "0", "--yes")
+		if err != nil {
+			t.Fatalf("flag update: %v", err)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["priority"] != float64(0) || ov["enabled"] != false {
+			t.Errorf("override = %+v, want priority 0 and disabled in one request", ov)
+		}
+	})
+
+	t.Run("without --segment exits 2", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		_, err := run("", "flag", "update", "max_items", "--priority", "0", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--segment") {
+			t.Errorf("err = %v, want a usage error naming --segment", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+
+	t.Run("out of range exits 2 before any write", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true) // num_segment_overrides: 1 → valid range 0..0
+		overrideMeta(f)
+
+		_, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "5", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--priority") {
+			t.Errorf("err = %v, want a usage error naming --priority", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+}
+
 func TestFlagDelete(t *testing.T) {
 	t.Run("deletes a segment override", func(t *testing.T) {
 		// Given

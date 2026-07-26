@@ -726,11 +726,14 @@ type EnvironmentDefault struct {
 	Value   FeatureValue `json:"value"`
 }
 
-// SegmentOverride is one segment's state in the update-flag-v2 body.
+// SegmentOverride is one segment's state in the update-flag-v2 body. Priority,
+// when set, moves the override to that position — the server renumbers the
+// others around it, preserving their relative order.
 type SegmentOverride struct {
 	SegmentID int          `json:"segment_id"`
 	Enabled   bool         `json:"enabled"`
 	Value     FeatureValue `json:"value"`
+	Priority  *int         `json:"priority,omitempty"`
 }
 
 // UpdateFlagRequest is the update-flag-v2 body. environment_default is always

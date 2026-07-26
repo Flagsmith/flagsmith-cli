@@ -239,11 +239,11 @@ func listSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env api.En
 		if features[i].SegmentState == nil {
 			continue
 		}
-		segment, priority, err := segmentOverrideMeta(cmd, cred, env.ID, features[i].ID, segmentID)
+		v, err := buildSegmentFlagView(cmd, cred, env, &features[i], segmentID)
 		if err != nil {
 			return err
 		}
-		views = append(views, newSegmentFlagView(&features[i], segment, priority))
+		views = append(views, v)
 	}
 	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
 		if len(views) == 0 {
@@ -328,7 +328,11 @@ var flagGetCmd = &cobra.Command{
 			if feature.SegmentState == nil {
 				return fmt.Errorf("%q has no override for segment %d in %s", name, segmentID, environmentLabel(env))
 			}
-			return renderSegmentDetail(cmd, cred, env, feature, segmentID)
+			v, err := buildSegmentFlagView(cmd, cred, env, feature, segmentID)
+			if err != nil {
+				return err
+			}
+			return renderSegmentDetail(cmd, v)
 		}
 		return renderFlagDetail(cmd, feature)
 	},
@@ -363,13 +367,18 @@ func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
 	})
 }
 
-// renderSegmentDetail prints a flag's curated state for one segment override.
-func renderSegmentDetail(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) error {
+// buildSegmentFlagView resolves the override's segment name and priority and
+// assembles the curated view — the fetch happens here, not in the renderer.
+func buildSegmentFlagView(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) (segmentFlagView, error) {
 	segment, priority, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
 	if err != nil {
-		return err
+		return segmentFlagView{}, err
 	}
-	v := newSegmentFlagView(feature, segment, priority)
+	return newSegmentFlagView(feature, segment, priority), nil
+}
+
+// renderSegmentDetail prints a flag's curated state for one segment override.
+func renderSegmentDetail(cmd *cobra.Command, v segmentFlagView) error {
 	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
 			{Label: "Feature", Value: v.Feature},
