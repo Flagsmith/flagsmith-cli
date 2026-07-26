@@ -62,10 +62,7 @@ func orgNameMap(cmd *cobra.Command, cred *activeCredential) map[int]string {
 }
 
 func orgLabel(names map[int]string, id int) string {
-	if name := names[id]; name != "" {
-		return fmt.Sprintf("%s (%d)", name, id)
-	}
-	return strconv.Itoa(id)
+	return label(names[id], id)
 }
 
 func projectBodyFromFlags(cmd *cobra.Command) map[string]any {
@@ -85,7 +82,7 @@ func projectBodyFromFlags(cmd *cobra.Command) map[string]any {
 func renderProject(cmd *cobra.Command, cred *activeCredential, p *api.Project) error {
 	return output.Render(cmd.OutOrStdout(), p, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
-			{Label: "Project", Value: fmt.Sprintf("%s (%d)", p.Name, p.ID)},
+			{Label: "Project", Value: label(p.Name, p.ID)},
 			{Label: "Organisation", Value: orgLabel(orgNameMap(cmd, cred), p.Organisation)},
 		})
 	})
@@ -183,7 +180,7 @@ var projectCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Created project %s (%d)", p.Name, p.ID)
+		output.Success(cmd.ErrOrStderr(), "Created project %s", label(p.Name, p.ID))
 		return renderProject(cmd, cred, p)
 	},
 }
@@ -211,7 +208,7 @@ var projectUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Updated project %s (%d)", p.Name, p.ID)
+		output.Success(cmd.ErrOrStderr(), "Updated project %s", label(p.Name, p.ID))
 		return renderProject(cmd, cred, p)
 	},
 }
@@ -231,7 +228,7 @@ var projectDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete project %s (%d)", args[0], id)); err != nil {
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete project %s", label(args[0], id))); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
@@ -240,7 +237,7 @@ var projectDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteProject(cmd.Context(), id); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted project %s (%d)", args[0], id)
+		output.Success(errOut, "Deleted project %s", label(args[0], id))
 		return nil
 	},
 }

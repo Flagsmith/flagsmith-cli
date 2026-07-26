@@ -91,10 +91,10 @@ func renderEnvironment(cmd *cobra.Command, cred *activeCredential, e *api.Enviro
 	return output.Render(cmd.OutOrStdout(), e, outputOpts(), func(w io.Writer) error {
 		projLabel := strconv.Itoa(e.Project)
 		if p, err := cred.client().GetProject(cmd.Context(), e.Project); err == nil && p.Name != "" {
-			projLabel = fmt.Sprintf("%s (%d)", p.Name, e.Project)
+			projLabel = label(p.Name, e.Project)
 		}
 		return output.Detail(w, []output.Field{
-			{Label: "Environment", Value: fmt.Sprintf("%s (%s)", e.Name, e.APIKey)},
+			{Label: "Environment", Value: label(e.Name, e.APIKey)},
 			{Label: "Project", Value: projLabel},
 			{Label: "Description", Value: e.Description},
 			{Label: "Versioning", Value: versioningLabel(e.UseV2FeatureVersioning)},
@@ -173,7 +173,7 @@ var environmentCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Created environment %s (%s)", env.Name, env.APIKey)
+		output.Success(cmd.ErrOrStderr(), "Created environment %s", label(env.Name, env.APIKey))
 		return renderEnvironment(cmd, cred, env)
 	},
 }
@@ -201,7 +201,7 @@ var environmentUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Updated environment %s (%s)", env.Name, env.APIKey)
+		output.Success(cmd.ErrOrStderr(), "Updated environment %s", label(env.Name, env.APIKey))
 		return renderEnvironment(cmd, cred, env)
 	},
 }
@@ -221,7 +221,7 @@ var environmentDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete environment %s (%s)", ref.Name, ref.APIKey)); err != nil {
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete environment %s", label(ref.Name, ref.APIKey))); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
@@ -230,7 +230,7 @@ var environmentDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteEnvironment(cmd.Context(), ref.APIKey); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted environment %s (%s)", ref.Name, ref.APIKey)
+		output.Success(errOut, "Deleted environment %s", label(ref.Name, ref.APIKey))
 		return nil
 	},
 }
@@ -253,7 +253,7 @@ var environmentCloneCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Cloned %s into %s (%s)", ref.Name, clone.Name, clone.APIKey)
+		output.Success(cmd.ErrOrStderr(), "Cloned %s into %s", ref.Name, label(clone.Name, clone.APIKey))
 		return renderEnvironment(cmd, cred, clone)
 	},
 }
@@ -374,7 +374,7 @@ var environmentKeyCreateCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		output.Success(errOut, "Created server-side key %s (%d)", key.Name, key.ID)
+		output.Success(errOut, "Created server-side key %s", label(key.Name, key.ID))
 		return output.Render(cmd.OutOrStdout(), key, outputOpts(), func(w io.Writer) error {
 			fmt.Fprintln(errOut, "Store this now — it will not be shown again:")
 			fmt.Fprintln(w, key.Key)

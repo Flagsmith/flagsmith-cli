@@ -76,7 +76,7 @@ func orgBodyFromFlags(cmd *cobra.Command) map[string]any {
 func renderOrganisation(cmd *cobra.Command, o *api.Organisation) error {
 	return output.Render(cmd.OutOrStdout(), o, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
-			{Label: "Organisation", Value: fmt.Sprintf("%s (%d)", o.Name, o.ID)},
+			{Label: "Organisation", Value: label(o.Name, o.ID)},
 		})
 	})
 }
@@ -150,7 +150,7 @@ var organisationCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Created organisation %s (%d)", org.Name, org.ID)
+		output.Success(cmd.ErrOrStderr(), "Created organisation %s", label(org.Name, org.ID))
 		return renderOrganisation(cmd, org)
 	},
 }
@@ -178,7 +178,7 @@ var organisationUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Updated organisation %s (%d)", org.Name, org.ID)
+		output.Success(cmd.ErrOrStderr(), "Updated organisation %s", label(org.Name, org.ID))
 		return renderOrganisation(cmd, org)
 	},
 }
@@ -198,7 +198,7 @@ var organisationDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete organisation %s (%d)", args[0], id)); err != nil {
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete organisation %s", label(args[0], id))); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
@@ -207,7 +207,7 @@ var organisationDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteOrganisation(cmd.Context(), id); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted organisation %s (%d)", args[0], id)
+		output.Success(errOut, "Deleted organisation %s", label(args[0], id))
 		return nil
 	},
 }

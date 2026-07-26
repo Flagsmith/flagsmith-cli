@@ -55,10 +55,7 @@ type segmentRef struct {
 // display renders a segment as "name (id)", degrading to the bare id when the
 // name is unknown.
 func (s segmentRef) display() string {
-	if s.Name != "" {
-		return fmt.Sprintf("%s (%d)", s.Name, s.ID)
-	}
-	return strconv.Itoa(s.ID)
+	return label(s.Name, s.ID)
 }
 
 // segmentFlagView is the curated shape for a flag's state in one segment.
@@ -530,10 +527,7 @@ func lifecycleOrDash(stage string) string {
 
 // environmentLabel renders an environment as "Name (key)" for messages.
 func environmentLabel(env api.Environment) string {
-	if env.Name != "" {
-		return fmt.Sprintf("%s (%s)", env.Name, env.APIKey)
-	}
-	return env.APIKey
+	return label(env.Name, env.APIKey)
 }
 
 func plural(n int, one, many string) string {

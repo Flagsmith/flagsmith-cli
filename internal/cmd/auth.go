@@ -141,7 +141,7 @@ func rememberOrganisations(orgs []api.Organisation) {
 func orgList(orgs []api.Organisation) string {
 	parts := make([]string, len(orgs))
 	for i, o := range orgs {
-		parts[i] = fmt.Sprintf("%s (%d)", o.Name, o.ID)
+		parts[i] = label(o.Name, o.ID)
 	}
 	return strings.Join(parts, ", ")
 }

@@ -93,7 +93,7 @@ func resolveOrganisation(cmd *cobra.Command, pc *projectContext, cred *activeCre
 	options := make([]string, len(orgs))
 	defaultOrg := 0
 	for i, o := range orgs {
-		options[i] = fmt.Sprintf("%s (%d)", o.Name, o.ID)
+		options[i] = label(o.Name, o.ID)
 		if o.ID == configOrg {
 			defaultOrg = i
 		}
@@ -193,7 +193,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("creating project: %w", err)
 		}
-		output.Success(errOut, "Created project %s (%d)", created.Name, created.ID)
+		output.Success(errOut, "Created project %s", label(created.Name, created.ID))
 		projectID = created.ID
 		names.Projects[strconv.Itoa(created.ID)] = created.Name
 	case projectID != 0:
@@ -222,7 +222,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		options := make([]string, 0, len(projects)+1)
 		defaultProject := 0
 		for i, p := range projects {
-			options = append(options, fmt.Sprintf("%s (%d)", p.Name, p.ID))
+			options = append(options, label(p.Name, p.ID))
 			if p.ID == configProjectID {
 				defaultProject = i
 			}
@@ -245,7 +245,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return fmt.Errorf("creating project: %w", err)
 			}
-			output.Success(errOut, "Created project %s (%d)", created.Name, created.ID)
+			output.Success(errOut, "Created project %s", label(created.Name, created.ID))
 			projectID = created.ID
 			names.Projects[strconv.Itoa(created.ID)] = created.Name
 		} else {
@@ -311,7 +311,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		options := make([]string, 0, len(envs)+1)
 		def := 0
 		for i, e := range envs {
-			options = append(options, fmt.Sprintf("%s (%s)", e.Name, e.APIKey))
+			options = append(options, label(e.Name, e.APIKey))
 			if strings.EqualFold(e.Name, "Development") && configEnvKey == "" {
 				def = i
 			}

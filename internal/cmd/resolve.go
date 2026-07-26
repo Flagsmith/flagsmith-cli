@@ -41,7 +41,7 @@ func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []
 	}
 	options := make([]string, len(candidates))
 	for i, c := range candidates {
-		options[i] = fmt.Sprintf("%s (%s)", names[c], c)
+		options[i] = label(names[c], c)
 	}
 	idx, err := selectPrompt(cmd, entity, fmt.Sprintf("Multiple %ss named %q", entity, ref), options, 0)
 	if err != nil {

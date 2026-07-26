@@ -243,8 +243,8 @@ var flagDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		label := fmt.Sprintf("delete %s override for segment %d in %s", name, segmentID, environmentLabel(env))
-		if ok, err := confirmOrYes(cmd, label+"?"); err != nil {
+		prompt := fmt.Sprintf("delete %s override for segment %d in %s", name, segmentID, environmentLabel(env))
+		if ok, err := confirmOrYes(cmd, prompt+"?"); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing changed.")

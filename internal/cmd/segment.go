@@ -175,7 +175,7 @@ var segmentCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Created segment %s (%d)", seg.Name, seg.ID)
+		output.Success(cmd.ErrOrStderr(), "Created segment %s", label(seg.Name, seg.ID))
 		return renderSegment(cmd, seg)
 	},
 }
@@ -222,7 +222,7 @@ var segmentUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Updated segment %s (%d)", updated.Name, updated.ID)
+		output.Success(cmd.ErrOrStderr(), "Updated segment %s", label(updated.Name, updated.ID))
 		return renderSegment(cmd, updated)
 	},
 }
@@ -242,7 +242,7 @@ var segmentDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete segment %s (%d)", args[0], id)); err != nil {
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete segment %s", label(args[0], id))); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
@@ -251,7 +251,7 @@ var segmentDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteSegment(cmd.Context(), projectID, id); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted segment %s (%d)", args[0], id)
+		output.Success(errOut, "Deleted segment %s", label(args[0], id))
 		return nil
 	},
 }
@@ -445,7 +445,7 @@ func renderSegment(cmd *cobra.Command, seg *api.Segment) error {
 	}
 	return output.Render(cmd.OutOrStdout(), view, outputOpts(), func(w io.Writer) error {
 		if err := output.Detail(w, []output.Field{
-			{Label: "Segment", Value: fmt.Sprintf("%s (%d)", seg.Name, seg.ID)},
+			{Label: "Segment", Value: label(seg.Name, seg.ID)},
 			{Label: "Description", Value: seg.Description},
 		}); err != nil {
 			return err

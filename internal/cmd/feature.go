@@ -152,7 +152,7 @@ func renderFeature(cmd *cobra.Command, f *api.Feature) error {
 	view := toFeatureView(f)
 	return output.Render(cmd.OutOrStdout(), view, outputOpts(), func(w io.Writer) error {
 		if err := output.Detail(w, []output.Field{
-			{Label: "Feature", Value: fmt.Sprintf("%s (%d)", f.Name, f.ID)},
+			{Label: "Feature", Value: label(f.Name, f.ID)},
 			{Label: "Description", Value: f.Description},
 			{Label: "Type", Value: view.Type},
 			{Label: "Default value", Value: valueDisplay(view.Value)},
@@ -222,7 +222,7 @@ var featureCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Created feature %s (%d)", feat.Name, feat.ID)
+		output.Success(cmd.ErrOrStderr(), "Created feature %s", label(feat.Name, feat.ID))
 		return renderFeature(cmd, feat)
 	},
 }
@@ -271,7 +271,7 @@ var featureUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Updated feature %s (%d)", feat.Name, feat.ID)
+		output.Success(cmd.ErrOrStderr(), "Updated feature %s", label(feat.Name, feat.ID))
 		return renderFeature(cmd, feat)
 	},
 }
@@ -291,7 +291,7 @@ var featureDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete feature %s (%d)", args[0], id)); err != nil {
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete feature %s", label(args[0], id))); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
@@ -300,7 +300,7 @@ var featureDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteFeature(cmd.Context(), projectID, id); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted feature %s (%d)", args[0], id)
+		output.Success(errOut, "Deleted feature %s", label(args[0], id))
 		return nil
 	},
 }
@@ -469,7 +469,7 @@ var featureVariantAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Added variant %s (%d) to %s", variantLabel(created), created.ID, args[0])
+		output.Success(cmd.ErrOrStderr(), "Added variant %s to %s", label(variantLabel(created), created.ID), args[0])
 		return nil
 	},
 }
@@ -519,7 +519,7 @@ var featureVariantUpdateCmd = &cobra.Command{
 		if _, err := cred.client().UpdateMVOption(cmd.Context(), projectID, id, variant.ID, o); err != nil {
 			return err
 		}
-		output.Success(cmd.ErrOrStderr(), "Updated variant %s (%d)", variantLabel(variant), variant.ID)
+		output.Success(cmd.ErrOrStderr(), "Updated variant %s", label(variantLabel(variant), variant.ID))
 		return nil
 	},
 }
@@ -549,7 +549,7 @@ var featureVariantDeleteCmd = &cobra.Command{
 				"Run `flagsmith feature variant list %s` to see its variants.", args[0])
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete variant %s (%d) from %s", variantLabel(variant), variant.ID, args[0])); err != nil {
+		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete variant %s from %s", label(variantLabel(variant), variant.ID), args[0])); err != nil {
 			return err
 		} else if !ok {
 			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
@@ -558,7 +558,7 @@ var featureVariantDeleteCmd = &cobra.Command{
 		if err := cred.client().DeleteMVOption(cmd.Context(), projectID, id, variant.ID); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted variant %s (%d) from %s", variantLabel(variant), variant.ID, args[0])
+		output.Success(errOut, "Deleted variant %s from %s", label(variantLabel(variant), variant.ID), args[0])
 		return nil
 	},
 }
