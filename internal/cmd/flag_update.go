@@ -118,11 +118,16 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	// The state being changed: the environment default, or a segment override.
 	// The scope carries its own preposition: "in environment …" for the
 	// default, "for segment name (id) in environment …" for an override.
+	// The override's metadata (name, current priority) is fetched once and
+	// reused for the post-update render.
 	target := feature.EnvironmentState
 	scope := "in environment " + environmentLabel(env)
+	var segment segmentRef
+	var priority int
 	if segmentID != 0 {
 		target = feature.SegmentState // nil when the override does not exist yet
-		segment, _, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
+		var err error
+		segment, priority, err = segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
 		if err != nil {
 			return err
 		}
@@ -198,22 +203,25 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	// Result model: an update also prints the resulting resource to stdout.
-	features, err = cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(name))
+	// The written state is fully known here — the request carried it — so the
+	// detail renders from it rather than re-fetching the features list.
+	scalar, err := nativeScalar(value)
 	if err != nil {
 		return err
 	}
-	updated := findFeature(features, name)
-	if updated == nil {
-		return nil
-	}
+	updated := *feature
 	if segmentID != 0 {
-		v, err := buildSegmentFlagView(cmd, cred, env, updated, segmentID)
-		if err != nil {
-			return err
+		updated.SegmentState = &api.FeatureState{Enabled: enabled, Value: scalar}
+		if target == nil {
+			priority = feature.NumSegmentOverrides // a new override joins at the end
 		}
-		return renderSegmentDetail(cmd, v)
+		if m.setPriority {
+			priority = m.priority
+		}
+		return renderSegmentDetail(cmd, newSegmentFlagView(&updated, segment, priority))
 	}
-	return renderFlagDetail(cmd, updated)
+	updated.EnvironmentState = &api.FeatureState{Enabled: enabled, Value: scalar}
+	return renderFlagDetail(cmd, &updated)
 }
 
 var flagDeleteCmd = &cobra.Command{

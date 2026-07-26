@@ -122,6 +122,8 @@ type fakeInstance struct {
 	lastFeatSeg    string                      // last ?segment= seen by /features/
 	lastFeatArch   string                      // last ?is_archived= seen by /features/
 	lastFeatSearch string                      // last ?search= seen by /features/
+	featListCalls  int                         // count of GET /features/ list calls
+	fsListCalls    int                         // count of GET /features/feature-segments/ calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -529,6 +531,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.lastFeatSeg = r.URL.Query().Get("segment")
 		f.lastFeatArch = r.URL.Query().Get("is_archived")
 		f.lastFeatSearch = r.URL.Query().Get("search")
+		f.featListCalls++
 		items := f.features[r.PathValue("project")]
 		// Like the backend, search is a case-insensitive contains match on the
 		// name — deliberately broader than the exact match the CLI wants, so
@@ -1129,6 +1132,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
+		f.fsListCalls++
 		rows := f.featureSegments[r.URL.Query().Get("feature")]
 		f.mu.Unlock()
 		if rows == nil {
@@ -1329,6 +1333,20 @@ func (f *fakeInstance) featuresSearch() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.lastFeatSearch
+}
+
+// featuresCalls returns how many times the /features/ list endpoint was hit.
+func (f *fakeInstance) featuresCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.featListCalls
+}
+
+// featureSegmentsCalls returns how many times feature-segments was hit.
+func (f *fakeInstance) featureSegmentsCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fsListCalls
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -3484,6 +3502,98 @@ func TestFlagUpdateSegment(t *testing.T) {
 		if ov["segment_id"] != float64(7) || ov["enabled"] != true ||
 			ovVal["type"] != "integer" || ovVal["value"] != "25" {
 			t.Errorf("segment override = %+v, want inherited integer 25", ov)
+		}
+	})
+}
+
+// A mutation's post-update detail renders from the state the command itself
+// wrote — the request carried it in full — so the expensive features list is
+// fetched exactly once per invocation.
+func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
+	t.Run("enable renders the new state from one features fetch", func(t *testing.T) {
+		// Given max_items is off with integer value 25
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "enable", "max_items", "--yes")
+
+		// Then — the detail shows the enabled state without a second fetch
+		if err != nil {
+			t.Fatalf("flag enable: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "on") || !strings.Contains(out, "25") {
+			t.Errorf("output = %q, want the updated state (on, value 25)", out)
+		}
+		if got := f.featuresCalls(); got != 1 {
+			t.Errorf("features list calls = %d, want 1", got)
+		}
+	})
+
+	t.Run("segment update reads override metadata once", func(t *testing.T) {
+		// Given an existing override for powerusers (12) at priority 1
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1,
+		})
+
+		// When
+		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--value", "new", "--yes")
+
+		// Then — one features fetch, one feature-segments fetch, and the
+		// detail carries the (unmoved) priority and the new value
+		if err != nil {
+			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"Priority", "powerusers (12)", "new"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if got := f.featuresCalls(); got != 1 {
+			t.Errorf("features list calls = %d, want 1", got)
+		}
+		if got := f.featureSegmentsCalls(); got != 1 {
+			t.Errorf("feature-segments calls = %d, want 1", got)
+		}
+	})
+
+	t.Run("a priority move reprints the target priority", func(t *testing.T) {
+		// Given two overrides, ours at priority 1
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		f.features["101"][0]["num_segment_overrides"] = 2
+		withFeatureSegments(f, 2,
+			map[string]any{"id": 1199, "segment": 9, "segment_name": "beta", "priority": 0, "environment": 1},
+			map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1},
+		)
+
+		// When — move it to the top
+		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "0", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --priority: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Priority") || !strings.Contains(out, "0") {
+			t.Errorf("output = %q, want priority 0 in the detail", out)
+		}
+	})
+
+	t.Run("a new override reports the appended priority", func(t *testing.T) {
+		// Given one existing override (for another segment) and none for 7
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, false) // num_segment_overrides: 1
+
+		// When — create a fresh override with no explicit priority
+		out, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
+
+		// Then — it joins at the end of the dense 0-based order: priority 1
+		if err != nil {
+			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Priority") || !strings.Contains(out, "1") {
+			t.Errorf("output = %q, want appended priority 1", out)
 		}
 	})
 }
