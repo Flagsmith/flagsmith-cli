@@ -34,7 +34,7 @@ Value        orange
 $ flagsmith flag get checkout-v2 --segment 1147496
 Feature    checkout-v2
 Type       standard
-Segment    1147496
+Segment    us-adults (1147496)
 Priority   0
 State      on
 Value      orange
@@ -62,7 +62,7 @@ Variants
 $ flagsmith flag get banner-copy --segment 101
 Feature    banner-copy
 Type       multivariate
-Segment    101
+Segment    early-adopters (101)
 Priority   0
 State      on
 Value      hello
@@ -198,10 +198,10 @@ They take the same `--segment`/`--identifier` targeting, so an override toggles 
 
 ```
 $ flagsmith flag disable checkout-v2 --segment 1147496 --yes
-✓ Disabled checkout-v2 for segment 1147496 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+✓ Disabled checkout-v2 for segment us-adults (1147496) in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
 Feature    checkout-v2
 Type       standard
-Segment    1147496
+Segment    us-adults (1147496)
 Priority   0
 State      off
 Value      orange
@@ -269,10 +269,10 @@ Per segment, the same flag re-weights the override:
 
 ```
 $ flagsmith flag update banner-copy --segment 101 --weight hero=100,sub=0 --yes
-✓ Set banner-copy weights to hero=100, sub=0 for segment 101 in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+✓ Set banner-copy weights to hero=100, sub=0 for segment early-adopters (101) in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
 Feature    banner-copy
 Type       multivariate
-Segment    101
+Segment    early-adopters (101)
 Priority   0
 State      on
 Value      hello
@@ -287,7 +287,7 @@ Update a segment override priority:
 
 ```
 $ flagsmith flag update checkout-v2 --segment beta-optin --priority 0 --yes
-✓ Set checkout-v2 priority to 0 for segment beta-optin in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
+✓ Set checkout-v2 priority to 0 for segment beta-optin (1147497) in environment Production (9P8YT5rKerRW9E7Bpzv2X9)
 Feature    checkout-v2
 Type       standard
 Segment    beta-optin (1147497)
@@ -399,5 +399,5 @@ A missing, unknown, or duplicated segment exits 2:
 
 ```
 $ flagsmith flag reorder checkout-v2 beta-optin us-adults --yes
-Error: a reorder must list every overridden segment for checkout-v2 (missing: eu-adults, apac-adults)
+Error: a reorder must list every overridden segment for checkout-v2 (missing: eu-adults (1147498), apac-adults (1147499))
 ```

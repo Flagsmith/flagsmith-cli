@@ -114,11 +114,17 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	// The state being changed: the environment default, or a segment override.
+	// The scope carries its own preposition: "in environment …" for the
+	// default, "for segment name (id) in environment …" for an override.
 	target := feature.EnvironmentState
-	scope := "environment " + environmentLabel(env)
+	scope := "in environment " + environmentLabel(env)
 	if segmentID != 0 {
 		target = feature.SegmentState // nil when the override does not exist yet
-		scope = fmt.Sprintf("segment %d in environment %s", segmentID, environmentLabel(env))
+		segment, _, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
+		if err != nil {
+			return err
+		}
+		scope = fmt.Sprintf("for segment %s in environment %s", segment.display(), environmentLabel(env))
 	}
 
 	// Priorities are a dense 0-based order; a new override joins it, growing
@@ -165,7 +171,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	errOut := cmd.ErrOrStderr()
-	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Update %s in %s?", name, scope)); err != nil {
+	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Update %s %s?", name, scope)); err != nil {
 		return err
 	} else if !ok {
 		fmt.Fprintln(errOut, "Aborted; nothing changed.")
@@ -177,16 +183,16 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	if m.setValue {
-		output.Success(errOut, "Set %s to %s in %s", name, displayValue(value), scope)
+		output.Success(errOut, "Set %s to %s %s", name, displayValue(value), scope)
 	}
 	if m.enable {
-		output.Success(errOut, "Enabled %s in %s", name, scope)
+		output.Success(errOut, "Enabled %s %s", name, scope)
 	}
 	if m.disable {
-		output.Success(errOut, "Disabled %s in %s", name, scope)
+		output.Success(errOut, "Disabled %s %s", name, scope)
 	}
 	if m.setPriority {
-		output.Success(errOut, "Set %s priority to %d for %s", name, m.priority, scope)
+		output.Success(errOut, "Set %s priority to %d %s", name, m.priority, scope)
 	}
 
 	// Result model: an update also prints the resulting resource to stdout.

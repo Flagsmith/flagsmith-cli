@@ -3440,7 +3440,7 @@ func TestFlagUpdateSegment(t *testing.T) {
 			ovVal["type"] != "string" || ovVal["value"] != "new" {
 			t.Errorf("segment override = %+v, want enabled preserved and value \"new\"", ov)
 		}
-		if !strings.Contains(out, `Set max_items to "new" in segment 12`) {
+		if !strings.Contains(out, `Set max_items to "new" for segment 12 in environment`) {
 			t.Errorf("output = %q", out)
 		}
 	})
@@ -3775,8 +3775,8 @@ func TestFlagUpdatePriority(t *testing.T) {
 		if ov["enabled"] != true || ovVal["value"] != "special" {
 			t.Errorf("override = %+v, want current state echoed", ov)
 		}
-		if !strings.Contains(out, "Set max_items priority to 0 for segment 12") {
-			t.Errorf("output = %q, want a priority confirmation", out)
+		if !strings.Contains(out, "Set max_items priority to 0 for segment powerusers (12) in environment") {
+			t.Errorf("output = %q, want a priority confirmation naming the segment", out)
 		}
 		if !strings.Contains(out, "Priority") {
 			t.Errorf("output = %q, want the detail reprint with Priority", out)
