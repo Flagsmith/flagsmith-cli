@@ -319,12 +319,15 @@ func currentScalar(fs *api.FeatureState) any {
 	return fs.Value
 }
 
-// featureValueFromScalar converts a value read from the features list (a bare
-// JSON scalar) into the {type, value} wire form update-flag-v2 expects.
+// featureValueFromScalar converts a bare scalar — read from the features list
+// (JSON numbers arrive as float64) or from api.TypedValue.Scalar() (ints stay
+// int) — into the {type, value} wire form update-flag-v2 expects.
 func featureValueFromScalar(v any) api.FeatureValue {
 	switch t := v.(type) {
 	case bool:
 		return api.FeatureValue{Type: "boolean", Value: strconv.FormatBool(t)}
+	case int:
+		return api.FeatureValue{Type: "integer", Value: strconv.Itoa(t)}
 	case float64:
 		if t == float64(int64(t)) {
 			return api.FeatureValue{Type: "integer", Value: strconv.FormatInt(int64(t), 10)}

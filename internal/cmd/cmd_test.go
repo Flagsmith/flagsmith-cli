@@ -122,6 +122,7 @@ type fakeInstance struct {
 	lastFeatSeg    string                      // last ?segment= seen by /features/
 	lastFeatArch   string                      // last ?is_archived= seen by /features/
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
+	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
 	lastDelete     map[string]any              // last delete-segment-override request body
 	workflowGated  bool                        // when true, update endpoints return 403
@@ -555,6 +556,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
+		f.updateCalls++
 		f.lastUpdate = body
 		f.applyFlagUpdate(body)
 		f.mu.Unlock()
@@ -1241,6 +1243,10 @@ func (f *fakeInstance) applyFlagUpdate(body map[string]any) {
 			}
 			state["enabled"] = enabled
 			state["feature_state_value"] = scalarFromWire(val)
+			featureKey := ""
+			if id, ok := item["id"].(int); ok {
+				featureKey = strconv.Itoa(id)
+			}
 			for _, o := range overrides {
 				ov, _ := o.(map[string]any)
 				segEnabled, _ := ov["enabled"].(bool)
@@ -1248,7 +1254,21 @@ func (f *fakeInstance) applyFlagUpdate(body map[string]any) {
 				item["segment_feature_state"] = map[string]any{
 					"enabled": segEnabled, "feature_state_value": scalarFromWire(segVal),
 				}
+				// A priority write moves the feature-segment row, so a re-fetch
+				// sees the new order.
+				if prio, ok := ov["priority"].(float64); ok {
+					for _, row := range f.featureSegments[featureKey] {
+						if seg, _ := row["segment"].(int); float64(seg) == ov["segment_id"] {
+							row["priority"] = int(prio)
+						}
+					}
+				}
 			}
+			sort.SliceStable(f.featureSegments[featureKey], func(a, b int) bool {
+				pa, _ := f.featureSegments[featureKey][a]["priority"].(int)
+				pb, _ := f.featureSegments[featureKey][b]["priority"].(int)
+				return pa < pb
+			})
 		}
 	}
 }
@@ -3802,6 +3822,116 @@ func TestFlagUpdatePriority(t *testing.T) {
 		}
 		if f.lastUpdate != nil {
 			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+}
+
+func TestFlagReorder(t *testing.T) {
+	// Fixture: max_items has overrides beta-optin (57, priority 0, "blue",
+	// on) and us-adults (42, priority 1, 25, off); env default off/25.
+
+	t.Run("re-permutes every override in one request", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		out, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
+		if err != nil {
+			t.Fatalf("flag reorder: %v\noutput: %s", err, out)
+		}
+		f.mu.Lock()
+		calls := f.updateCalls
+		f.mu.Unlock()
+		if calls != 1 {
+			t.Errorf("update calls = %d, want the whole reorder in one request", calls)
+		}
+		ovs := f.lastUpdate["segment_overrides"].([]any)
+		if len(ovs) != 2 {
+			t.Fatalf("segment_overrides = %+v, want both overrides", ovs)
+		}
+		first := ovs[0].(map[string]any)
+		second := ovs[1].(map[string]any)
+		if first["segment_id"] != float64(42) || first["priority"] != float64(0) {
+			t.Errorf("first override = %+v, want us-adults at priority 0", first)
+		}
+		if second["segment_id"] != float64(57) || second["priority"] != float64(1) {
+			t.Errorf("second override = %+v, want beta-optin at priority 1", second)
+		}
+		// Each override echoes its current state so nothing else changes.
+		firstVal := first["value"].(map[string]any)
+		secondVal := second["value"].(map[string]any)
+		if first["enabled"] != false || firstVal["type"] != "integer" || firstVal["value"] != "25" {
+			t.Errorf("first override = %+v, want current state echoed", first)
+		}
+		if second["enabled"] != true || secondVal["value"] != "blue" {
+			t.Errorf("second override = %+v, want current state echoed", second)
+		}
+		// The environment default rides along unchanged.
+		def := f.lastUpdate["environment_default"].(map[string]any)
+		if def["enabled"] != false {
+			t.Errorf("environment_default = %+v, want carried unchanged", def)
+		}
+		if !strings.Contains(out, "Reordered 2 segment overrides for max_items") {
+			t.Errorf("output = %q, want a reorder confirmation", out)
+		}
+		// The resulting order is printed, us-adults now first.
+		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
+			t.Errorf("output = %q, want the resulting table with us-adults first", out)
+		}
+	})
+
+	t.Run("a partial list exits 2 naming the missing segments", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "us-adults") {
+			t.Errorf("err = %v, want a usage error naming us-adults", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+
+	t.Run("a segment without an override exits 2", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "us-adults", "beta-cohort", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "beta-cohort") {
+			t.Errorf("err = %v, want a usage error naming beta-cohort", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+
+	t.Run("a duplicate segment exits 2", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "beta-optin", "--yes")
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "beta-optin") {
+			t.Errorf("err = %v, want a usage error naming the duplicate", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+
+	t.Run("without --yes and no TTY exits 2", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		_, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin")
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Errorf("err = %v, want a usage error (confirmation needed)", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write without confirmation", f.lastUpdate)
 		}
 	})
 }

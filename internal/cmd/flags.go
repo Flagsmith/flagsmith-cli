@@ -549,6 +549,6 @@ func init() {
 	flagListCmd.Flags().BoolVar(&flagListIdentityFlag, "identity", false, "with --feature: list its identity overrides instead")
 	flagGetCmd.Flags().StringVar(&flagGetSegmentFlag, "segment", "", "show the override for this segment (id or name)")
 	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
-	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagEnableCmd, flagDisableCmd, flagDeleteCmd, flagCreateCmd)
+	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagEnableCmd, flagDisableCmd, flagReorderCmd, flagDeleteCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)
 }
