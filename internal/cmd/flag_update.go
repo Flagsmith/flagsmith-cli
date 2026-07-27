@@ -91,15 +91,9 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if err != nil {
 		return err
 	}
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(name))
+	feature, err := requireFeature(cmd, cred, projectID, env, segmentID, name)
 	if err != nil {
 		return err
-	}
-	feature := findFeatureByRef(features, name)
-	if feature == nil {
-		return withHint(
-			fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
-			hintFlagList)
 	}
 	name = feature.Name // canonical from here on: the wire ref and messages
 

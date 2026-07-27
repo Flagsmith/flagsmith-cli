@@ -192,15 +192,9 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 
 // runIdentityDelete removes an identity override, branching core vs edge.
 func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Environment, projectID int, name, identifier string) error {
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, 0, searchRef(name))
+	feature, err := requireFeature(cmd, cred, projectID, env, 0, name)
 	if err != nil {
 		return err
-	}
-	feature := findFeatureByRef(features, name)
-	if feature == nil {
-		return withHint(
-			fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
-			hintFlagList)
 	}
 	name = feature.Name // canonical from here on
 	edge, err := useEdgeIdentities(cmd, cred, projectID)

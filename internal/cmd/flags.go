@@ -218,21 +218,19 @@ var flagListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(flagListFeatureFlag))
-		if err != nil {
-			return err
-		}
 		if flagListFeatureFlag != "" {
-			feature := findFeatureByRef(features, flagListFeatureFlag)
-			if feature == nil {
-				return withHint(
-					fmt.Errorf("feature %q not found in %s", flagListFeatureFlag, environmentLabel(env)),
-					hintFlagList)
+			feature, err := requireFeature(cmd, cred, projectID, env, segmentID, flagListFeatureFlag)
+			if err != nil {
+				return err
 			}
 			if flagListIdentityFlag {
 				return listFeatureIdentityOverrides(cmd, cred, env, projectID, feature)
 			}
 			return listFeatureSegmentOverrides(cmd, cred, env, feature)
+		}
+		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, "")
+		if err != nil {
+			return err
 		}
 		if segmentID != 0 {
 			return listSegmentOverrides(cmd, cred, env, features, segmentID)
@@ -366,17 +364,9 @@ var flagGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// The server's search is a contains match, so narrow to the exact
-		// feature client-side.
-		features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(name))
+		feature, err := requireFeature(cmd, cred, projectID, env, segmentID, name)
 		if err != nil {
 			return err
-		}
-		feature := findFeatureByRef(features, name)
-		if feature == nil {
-			return withHint(
-				fmt.Errorf("feature %q not found in %s", name, environmentLabel(env)),
-				hintFlagList)
 		}
 		if flagGetIdentifierFlag != "" {
 			edge, err := useEdgeIdentities(cmd, cred, projectID)
@@ -425,6 +415,23 @@ func searchRef(ref string) string {
 		return ""
 	}
 	return ref
+}
+
+// requireFeature fetches the environment's features narrowed by the ref (a
+// server-side contains match on names; id refs fetch unfiltered) and requires
+// exactly the referenced one.
+func requireFeature(cmd *cobra.Command, cred *activeCredential, projectID int, env api.Environment, segmentID int, ref string) (*api.Feature, error) {
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(ref))
+	if err != nil {
+		return nil, err
+	}
+	f := findFeatureByRef(features, ref)
+	if f == nil {
+		return nil, withHint(
+			fmt.Errorf("feature %q not found in %s", ref, environmentLabel(env)),
+			hintFlagList)
+	}
+	return f, nil
 }
 
 // findFeatureByRef matches a feature by reference: all-digit → id, anything
