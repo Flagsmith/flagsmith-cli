@@ -1462,6 +1462,55 @@ func (f *fakeInstance) refreshCount() int {
 	return f.tokenPosts
 }
 
+// A server-side key is a secret — and FLAGSMITH_ENVIRONMENT_KEY is exactly
+// where hintServerSideKey tells users to put it. It can never resolve an
+// environment over the Admin API (the list carries client-side keys only),
+// and its value must never be echoed into an error: that lands it in CI logs.
+func TestServerSideKeyNeverEchoed(t *testing.T) {
+	t.Run("the FLAGSMITH_ENVIRONMENT_KEY fallback names the variable, not the value", func(t *testing.T) {
+		// Given no environment context except a ser. key in the SDK variable
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "ser.SuperSecret123")
+
+		// When
+		_, err := run("", "flag", "list")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want an error")
+		}
+		if strings.Contains(err.Error(), "SuperSecret123") || strings.Contains(hintFor(err), "SuperSecret123") {
+			t.Errorf("err = %v — the server-side key leaked", err)
+		}
+		if !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
+			t.Errorf("err = %v, want it to name the variable", err)
+		}
+	})
+
+	t.Run("a positional ser. ref is refused without echoing it", func(t *testing.T) {
+		// Given
+		flagUpdateEnv(t)
+
+		// When
+		_, err := run("", "environment", "get", "ser.SuperSecret123")
+
+		// Then — refused up front, value withheld, recovery in the hint
+		if err == nil {
+			t.Fatal("err = nil, want an error")
+		}
+		if strings.Contains(err.Error(), "SuperSecret123") {
+			t.Errorf("err = %v — the server-side key leaked", err)
+		}
+		if !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
+			t.Errorf("hint = %q, want the server-side-key hint", hintFor(err))
+		}
+	})
+}
+
 func TestFlagListResolvesEnvironmentName(t *testing.T) {
 	t.Run("name resolved to its id for the features query", func(t *testing.T) {
 		// Given a config naming the environment, with admin credentials

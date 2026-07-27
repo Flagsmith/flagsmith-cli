@@ -84,6 +84,15 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
 		ref = os.Getenv("FLAGSMITH_ENVIRONMENT_KEY")
+		// That variable is exactly where server-side keys belong (they are
+		// secrets), but one can never resolve an environment over the Admin
+		// API — name the variable, never its value, which must stay out of
+		// stderr and CI logs.
+		if strings.HasPrefix(ref, "ser.") {
+			return api.Environment{}, withHint(
+				errors.New("FLAGSMITH_ENVIRONMENT_KEY holds a server-side key, which cannot identify an environment for Admin commands"),
+				"Pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`.")
+		}
 	}
 	if ref == "" {
 		return api.Environment{}, withHint(errors.New("no environment"),
@@ -101,6 +110,14 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 // way. Environments are canonically addressed by key, so an exact key match
 // wins before name matching.
 func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID int, ref string) (*api.Environment, error) {
+	// A server-side key can never match — the environments list carries
+	// client-side keys only. Refuse before fetching, keeping the secret out
+	// of the not-found message every other miss gets.
+	if strings.HasPrefix(ref, "ser.") {
+		return nil, withHint(
+			errors.New("the environment reference takes a client-side key, not a server-side one"),
+			hintServerSideKey)
+	}
 	envs, err := cred.client().Environments(cmd.Context(), projectID)
 	if err != nil {
 		return nil, err
