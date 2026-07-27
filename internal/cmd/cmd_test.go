@@ -27,6 +27,7 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/config"
+	"github.com/Flagsmith/flagsmith-cli/internal/version"
 )
 
 const (
@@ -2130,6 +2131,35 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 			t.Errorf("output = %q, want the project created in the lone organisation", out)
 		}
 	})
+}
+
+// --version reports the resolved build version — the first question of
+// every bug report.
+func TestVersionFlag(t *testing.T) {
+	out, err := run("", "--version")
+	if err != nil {
+		t.Fatalf("--version: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, version.Version) {
+		t.Errorf("output = %q, want it to carry %q", out, version.Version)
+	}
+}
+
+// A release build pins the written $schema to its own tag; every other build
+// (dev, pseudo-version) references main, which always exists — a branch URL
+// 404s once the branch is deleted.
+func TestSchemaURL(t *testing.T) {
+	orig := version.Version
+	t.Cleanup(func() { version.Version = orig })
+
+	version.Version = "v1.2.3"
+	if got := schemaURL(); !strings.Contains(got, "/v1.2.3/schema/flagsmith.json") {
+		t.Errorf("schemaURL() = %q, want pinned to the release tag", got)
+	}
+	version.Version = "dev (2f71d6f)"
+	if got := schemaURL(); !strings.Contains(got, "/main/schema/flagsmith.json") {
+		t.Errorf("schemaURL() = %q, want main for a non-release build", got)
+	}
 }
 
 func TestInitNoCredentials(t *testing.T) {

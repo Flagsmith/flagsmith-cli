@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/feat/cli-v2/schema/flagsmith.json",
+  "$id": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/schema/flagsmith.json",
   "title": "Flagsmith CLI config",
   "description": "Configuration for the Flagsmith CLI.",
   "type": "object",

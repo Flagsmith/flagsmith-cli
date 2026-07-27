@@ -15,6 +15,7 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/internal/version"
 )
 
 // annotationLongRunning marks a command that manages its own long wait (e.g. a
@@ -233,6 +234,8 @@ func usageArgs(cmd *cobra.Command) {
 }
 
 func init() {
+	rootCmd.Version = version.Version // --version comes with it
+
 	flags := rootCmd.PersistentFlags()
 	flags.StringVar(&apiURLFlag, "api-url", defaultAPIURL,
 		"Flagsmith API base URL (env: FLAGSMITH_API_URL)")

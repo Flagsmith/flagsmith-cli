@@ -19,11 +19,17 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/version"
 )
 
-// schemaURL pins the $schema written by init to the schema of the writing CLI,
-// keyed by the shared version tag.
+// schemaURL pins the $schema written by init to the schema of the writing
+// CLI: a release references its own tag; any other build (dev, pseudo-
+// version) references main, which always exists — a branch or revision URL
+// would 404 once its ref is gone.
 func schemaURL() string {
+	ref := "main"
+	if version.IsRelease(version.Version) {
+		ref = version.Version
+	}
 	return fmt.Sprintf(
-		"https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/%s/schema/flagsmith.json", version.Version)
+		"https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/%s/schema/flagsmith.json", ref)
 }
 
 var (
