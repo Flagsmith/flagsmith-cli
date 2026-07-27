@@ -6287,6 +6287,79 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 	})
 }
 
+// The bearer variable is withheld from a redirected host like the master key.
+func TestUnscopedAccessTokenNotSentToRedirectedHost(t *testing.T) {
+	// Given an unscoped bearer (as for SaaS) and a config naming another host
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
+	t.Setenv(envAccessToken, bearerToken)
+
+	// When
+	_, err := run("", "auth", "status")
+
+	// Then
+	if !errors.Is(err, auth.ErrNotLoggedIn) {
+		t.Errorf("err = %v, want ErrNotLoggedIn (bearer withheld)", err)
+	}
+	if got := f.organisationLists(); got != 0 {
+		t.Errorf("organisation calls = %d, want 0 — no request should carry the bearer", got)
+	}
+}
+
+// The SDK credential is scoped to the SDK surface: sdkApiUrl's host, which is
+// where that key is sent — not the Admin host, which can differ.
+func TestSDKKeyScopesToSDKSurface(t *testing.T) {
+	// admin and SDK surfaces on deliberately different hosts
+	setup := func(t *testing.T) (admin, sdk *fakeInstance) {
+		t.Helper()
+		isolateStorage(t)
+		admin, sdk = newFakeInstance(t), newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+
+			admin.srv.URL+`", "sdkApiUrl": "`+sdk.srv.URL+`"}`)
+		return admin, sdk
+	}
+	sentKey := func(t *testing.T) string {
+		t.Helper()
+		out, err := run("", "api", "--sdk", "api/v1/echo/")
+		if err != nil {
+			t.Fatalf("api --sdk: %v\noutput: %s", err, out)
+		}
+		var e map[string]any
+		if err := json.Unmarshal([]byte(out), &e); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		key, _ := e["envkey"].(string)
+		return key
+	}
+
+	t.Run("a key scoped to the SDK host is used", func(t *testing.T) {
+		_, sdk := setup(t)
+		setEnvCred(t, envEnvironmentKey, sdk.srv.URL, "ser.sdkSurfaceSecret")
+		if got := sentKey(t); got != "ser.sdkSurfaceSecret" {
+			t.Errorf("X-Environment-Key = %q, want the SDK-scoped key", got)
+		}
+	})
+
+	t.Run("a key scoped to the admin host is not used here", func(t *testing.T) {
+		admin, _ := setup(t)
+		setEnvCred(t, envEnvironmentKey, admin.srv.URL, "ser.wrongSurfaceSecret")
+		if got := sentKey(t); got == "ser.wrongSurfaceSecret" {
+			t.Errorf("X-Environment-Key = %q — a key scoped to the Admin host must not reach the SDK surface", got)
+		}
+	})
+
+	t.Run("an unscoped key is withheld from a non-default SDK host", func(t *testing.T) {
+		setup(t)
+		t.Setenv(envEnvironmentKey, "ser.unscopedSecret")
+		if got := sentKey(t); got == "ser.unscopedSecret" {
+			t.Errorf("X-Environment-Key = %q — an unscoped secret must not follow a redirected SDK host", got)
+		}
+	})
+}
+
 func TestEnvAccessToken(t *testing.T) {
 	// Given
 	isolateStorage(t)
