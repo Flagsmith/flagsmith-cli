@@ -124,6 +124,9 @@ type fakeInstance struct {
 	lastFeatSearch string                      // last ?search= seen by /features/
 	featListCalls  int                         // count of GET /features/ list calls
 	fsListCalls    int                         // count of GET /features/feature-segments/ calls
+	fsDelay        time.Duration               // artificial latency for feature-segments
+	fsInFlight     int                         // feature-segments requests currently being served
+	fsPeak         int                         // high-water mark of fsInFlight
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -1133,7 +1136,18 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		f.mu.Lock()
 		f.fsListCalls++
+		f.fsInFlight++
+		if f.fsInFlight > f.fsPeak {
+			f.fsPeak = f.fsInFlight
+		}
+		delay := f.fsDelay
 		rows := f.featureSegments[r.URL.Query().Get("feature")]
+		f.mu.Unlock()
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		f.mu.Lock()
+		f.fsInFlight--
 		f.mu.Unlock()
 		if rows == nil {
 			rows = []map[string]any{}
@@ -1347,6 +1361,14 @@ func (f *fakeInstance) featureSegmentsCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fsListCalls
+}
+
+// featureSegmentsPeak returns the most feature-segments requests that were
+// ever in flight at once.
+func (f *fakeInstance) featureSegmentsPeak() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fsPeak
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -2940,6 +2962,47 @@ func TestFlagsList(t *testing.T) {
 			t.Errorf("output = %q, want the value flattened to one line", out)
 		}
 	})
+}
+
+// The per-feature feature-segments reads behind flag list --segment fan out
+// concurrently: the endpoint requires a feature filter, so one read per
+// overridden feature is unavoidable, but the wall clock should pay for one.
+func TestFlagListSegmentFansOut(t *testing.T) {
+	// Given three features overriding segment 12, with a slow metadata endpoint
+	f := flagUpdateEnv(t)
+	override := map[string]any{"enabled": true, "feature_state_value": "x"}
+	f.features["101"] = []map[string]any{
+		{"id": 1, "name": "alpha", "type": "STANDARD", "segment_feature_state": override,
+			"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": nil}},
+		{"id": 2, "name": "bravo", "type": "STANDARD", "segment_feature_state": override,
+			"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": nil}},
+		{"id": 3, "name": "charlie", "type": "STANDARD", "segment_feature_state": override,
+			"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": nil}},
+	}
+	for id := 1; id <= 3; id++ {
+		withFeatureSegments(f, id, map[string]any{
+			"id": 1200 + id, "segment": 12, "segment_name": "powerusers", "priority": id - 1, "environment": 1,
+		})
+	}
+	f.fsDelay = 30 * time.Millisecond
+
+	// When
+	out, err := run("", "flag", "list", "--segment", "12")
+
+	// Then — all three rows render in list order, and the reads overlapped
+	if err != nil {
+		t.Fatalf("flag list --segment: %v\noutput: %s", err, out)
+	}
+	alpha, bravo, charlie := strings.Index(out, "alpha"), strings.Index(out, "bravo"), strings.Index(out, "charlie")
+	if alpha == -1 || bravo == -1 || charlie == -1 || alpha > bravo || bravo > charlie {
+		t.Errorf("output = %q, want alpha, bravo, charlie in order", out)
+	}
+	if got := f.featureSegmentsCalls(); got != 3 {
+		t.Errorf("feature-segments calls = %d, want 3", got)
+	}
+	if got := f.featureSegmentsPeak(); got < 2 {
+		t.Errorf("feature-segments peak concurrency = %d, want the reads fanned out (>= 2)", got)
+	}
 }
 
 func TestFlagListSegment(t *testing.T) {

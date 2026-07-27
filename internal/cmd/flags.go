@@ -7,11 +7,15 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
+
+// metaFanOut bounds how many per-feature metadata reads run concurrently.
+const metaFanOut = 8
 
 var flagCmd = &cobra.Command{
 	Use:   "flag",
@@ -263,17 +267,51 @@ var flagListCmd = &cobra.Command{
 
 // listSegmentOverrides renders only the flags overridden for a segment,
 // showing the override's state rather than the environment default.
+//
+// The feature-segments endpoint requires a feature filter, so the override
+// metadata costs one read per overridden feature; the reads fan out
+// concurrently and the names they carry merge into the cache once.
 func listSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environment, features []api.Feature, segmentID int) error {
-	views := []segmentFlagView{}
+	overridden := make([]*api.Feature, 0, len(features))
 	for i := range features {
-		if features[i].SegmentState == nil {
-			continue
+		if features[i].SegmentState != nil {
+			overridden = append(overridden, &features[i])
 		}
-		v, err := buildSegmentFlagView(cmd, cred, env, &features[i], segmentID)
-		if err != nil {
-			return err
+	}
+	rows := make([][]api.FeatureSegment, len(overridden))
+	g, ctx := errgroup.WithContext(cmd.Context())
+	g.SetLimit(metaFanOut)
+	for i, feature := range overridden {
+		g.Go(func() error {
+			fss, err := cred.client().FeatureSegments(ctx, env.ID, feature.ID)
+			if err != nil {
+				return err
+			}
+			rows[i] = fss
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	names := map[string]string{}
+	views := make([]segmentFlagView, len(overridden))
+	for i, feature := range overridden {
+		// A missing row (e.g. an override created a moment ago) degrades to
+		// the bare id and priority 0 rather than failing.
+		segment := segmentRef{ID: segmentID}
+		priority := 0
+		for _, fs := range rows[i] {
+			names[strconv.Itoa(fs.Segment)] = fs.SegmentName
+			if fs.Segment == segmentID {
+				segment.Name = fs.SegmentName
+				priority = fs.Priority
+			}
 		}
-		views = append(views, v)
+		views[i] = newSegmentFlagView(feature, segment, priority)
+	}
+	if len(names) > 0 {
+		_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic (04 §3)
 	}
 	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
 		if len(views) == 0 {
