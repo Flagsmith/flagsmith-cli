@@ -3,11 +3,29 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
+
+// abbreviateHome shortens a path under the user's home directory to a ~ prefix,
+// for display only. Paths outside home are returned unchanged.
+func abbreviateHome(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	if p == home {
+		return "~"
+	}
+	if strings.HasPrefix(p, home+string(os.PathSeparator)) {
+		return "~" + p[len(home):]
+	}
+	return p
+}
 
 func formatValue(v resolved) string {
 	if v.Value == nil {
@@ -43,7 +61,7 @@ var configCmd = &cobra.Command{
 		return output.Render(cmd.OutOrStdout(), data, outputOpts(), func(w io.Writer) error {
 			configPath := "-"
 			if pc.ConfigPath.Value != nil {
-				configPath = fmt.Sprint(pc.ConfigPath.Value)
+				configPath = abbreviateHome(fmt.Sprint(pc.ConfigPath.Value))
 			}
 			return output.Detail(w, []output.Field{
 				{Label: "Config file", Value: configPath, Source: pc.ConfigPath.Source},
