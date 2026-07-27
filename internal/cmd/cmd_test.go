@@ -129,6 +129,8 @@ type fakeInstance struct {
 	fsPeak         int                         // high-water mark of fsInFlight
 	segListCalls   int                         // count of GET /segments/ list calls
 	stListCalls    int                         // count of GET /features/featurestates/ calls
+	idLookupCalls  int                         // count of GET /identities/ (identifier lookups)
+	edgeLookups    int                         // count of GET /edge-identities/ (uuid lookups)
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -666,6 +668,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		q := strings.Trim(r.URL.Query().Get("q"), `"`)
 		f.mu.Lock()
+		f.idLookupCalls++
 		var results []map[string]any
 		if id, ok := f.coreIdentities[q]; ok {
 			results = append(results, map[string]any{"id": id, "identifier": q})
@@ -771,6 +774,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		q := strings.Trim(r.URL.Query().Get("q"), `"`)
 		f.mu.Lock()
+		f.edgeLookups++
 		var results []map[string]any
 		if _, ok := f.edgeOverrides[q]; ok {
 			results = append(results, map[string]any{"identity_uuid": "uuid-" + q, "identifier": q})
@@ -1387,6 +1391,22 @@ func (f *fakeInstance) featureStatesCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.stListCalls
+}
+
+// identityLookups returns how many identifier→id lookups the core
+// identities endpoint served.
+func (f *fakeInstance) identityLookups() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.idLookupCalls
+}
+
+// edgeIdentityLookups returns how many identifier→uuid lookups the edge
+// identities endpoint served.
+func (f *fakeInstance) edgeIdentityLookups() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.edgeLookups
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -4454,6 +4474,74 @@ func TestFlagIdentity(t *testing.T) {
 		}
 		if !strings.Contains(out, "Deleted max_items override for identifier edge-user") {
 			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("core: update resolves the identifier once", func(t *testing.T) {
+		// Given an existing override (off, value "x")
+		f := flagUpdateEnv(t)
+		f.coreOverrides[501] = map[int]*fakeFS{2: {id: 9001, enabled: false, value: "x"}}
+
+		// When
+		out, err := run("", "flag", "update", "max_items", "--identifier", "user-1", "--enable", "--yes")
+
+		// Then — one identifier→id lookup serves the read, the write, and the
+		// reprint (which renders the state the command itself wrote)
+		if err != nil {
+			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
+		}
+		if got := f.identityLookups(); got != 1 {
+			t.Errorf("identifier lookups = %d, want 1", got)
+		}
+		if !strings.Contains(out, "on") || !strings.Contains(out, "x") {
+			t.Errorf("output = %q, want the updated detail (on, value x)", out)
+		}
+	})
+
+	t.Run("core: a missing identity is created after one lookup", func(t *testing.T) {
+		// Given no identity "new-user"
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "update", "max_items", "--identifier", "new-user", "--enable", "--yes")
+
+		// Then — one (miss) lookup, a create, and the override write
+		if err != nil {
+			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
+		}
+		if got := f.identityLookups(); got != 1 {
+			t.Errorf("identifier lookups = %d, want 1", got)
+		}
+		f.mu.Lock()
+		_, created := f.coreIdentities["new-user"]
+		w := f.lastIdentityWrite
+		f.mu.Unlock()
+		if !created {
+			t.Errorf("identity new-user was not created")
+		}
+		if w["feature"] != float64(2) || w["enabled"] != true {
+			t.Errorf("core write = %+v, want feature 2 enabled", w)
+		}
+	})
+
+	t.Run("edge: update resolves the uuid once", func(t *testing.T) {
+		// Given an existing edge override
+		f := flagUpdateEnv(t)
+		f.useEdge = true
+		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: false, value: "e"}}
+
+		// When
+		out, err := run("", "flag", "update", "max_items", "--identifier", "edge-user", "--enable", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --identifier (edge): %v\noutput: %s", err, out)
+		}
+		if got := f.edgeIdentityLookups(); got != 1 {
+			t.Errorf("uuid lookups = %d, want 1", got)
+		}
+		if !strings.Contains(out, "on") {
+			t.Errorf("output = %q, want the updated detail", out)
 		}
 	})
 

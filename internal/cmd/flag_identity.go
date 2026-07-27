@@ -30,21 +30,40 @@ func useEdgeIdentities(cmd *cobra.Command, cred *activeCredential, projectID int
 	return project.UseEdgeIdentities, nil
 }
 
-// readIdentityOverride returns an identity's override for a feature, or nil
-// when the identity or the override does not exist.
-func readIdentityOverride(cmd *cobra.Command, cred *activeCredential, envKey string, featureID int, identifier string, edge bool) (*api.IdentityFeatureState, error) {
+// identityHandle is an identifier resolved once per invocation: the numeric
+// id for core identities, the uuid for edge ones. found is false when the
+// identity does not exist yet.
+type identityHandle struct {
+	id    int
+	uuid  string
+	found bool
+}
+
+// lookupIdentityOverride resolves an identifier and reads its override for a
+// feature in one pass, so callers never resolve the same identifier twice.
+// A missing identity reports found=false with a nil override.
+func lookupIdentityOverride(cmd *cobra.Command, cred *activeCredential, envKey string, featureID int, identifier string, edge bool) (identityHandle, *api.IdentityFeatureState, error) {
 	if edge {
 		uuid, found, err := cred.client().EdgeIdentityUUID(cmd.Context(), envKey, identifier)
 		if err != nil || !found {
-			return nil, err
+			return identityHandle{}, nil, err
 		}
-		return cred.client().EdgeIdentityOverride(cmd.Context(), envKey, uuid, featureID)
+		override, err := cred.client().EdgeIdentityOverride(cmd.Context(), envKey, uuid, featureID)
+		return identityHandle{uuid: uuid, found: true}, override, err
 	}
 	id, found, err := cred.client().IdentityByIdentifier(cmd.Context(), envKey, identifier)
 	if err != nil || !found {
-		return nil, err
+		return identityHandle{}, nil, err
 	}
-	return cred.client().IdentityOverride(cmd.Context(), envKey, id, featureID)
+	override, err := cred.client().IdentityOverride(cmd.Context(), envKey, id, featureID)
+	return identityHandle{id: id, found: true}, override, err
+}
+
+// readIdentityOverride returns an identity's override for a feature, or nil
+// when the identity or the override does not exist.
+func readIdentityOverride(cmd *cobra.Command, cred *activeCredential, envKey string, featureID int, identifier string, edge bool) (*api.IdentityFeatureState, error) {
+	_, override, err := lookupIdentityOverride(cmd, cred, envKey, featureID, identifier, edge)
+	return override, err
 }
 
 // nativeScalar converts a typed value into the native scalar the identity
@@ -96,7 +115,7 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	if err != nil {
 		return err
 	}
-	current, err := readIdentityOverride(cmd, cred, env.APIKey, feature.ID, identifier, edge)
+	handle, current, err := lookupIdentityOverride(cmd, cred, env.APIKey, feature.ID, identifier, edge)
 	if err != nil {
 		return err
 	}
@@ -140,11 +159,8 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	if edge {
 		err = cred.client().SetEdgeIdentityOverride(cmd.Context(), env.APIKey, identifier, feature.ID, enabled, value)
 	} else {
-		id, found, ferr := cred.client().IdentityByIdentifier(cmd.Context(), env.APIKey, identifier)
-		if ferr != nil {
-			return ferr
-		}
-		if !found {
+		id := handle.id
+		if !handle.found {
 			if id, err = cred.client().CreateIdentity(cmd.Context(), env.APIKey, identifier); err != nil {
 				return err
 			}
@@ -169,11 +185,9 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 		output.Success(errOut, "Disabled %s for %s", feature.Name, scope)
 	}
 
-	updated, err := readIdentityOverride(cmd, cred, env.APIKey, feature.ID, identifier, edge)
-	if err != nil || updated == nil {
-		return err
-	}
-	return renderIdentityDetail(cmd, feature, identifier, updated)
+	// The written override is fully known — this command chose enabled and
+	// value — so the detail renders without re-resolving and re-reading it.
+	return renderIdentityDetail(cmd, feature, identifier, &api.IdentityFeatureState{Enabled: enabled, Value: value})
 }
 
 // runIdentityDelete removes an identity override, branching core vs edge.
@@ -206,21 +220,17 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	if edge {
 		err = cred.client().DeleteEdgeIdentityOverride(cmd.Context(), env.APIKey, identifier, feature.ID)
 	} else {
-		id, found, ferr := cred.client().IdentityByIdentifier(cmd.Context(), env.APIKey, identifier)
-		if ferr != nil {
-			return ferr
+		handle, override, lerr := lookupIdentityOverride(cmd, cred, env.APIKey, feature.ID, identifier, false)
+		if lerr != nil {
+			return lerr
 		}
-		if !found {
+		if !handle.found {
 			return fmt.Errorf("identity %q not found in %s", identifier, environmentLabel(env))
-		}
-		override, oerr := cred.client().IdentityOverride(cmd.Context(), env.APIKey, id, feature.ID)
-		if oerr != nil {
-			return oerr
 		}
 		if override == nil {
 			return fmt.Errorf("%q has no override for identifier %q in %s", name, identifier, environmentLabel(env))
 		}
-		err = cred.client().DeleteIdentityOverride(cmd.Context(), env.APIKey, id, override.ID)
+		err = cred.client().DeleteIdentityOverride(cmd.Context(), env.APIKey, handle.id, override.ID)
 	}
 	if err != nil {
 		return err
