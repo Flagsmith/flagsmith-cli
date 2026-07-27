@@ -134,6 +134,7 @@ type fakeInstance struct {
 	envGetCalls    int                         // count of GET /environments/{key}/ (retrieve)
 	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
 	orgListCalls   int                         // count of GET /organisations/ list calls
+	envListCalls   int                         // count of GET /environments/ list calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -171,10 +172,17 @@ type fakeInstance struct {
 }
 
 // envByAPIKey finds a stored environment by its client-side key, returning its
-// project key too (caller holds the lock).
+// project key too (caller holds the lock). Projects are scanned in sorted
+// order so a key stored under several projects (unrealistic — keys are
+// globally unique upstream — but present in fixtures) resolves deterministically.
 func (f *fakeInstance) envByAPIKey(key string) (string, map[string]any) {
-	for proj, list := range f.envs {
-		for _, e := range list {
+	projs := make([]string, 0, len(f.envs))
+	for proj := range f.envs {
+		projs = append(projs, proj)
+	}
+	sort.Strings(projs)
+	for _, proj := range projs {
+		for _, e := range f.envs[proj] {
 			if e["api_key"] == key {
 				return proj, e
 			}
@@ -367,6 +375,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
+		f.envListCalls++
 		envs, known := f.envs[r.URL.Query().Get("project")]
 		f.mu.Unlock()
 		if !known {
@@ -406,7 +415,18 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		f.mu.Lock()
 		f.envGetCalls++
-		_, env := f.envByAPIKey(r.PathValue("api_key"))
+		proj, env := f.envByAPIKey(r.PathValue("api_key"))
+		if env != nil {
+			// The retrieve payload carries the owning project, like upstream.
+			withProject := map[string]any{}
+			for k, v := range env {
+				withProject[k] = v
+			}
+			if id, err := strconv.Atoi(proj); err == nil {
+				withProject["project"] = id
+			}
+			env = withProject
+		}
 		f.mu.Unlock()
 		if env == nil {
 			w.WriteHeader(http.StatusNotFound)
@@ -1436,6 +1456,13 @@ func (f *fakeInstance) organisationLists() int {
 	return f.orgListCalls
 }
 
+// environmentLists returns how many environment list calls were served.
+func (f *fakeInstance) environmentLists() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.envListCalls
+}
+
 // defaultFeatures is the stock project features list (with per-environment
 // state embedded) returned by the fake /features/ endpoint.
 func defaultFeatures() []map[string]any {
@@ -1460,6 +1487,54 @@ func (f *fakeInstance) refreshCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.tokenPosts
+}
+
+// The common post-init context carries an exact environment key, which the
+// retrieve endpoint serves in one targeted call — flag commands should not
+// pay for the project's full environment list to find it. Name refs keep
+// resolving via the list.
+func TestEnvironmentResolutionByKeyIsTargeted(t *testing.T) {
+	t.Run("a key ref resolves via one retrieve, no list", func(t *testing.T) {
+		// Given the stock config: environment = WqXhZk8sVY3dGgTqZ9pJmN
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "list")
+
+		// Then — the features query still carries the resolved id
+		if err != nil {
+			t.Fatalf("flag list: %v\noutput: %s", err, out)
+		}
+		if got := f.featuresEnv(); got != "1" {
+			t.Errorf("features environment = %q, want 1", got)
+		}
+		if got := f.environmentGets(); got != 1 {
+			t.Errorf("environment retrieves = %d, want 1", got)
+		}
+		if got := f.environmentLists(); got != 0 {
+			t.Errorf("environment list calls = %d, want 0 for a key ref", got)
+		}
+	})
+
+	t.Run("a key from another project is not accepted", func(t *testing.T) {
+		// Given a context naming project 101 but an environment key that
+		// belongs only to project 12345
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		f.envs["12345"] = []map[string]any{
+			{"id": 3, "name": "Development", "api_key": "otherProjectKey000000A"},
+		}
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "otherProjectKey000000A", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When / Then — the probe's cross-project hit falls back to the
+		// project-scoped list, which reports the key as not found there
+		_, err := run("", "flag", "list")
+		if err == nil || !strings.Contains(err.Error(), "not found in project 101") {
+			t.Errorf("err = %v, want not-found in project 101", err)
+		}
+	})
 }
 
 func TestFlagListResolvesEnvironmentName(t *testing.T) {

@@ -287,6 +287,12 @@ func statusOf(err error) int {
 	return 0
 }
 
+// IsNotFound reports whether err is an API response with HTTP 404 — the
+// signal callers use to fall back from a targeted retrieve to a list lookup.
+func IsNotFound(err error) bool {
+	return statusOf(err) == http.StatusNotFound
+}
+
 // apiMessage extracts a human-readable message from a DRF error body, or "".
 func apiMessage(body []byte) string {
 	body = bytes.TrimSpace(body)
