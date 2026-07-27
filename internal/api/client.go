@@ -150,10 +150,32 @@ func (c *Client) UsersMe(ctx context.Context) (*User, error) {
 }
 
 // rawItem holds the raw API JSON for a resource so JSON output can mirror the
-// server's full field set rather than a curated subset. Embedders capture it in
-// UnmarshalJSON and return it from MarshalJSON.
+// server's full field set rather than a curated subset. Embedding can't
+// supply the marshal methods (they need the outer type), so each embedder
+// defines two one-liners over marshalOr / unmarshalRaw with a local alias
+// that sheds its own methods.
 type rawItem struct {
 	raw json.RawMessage
+}
+
+// marshalOr returns the captured raw item, or marshals v (the outer value as
+// its method-less alias) when nothing was captured — e.g. a value built in
+// code rather than decoded from the API.
+func (r rawItem) marshalOr(v any) ([]byte, error) {
+	if len(r.raw) > 0 {
+		return r.raw, nil
+	}
+	return json.Marshal(v)
+}
+
+// unmarshalRaw decodes b into out (the outer value as its method-less alias)
+// and captures a copy of b as the raw item.
+func unmarshalRaw[T any](b []byte, out *T, raw *rawItem) error {
+	if err := json.Unmarshal(b, out); err != nil {
+		return err
+	}
+	raw.raw = append([]byte(nil), b...)
+	return nil
 }
 
 // Organisation carries the id/name the CLI needs plus the raw API item, so
@@ -165,22 +187,13 @@ type Organisation struct {
 }
 
 func (o Organisation) MarshalJSON() ([]byte, error) {
-	if len(o.raw) > 0 {
-		return o.raw, nil
-	}
 	type alias Organisation
-	return json.Marshal(alias(o))
+	return o.marshalOr(alias(o))
 }
 
 func (o *Organisation) UnmarshalJSON(b []byte) error {
 	type alias Organisation
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	*o = Organisation(a)
-	o.raw = append([]byte(nil), b...)
-	return nil
+	return unmarshalRaw(b, (*alias)(o), &o.rawItem)
 }
 
 func (c *Client) Organisations(ctx context.Context) ([]Organisation, error) {
@@ -427,21 +440,12 @@ type Project struct {
 
 func (p *Project) UnmarshalJSON(b []byte) error {
 	type alias Project
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	*p = Project(a)
-	p.raw = append([]byte(nil), b...)
-	return nil
+	return unmarshalRaw(b, (*alias)(p), &p.rawItem)
 }
 
 func (p Project) MarshalJSON() ([]byte, error) {
-	if len(p.raw) > 0 {
-		return p.raw, nil
-	}
 	type alias Project
-	return json.Marshal(alias(p))
+	return p.marshalOr(alias(p))
 }
 
 // GetProject fetches a single project — notably its use_edge_identities flag,
@@ -906,21 +910,12 @@ type Environment struct {
 
 func (e *Environment) UnmarshalJSON(b []byte) error {
 	type alias Environment
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	*e = Environment(a)
-	e.raw = append([]byte(nil), b...)
-	return nil
+	return unmarshalRaw(b, (*alias)(e), &e.rawItem)
 }
 
 func (e Environment) MarshalJSON() ([]byte, error) {
-	if len(e.raw) > 0 {
-		return e.raw, nil
-	}
 	type alias Environment
-	return json.Marshal(alias(e))
+	return e.marshalOr(alias(e))
 }
 
 func (c *Client) Environments(ctx context.Context, projectID int) ([]Environment, error) {
