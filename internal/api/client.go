@@ -205,6 +205,7 @@ func (c *Client) DeleteOrganisation(ctx context.Context, orgID int) error {
 // host are discarded and only its path + query are reused against the base URL,
 // which keeps pagination working behind proxies that rewrite the host.
 func (c *Client) getList(ctx context.Context, path string, out any) error {
+	path = withPageSize(path)
 	var items []json.RawMessage
 	for path != "" {
 		var raw json.RawMessage
@@ -242,6 +243,22 @@ func (c *Client) getList(ctx context.Context, path string, out any) error {
 		return err
 	}
 	return json.Unmarshal(combined, out)
+}
+
+// withPageSize asks a list endpoint for its largest page: the backend's
+// CustomPagination caps page_size at 999 and clamps larger asks (the edge
+// endpoints clamp at 100), so one round-trip replaces a sequential walk at
+// the server's default page size. Endpoints that don't paginate ignore the
+// parameter. getList's next-link loop stays as the safety net either way.
+func withPageSize(path string) string {
+	if strings.Contains(path, "page_size=") {
+		return path
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "page_size=999"
 }
 
 // responseError builds an error from a non-2xx response. It surfaces the API's

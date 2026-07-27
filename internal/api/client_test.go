@@ -100,6 +100,31 @@ func TestProjects(t *testing.T) {
 		}
 	})
 
+	t.Run("lists ask for the largest page", func(t *testing.T) {
+		// The backend's CustomPagination caps page_size at 999 and clamps
+		// larger asks, so requesting it makes a list one round-trip instead
+		// of a sequential walk at the server's default page size.
+		var gotPageSize string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPageSize = r.URL.Query().Get("page_size")
+			if r.URL.Query().Get("organisation") != "3" {
+				t.Errorf("query = %q, want the original params kept", r.URL.RawQuery)
+			}
+			fmt.Fprint(w, `{"count":0,"next":null,"results":[]}`)
+		}))
+		defer srv.Close()
+
+		// When
+		if _, err := testClient(srv.URL, Bearer("t"), srv).Projects(context.Background(), 3); err != nil {
+			t.Fatal(err)
+		}
+
+		// Then
+		if gotPageSize != "999" {
+			t.Errorf("page_size = %q, want 999", gotPageSize)
+		}
+	})
+
 	t.Run("bare array response", func(t *testing.T) {
 		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
