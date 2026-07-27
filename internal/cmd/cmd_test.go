@@ -87,6 +87,10 @@ func resetFlags() {
 }
 
 func run(stdin string, args ...string) (string, error) {
+	return runWithStdin(strings.NewReader(stdin), args...)
+}
+
+func runWithStdin(stdin io.Reader, args ...string) (string, error) {
 	resetFlags()
 	if args == nil {
 		args = []string{} // nil would make cobra fall back to os.Args
@@ -94,7 +98,7 @@ func run(stdin string, args ...string) (string, error) {
 	buf := &bytes.Buffer{}
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
-	rootCmd.SetIn(strings.NewReader(stdin))
+	rootCmd.SetIn(stdin)
 	rootCmd.SetArgs(args)
 	prepare()
 	cmd, err := rootCmd.ExecuteC()
@@ -102,6 +106,18 @@ func run(stdin string, args ...string) (string, error) {
 		reportError(cmd, err) // append hint + usage to buf, mirroring Execute
 	}
 	return buf.String(), err
+}
+
+// delayedReader stalls the first Read — a human thinking at a prompt.
+type delayedReader struct {
+	delay time.Duration
+	r     io.Reader
+	once  sync.Once
+}
+
+func (d *delayedReader) Read(p []byte) (int, error) {
+	d.once.Do(func() { time.Sleep(d.delay) })
+	return d.r.Read(p)
 }
 
 // fakeInstance is a Flagsmith instance stub covering the endpoints the auth
@@ -5709,6 +5725,28 @@ func TestProject(t *testing.T) {
 		}
 		if !strings.Contains(out, "site (701)") {
 			t.Errorf("output = %q, want site (701)", out)
+		}
+	})
+
+	t.Run("time at a confirmation does not count against the deadline", func(t *testing.T) {
+		// Given a 1s invocation deadline and a human who takes longer than
+		// that to answer the confirmation
+		f := flagUpdateEnv(t)
+		_ = f
+		fakeTTY(t)
+		t.Setenv("FLAGSMITH_TIMEOUT", "1")
+		stdin := &delayedReader{delay: 1100 * time.Millisecond, r: strings.NewReader("y\n")}
+
+		// When
+		out, err := runWithStdin(stdin, "project", "delete", "101")
+
+		// Then — saying yes after a pause must not doom the delete to a
+		// context-deadline-exceeded; the clock restarts after the prompt
+		if err != nil {
+			t.Fatalf("project delete after a slow confirm: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Deleted project 101") {
+			t.Errorf("output = %q, want the delete to succeed", out)
 		}
 	})
 

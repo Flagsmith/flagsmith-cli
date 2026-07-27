@@ -56,14 +56,18 @@ func selectPrompt(cmd *cobra.Command, flag, label string, options []string, def 
 	if !interactive() {
 		return 0, usageErrorf("--%s is required without an interactive terminal", flag)
 	}
-	return prompt.Select(promptIO(cmd), label, options, def)
+	idx, err := prompt.Select(promptIO(cmd), label, options, def)
+	refreshCommandTimeout(cmd)
+	return idx, err
 }
 
 func textPrompt(cmd *cobra.Command, flag, label, def string) (string, error) {
 	if !interactive() {
 		return "", usageErrorf("--%s is required without an interactive terminal", flag)
 	}
-	return prompt.Text(promptIO(cmd), label, def)
+	s, err := prompt.Text(promptIO(cmd), label, def)
+	refreshCommandTimeout(cmd)
+	return s, err
 }
 
 // confirmOrYes resolves a yes/no confirmation. --yes authorizes it; otherwise
@@ -77,7 +81,9 @@ func confirmOrYes(cmd *cobra.Command, label string) (bool, error) {
 	if !interactive() {
 		return false, usageErrorf("pass --yes to confirm %q without an interactive terminal", label)
 	}
-	return prompt.Confirm(promptIO(cmd), label)
+	ok, err := prompt.Confirm(promptIO(cmd), label)
+	refreshCommandTimeout(cmd)
+	return ok, err
 }
 
 // confirmed resolves a confirmation and, on decline, prints the standard

@@ -43,8 +43,28 @@ func commandTimeout() time.Duration {
 }
 
 // cancelTimeout releases the deadline installed by PersistentPreRunE; Execute
-// calls it once the command has run.
-var cancelTimeout context.CancelFunc
+// calls it once the command has run. timeoutParent is the context the
+// deadline derives from, kept so the deadline can be reinstalled fresh after
+// interactive input.
+var (
+	cancelTimeout context.CancelFunc
+	timeoutParent context.Context
+)
+
+// refreshCommandTimeout restarts the invocation deadline. The prompt helpers
+// call it when interactive input returns: the deadline exists to catch stuck
+// network calls, so time a human spends thinking at a prompt must not count
+// against the requests that follow. A command without a deadline (long-
+// running, or FLAGSMITH_TIMEOUT=0) is a no-op.
+func refreshCommandTimeout(cmd *cobra.Command) {
+	if cancelTimeout == nil || timeoutParent == nil {
+		return
+	}
+	cancelTimeout()
+	ctx, cancel := context.WithTimeout(timeoutParent, commandTimeout())
+	cmd.SetContext(ctx)
+	cancelTimeout = cancel
+}
 
 // singleLineUsage rewrites cobra's default two-line Usage block (one line for
 // running the command bare, another for a subcommand) into a single
@@ -103,12 +123,21 @@ var rootCmd = &cobra.Command{
 	// (matters in-process, e.g. tests reusing rootCmd across Execute calls).
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		resetCredentialCache()
+		initPrompts(cmd)
 		// Give the command a sane overall deadline so a stuck network call
 		// fails instead of hanging. Long-running commands (browser login) opt
-		// out; cancellation via the parent context still propagates.
+		// out; cancellation via the parent context still propagates. The
+		// parent is the root's context: cobra inherits it only while the
+		// leaf's is nil, so deriving from the leaf would chain onto a
+		// previous in-process invocation's (possibly expired) deadline. It
+		// is kept so time spent at a prompt can be handed back
+		// (refreshCommandTimeout).
+		cancelTimeout, timeoutParent = nil, nil
+		cmd.SetContext(cmd.Root().Context())
 		if cmd.Annotations[annotationLongRunning] != "true" {
 			if d := commandTimeout(); d > 0 {
-				ctx, cancel := context.WithTimeout(cmd.Context(), d)
+				timeoutParent = cmd.Context()
+				ctx, cancel := context.WithTimeout(timeoutParent, d)
 				cmd.SetContext(ctx)
 				cancelTimeout = cancel
 			}
