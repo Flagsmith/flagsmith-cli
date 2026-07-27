@@ -824,17 +824,15 @@ type UpdateFlagRequest struct {
 	SegmentOverrides   []SegmentOverride  `json:"segment_overrides,omitempty"`
 }
 
-// DeleteSegmentOverride removes a feature's override for one segment, via the
-// experimental delete-segment-override endpoint keyed by the environment key.
-func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey string, feature FeatureRef, segmentID int) error {
-	body, err := json.Marshal(map[string]any{
-		"feature": feature,
-		"segment": map[string]int{"id": segmentID},
-	})
+// postUpdateFlags posts a body to one of the experimental flags-update
+// endpoints (update-flag-v2, delete-segment-override), which share their
+// status protocol: 403 means the environment is workflow-gated, 404 maps to
+// notFound when the caller supplies one, and 204/200 are success.
+func (c *Client) postUpdateFlags(ctx context.Context, path string, payload any, notFound error) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	path := "/api/experiments/environments/" + environmentKey + "/delete-segment-override/"
 	req, err := c.newRequest(ctx, http.MethodPost, path, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -845,16 +843,28 @@ func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey strin
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusForbidden {
+	switch {
+	case resp.StatusCode == http.StatusForbidden:
 		return ErrWorkflowGated
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("no override exists for segment %d", segmentID)
-	}
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+	case resp.StatusCode == http.StatusNotFound && notFound != nil:
+		return notFound
+	case resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK:
 		return responseError(http.MethodPost, req.URL.String(), resp)
 	}
 	return nil
+}
+
+// DeleteSegmentOverride removes a feature's override for one segment, via the
+// experimental delete-segment-override endpoint keyed by the environment key.
+func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey string, feature FeatureRef, segmentID int) error {
+	payload := map[string]any{
+		"feature": feature,
+		"segment": map[string]int{"id": segmentID},
+	}
+	return c.postUpdateFlags(ctx,
+		"/api/experiments/environments/"+environmentKey+"/delete-segment-override/",
+		payload,
+		fmt.Errorf("no override exists for segment %d", segmentID))
 }
 
 // ErrWorkflowGated is returned when update-flag-v2 refuses because the
@@ -877,28 +887,9 @@ var ErrQuotaExceeded = errors.New("resource limit reached on your organisation's
 // update-flag-v2 endpoint, keyed by the environment's client-side key. The
 // endpoint returns 204 No Content on success.
 func (c *Client) UpdateFlag(ctx context.Context, environmentKey string, in UpdateFlagRequest) error {
-	body, err := json.Marshal(in)
-	if err != nil {
-		return err
-	}
-	path := "/api/experiments/environments/" + environmentKey + "/update-flag-v2/"
-	req, err := c.newRequest(ctx, http.MethodPost, path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusForbidden {
-		return ErrWorkflowGated
-	}
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return responseError(http.MethodPost, req.URL.String(), resp)
-	}
-	return nil
+	return c.postUpdateFlags(ctx,
+		"/api/experiments/environments/"+environmentKey+"/update-flag-v2/",
+		in, nil)
 }
 
 // Environment carries the fields the CLI needs plus the raw API item, so JSON
