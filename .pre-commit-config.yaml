@@ -31,8 +31,5 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
-# golangci-lint-full needs the module graph, which pre-commit.ci's run phase
-# cannot download; -fmt and -config-verify are self-contained, so they get a
-# chance to run there. The system hooks are unsupported on pre-commit.ci.
 ci:
-  skip: [golangci-lint-full, go-mod-tidy, go-test]
+  skip: [golangci-lint-full, golangci-lint-config-verify, go-mod-tidy, go-test]
