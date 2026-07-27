@@ -59,14 +59,15 @@ func orgLabels(cmd *cobra.Command, cred *activeCredential, ids []int) map[int]st
 	for _, id := range ids {
 		name := cached[strconv.Itoa(id)]
 		if name == "" {
-			m = map[int]string{}
+			m = nil // any miss falls through to one fetch; ids may repeat
 			break
 		}
 		m[id] = name
 	}
-	if len(m) == len(ids) {
+	if m != nil {
 		return m
 	}
+	m = map[int]string{}
 	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {
 		return m

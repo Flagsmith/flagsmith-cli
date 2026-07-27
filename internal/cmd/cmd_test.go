@@ -5498,6 +5498,31 @@ func TestProject(t *testing.T) {
 		}
 	})
 
+	t.Run("several projects in one organisation still label from the cache", func(t *testing.T) {
+		// Given a warm cache and two projects sharing the organisation —
+		// duplicate ids must not read as a cache miss
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
+		f.projects["3"] = []map[string]any{
+			{"id": 101, "name": "acme-api", "organisation": 3},
+			{"id": 102, "name": "acme-web", "organisation": 3},
+		}
+
+		// When
+		out, err := run("", "project", "list", "--organisation", "Acme")
+
+		// Then — the resolution fetch is the only organisations call
+		if err != nil {
+			t.Fatalf("project list: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Acme (3)") {
+			t.Errorf("output = %q, want the organisation labelled", out)
+		}
+		if got := f.organisationLists(); got != 1 {
+			t.Errorf("organisation list calls = %d, want 1", got)
+		}
+	})
+
 	t.Run("get labels the organisation from a warm cache without a fetch", func(t *testing.T) {
 		// Given a warm org-name cache (seeded by an earlier org resolution)
 		f := flagUpdateEnv(t)
