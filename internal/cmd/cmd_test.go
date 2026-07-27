@@ -127,6 +127,8 @@ type fakeInstance struct {
 	fsDelay        time.Duration               // artificial latency for feature-segments
 	fsInFlight     int                         // feature-segments requests currently being served
 	fsPeak         int                         // high-water mark of fsInFlight
+	segListCalls   int                         // count of GET /segments/ list calls
+	stListCalls    int                         // count of GET /features/featurestates/ calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -1055,6 +1057,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		include := r.URL.Query().Get("include_feature_specific") == "true"
 		f.mu.Lock()
+		f.segListCalls++
 		results := []map[string]any{}
 		for _, s := range f.segments {
 			if !include && s["feature"] != nil {
@@ -1166,6 +1169,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
+		f.stListCalls++
 		rows := f.featureStates[r.URL.Query().Get("feature")]
 		f.mu.Unlock()
 		if rows == nil {
@@ -1369,6 +1373,20 @@ func (f *fakeInstance) featureSegmentsPeak() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fsPeak
+}
+
+// segmentsCalls returns how many times the /segments/ list endpoint was hit.
+func (f *fakeInstance) segmentsCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.segListCalls
+}
+
+// featureStatesCalls returns how many times featurestates was hit.
+func (f *fakeInstance) featureStatesCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.stListCalls
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -4156,6 +4174,51 @@ func TestFlagReorder(t *testing.T) {
 		// The resulting order is printed, us-adults now first.
 		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
 			t.Errorf("output = %q, want the resulting table with us-adults first", out)
+		}
+	})
+
+	t.Run("resolves refs and renders from data already in hand", func(t *testing.T) {
+		// Given — the feature-segments rows carry every name a valid ref can
+		// use, and the pre-write reads carry every override's state
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		// When — both segments referenced by name
+		out, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
+
+		// Then — no segments-list fetch, and no post-write re-reads: the
+		// printed order is derived from the write itself
+		if err != nil {
+			t.Fatalf("flag reorder: %v\noutput: %s", err, out)
+		}
+		if got := f.segmentsCalls(); got != 0 {
+			t.Errorf("segments list calls = %d, want 0 (names resolve from the override rows)", got)
+		}
+		if got := f.featureSegmentsCalls(); got != 1 {
+			t.Errorf("feature-segments calls = %d, want 1", got)
+		}
+		if got := f.featureStatesCalls(); got != 1 {
+			t.Errorf("featurestates calls = %d, want 1", got)
+		}
+		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
+			t.Errorf("output = %q, want the resulting table with us-adults first", out)
+		}
+	})
+
+	t.Run("an unknown name still gets the project-level error", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+
+		// When — "nope" matches no override row and no project segment
+		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "nope", "--yes")
+
+		// Then — the fallback resolution names the segment, not the override
+		if err == nil || !strings.Contains(err.Error(), `segment "nope" not found`) {
+			t.Errorf("err = %v, want the segment-not-found error", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
 		}
 	})
 

@@ -471,6 +471,11 @@ func listFeatureSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env
 			Value:    state.Value.Scalar(),
 		}
 	}
+	return renderSegmentOverrideList(cmd, views)
+}
+
+// renderSegmentOverrideList prints segment-override views in priority order.
+func renderSegmentOverrideList(cmd *cobra.Command, views []segmentFlagView) error {
 	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
 		if len(views) == 0 {
 			fmt.Fprintln(w, "No segment overrides.")

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -51,11 +52,32 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve the input order and require an exact permutation of the
-	// overridden segments before anything is written.
+	// overridden segments before anything is written. A valid argument names
+	// an overridden segment, so names resolve against the override rows
+	// already in hand; only an unknown name falls back to the project-level
+	// resolution, for its richer error.
+	byID := make(map[string]string, len(fss))
+	for _, fs := range fss {
+		byID[strconv.Itoa(fs.Segment)] = fs.SegmentName
+	}
+	resolveRef := func(ref string) (int, error) {
+		if id, err := strconv.Atoi(ref); err == nil {
+			return id, nil
+		}
+		hits := matchByName(byID, ref)
+		if len(hits) == 0 {
+			return resolveSegmentID(cmd, cred, projectID, ref)
+		}
+		chosen, err := pickCandidate(cmd, "segment", "id", ref, hits, byID)
+		if err != nil {
+			return 0, err
+		}
+		return strconv.Atoi(chosen)
+	}
 	ordered := make([]int, 0, len(args)-1)
 	seen := make(map[int]bool, len(args)-1)
 	for _, ref := range args[1:] {
-		id, err := resolveSegmentID(cmd, cred, projectID, ref)
+		id, err := resolveRef(ref)
 		if err != nil {
 			return err
 		}
@@ -121,6 +143,21 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	}
 	output.Success(errOut, "Reordered %d segment overrides for %s in environment %s", len(ordered), name, environmentLabel(env))
 
-	// Result model: print the resulting override list.
-	return listFeatureSegmentOverrides(cmd, cred, env, feature)
+	// Result model: print the resulting override list. It is fully known —
+	// the write assigned priorities 0..n-1 in input order, and each
+	// override's state was read (and echoed unchanged) before the write.
+	views := make([]segmentFlagView, len(ordered))
+	for i, segmentID := range ordered {
+		fs := current[segmentID]
+		state := stateByFS[fs.ID]
+		views[i] = segmentFlagView{
+			Feature:  feature.Name,
+			Type:     featureTypeLabel(feature.Type),
+			Segment:  segmentRef{ID: segmentID, Name: fs.SegmentName},
+			Priority: i,
+			Enabled:  state.Enabled,
+			Value:    state.Value.Scalar(),
+		}
+	}
+	return renderSegmentOverrideList(cmd, views)
 }
