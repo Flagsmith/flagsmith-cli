@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,7 +82,10 @@ func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []
 func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCredential, projectID int) (api.Environment, error) {
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
-		ref = os.Getenv("FLAGSMITH_ENVIRONMENT_KEY")
+		// The SDK credential doubles as an environment reference; it is
+		// host-scoped to the SDK surface like everywhere else it is read.
+		sdkURL, _ := pc.SDKAPIURL.Value.(string)
+		_, ref = envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL)
 		// That variable is exactly where server-side keys belong (they are
 		// secrets), but one can never resolve an environment over the Admin
 		// API — name the variable, never its value, which must stay out of

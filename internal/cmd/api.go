@@ -115,7 +115,8 @@ func apiTarget(cmd *cobra.Command, pc *projectContext) (string, func(*http.Reque
 // sdkEnvironmentKey returns the client- or server-side key for --sdk calls,
 // taken verbatim from the environment context (no Admin name resolution).
 func sdkEnvironmentKey(pc *projectContext) (string, error) {
-	if v := os.Getenv("FLAGSMITH_ENVIRONMENT_KEY"); v != "" {
+	sdkURL, _ := pc.SDKAPIURL.Value.(string)
+	if _, v := envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL); v != "" {
 		return v, nil
 	}
 	if k, ok := pc.Environment.Value.(string); ok && k != "" {

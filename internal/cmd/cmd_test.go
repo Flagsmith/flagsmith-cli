@@ -87,6 +87,19 @@ func resetFlags() {
 	apiRawFields = nil
 }
 
+// setEnvCred exports a credential variable host-scoped to url, as a
+// self-hosted user must: the unscoped variable is trusted only for the
+// default SaaS host (03-authentication.md §6).
+func setEnvCred(t *testing.T, base, url, value string) {
+	t.Helper()
+	t.Setenv(scopedEnvName(base, url), value)
+}
+
+func setMasterKey(t *testing.T, url string) {
+	t.Helper()
+	setEnvCred(t, envAPIKey, url, masterKey)
+}
+
 func run(stdin string, args ...string) (string, error) {
 	return runWithStdin(strings.NewReader(stdin), args...)
 }
@@ -1491,8 +1504,10 @@ func TestServerSideKeyNeverEchoed(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
-		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "ser.SuperSecret123")
+		setMasterKey(t, f.srv.URL)
+		// sdkApiUrl follows the config's non-default apiUrl, so the SDK
+		// credential is scoped to that host.
+		setEnvCred(t, envEnvironmentKey, f.srv.URL, "ser.SuperSecret123")
 
 		// When
 		_, err := run("", "flag", "list")
@@ -1536,7 +1551,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "list")
@@ -1573,7 +1588,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "Staging", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When / Then — environments are addressed by key, so that's the
 		// identifier the error offers
@@ -1590,7 +1605,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "Nope", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When / Then
 		_, err := run("", "flag", "list")
@@ -1605,7 +1620,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		if _, err := run("", "flag", "list"); err != nil {
@@ -1746,7 +1761,7 @@ func TestAPIFlagWorksInAnyPosition(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When / Then
 	var outputs []string
@@ -1773,7 +1788,7 @@ func TestAPIURLFlagWithHiddenAlias(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	canonical, err := run("", "auth", "status", "--api-url", f.srv.URL)
@@ -2043,7 +2058,7 @@ func TestInitNonInteractive(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	out, err := run("", "init", "--api-url", f.srv.URL,
@@ -2078,7 +2093,7 @@ func TestInitNonInteractiveRequiresProject(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--yes")
@@ -2101,7 +2116,7 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		tempRepo(t)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		_, err := run("", "init", "--api-url", f.srv.URL, "--project", "", "--yes")
@@ -2118,7 +2133,7 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		tempRepo(t)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "init", "--organisation", "", "--api-url", f.srv.URL, "--create-project", "smoke", "--yes")
@@ -2188,7 +2203,7 @@ func TestInitRefusesOverwriteWithoutYes(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 1}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345")
@@ -2205,7 +2220,7 @@ func TestInitCreateProjectFlag(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — create both a project and its environment purely via flags
 	out, err := run("", "init", "--api-url", f.srv.URL,
@@ -2235,7 +2250,7 @@ func TestInitCreateProjectRequiresOrgWhenMultiOrg(t *testing.T) {
 	f := newFakeInstance(t)
 	f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
 	tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — no --organisation, no TTY
 	_, err := run("", "init", "--api-url", f.srv.URL, "--create-project", "x", "--yes")
@@ -2252,7 +2267,7 @@ func TestInitCreateProjectConflictsWithProject(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When / Then
 	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "101", "--create-project", "x", "--yes")
@@ -2267,7 +2282,7 @@ func TestInitCreateEnvironmentFlag(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	out, err := run("", "init", "--api-url", f.srv.URL,
@@ -2293,7 +2308,7 @@ func TestInitCreateEnvironmentConflictsWithEnvironment(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When / Then
 	_, err := run("", "init", "--api-url", f.srv.URL,
@@ -2334,7 +2349,7 @@ func TestInteractivePromptsGoToStderr(t *testing.T) {
 		{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"},
 	}
 	tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — answer the prompts (org 2, project 1, environment 1)
@@ -2368,7 +2383,7 @@ func TestInitInteractiveMultiOrg(t *testing.T) {
 		{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"},
 	}
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — pick org 2 (Beta), project 1 (beta-app), environment 1 (Development)
@@ -2397,7 +2412,7 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — choose create (option 2), accept default project name, then
@@ -2432,7 +2447,7 @@ func TestInitEmptyProjectPromptsEnvironmentCreation(t *testing.T) {
 	f := newFakeInstance(t)
 	f.envs["101"] = []map[string]any{}
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — pick the existing (empty) project, accept the env-name default
@@ -2462,7 +2477,7 @@ func TestInitEmptyProjectNonInteractiveSkipsEnvironment(t *testing.T) {
 	f := newFakeInstance(t)
 	f.envs["101"] = []map[string]any{}
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — no TTY, no environment given: don't create anything silently
 	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "101", "--yes")
@@ -2488,7 +2503,7 @@ func TestInitPreservesExistingOrganisation(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 12345, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — non-interactive re-init that doesn't touch the organisation
 	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
@@ -2508,7 +2523,7 @@ func TestInitPreservesSDKAPIURL(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "sdkApiUrl": "https://sdk.acme.internal"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — non-interactive re-init that never mentions the SDK endpoint
 	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
@@ -2535,7 +2550,7 @@ func TestInitRefusesToOverwriteMalformedFile(t *testing.T) {
 	if err := os.WriteFile(valid, []byte(`{"project": 12345}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — a non-interactive init that would otherwise overwrite the target
 	_, err := run("", "init", "--api-url", f.srv.URL, "--config-path", valid, "--project", "12345", "--yes")
@@ -2562,7 +2577,7 @@ func TestInitReinitReoffersOrgPicker(t *testing.T) {
 	f.envs["202"] = []map[string]any{{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"}}
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 101, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — accept the org picker default, then project 1, environment 1
@@ -2585,7 +2600,7 @@ func TestInitInvalidChoiceReprompts(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — an invalid choice, then project 1, then environment 1
@@ -2609,7 +2624,7 @@ func TestInitReinitShowsDiffAndConfirms(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
 	// When — pick project 1 (acme-api, 101), env 2 (Production), confirm
@@ -2666,7 +2681,7 @@ func TestJSONIsGlobal(t *testing.T) {
 		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "auth", "status", "--api-url", f.srv.URL, "--json")
@@ -2687,17 +2702,19 @@ func TestJSONIsGlobal(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &status); err != nil {
 			t.Fatalf("parsing %q: %v", out, err)
 		}
-		if status.Kind != "master" || status.Source != "$FLAGSMITH_API_KEY" ||
+		// The source names the exact variable, host scope included.
+		if status.Kind != "master" || status.Source != "$"+scopedEnvName(envAPIKey, f.srv.URL) ||
 			len(status.Organisations) != 1 || status.Organisations[0].Name != "Acme" {
 			t.Errorf("status = %+v", status)
 		}
 	})
 
 	t.Run("auth token --json", func(t *testing.T) {
-		// Given
+		// Given — no --api-url, so this is the default SaaS host, where the
+		// unscoped variable applies
 		isolateStorage(t)
 		newFakeInstance(t)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		t.Setenv(envAPIKey, masterKey)
 
 		// When
 		out, err := run("", "auth", "token", "--json")
@@ -2951,7 +2968,7 @@ func TestProjectNameResolvesForEnvironmentLookup(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": "acme-api", "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — flag list needs the project ID to list environments by name
 	out, err := run("", "flag", "list")
@@ -2971,7 +2988,7 @@ func TestUnknownProjectNameErrors(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": "ghost", "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When / Then — the miss surfaces when a command needs the project
 	_, err := run("", "flag", "list")
@@ -2987,7 +3004,7 @@ func TestFlagsList(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "list")
@@ -3013,7 +3030,7 @@ func TestFlagsList(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "list", "--json")
@@ -3047,7 +3064,7 @@ func TestFlagsList(t *testing.T) {
 		f.features["101"] = []map[string]any{}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "list")
@@ -3067,8 +3084,8 @@ func TestFlagsList(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
-		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "WqXhZk8sVY3dGgTqZ9pJmN")
+		setMasterKey(t, f.srv.URL)
+		setEnvCred(t, envEnvironmentKey, f.srv.URL, "WqXhZk8sVY3dGgTqZ9pJmN")
 
 		// When
 		out, err := run("", "flag", "list")
@@ -3088,7 +3105,7 @@ func TestFlagsList(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		_, err := run("", "flag", "list")
@@ -3113,7 +3130,7 @@ func TestFlagsList(t *testing.T) {
 		}}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "list")
@@ -3142,7 +3159,7 @@ func TestFlagsList(t *testing.T) {
 		}}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "list")
@@ -3276,7 +3293,7 @@ func TestFlagGet(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "get", "max_items")
@@ -3298,7 +3315,7 @@ func TestFlagGet(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "get", "max_items", "--json")
@@ -3334,7 +3351,7 @@ func TestFlagGet(t *testing.T) {
 		}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "get", "CheckOut")
@@ -3357,7 +3374,7 @@ func TestFlagGet(t *testing.T) {
 		f := newFakeInstance(t)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When / Then
 		_, err := run("", "flag", "get", "ghost")
@@ -3377,7 +3394,7 @@ func TestFlagGet(t *testing.T) {
 		}}
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "flag", "get", "edgeflag")
@@ -3400,7 +3417,7 @@ func flagUpdateEnv(t *testing.T) *fakeInstance {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 	return f
 }
 
@@ -5408,7 +5425,7 @@ func TestEnvironment(t *testing.T) {
 		withEnvironments(f)
 		root := tempRepo(t)
 		writeConfig(t, root, `{"project": "acme-api", "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
-		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+		setMasterKey(t, f.srv.URL)
 
 		// When
 		out, err := run("", "environment", "get", "Production")
@@ -6118,8 +6135,8 @@ func TestAPI(t *testing.T) {
 	})
 
 	t.Run("--sdk uses the environment key, not the admin credential", func(t *testing.T) {
-		flagUpdateEnv(t)
-		t.Setenv("FLAGSMITH_ENVIRONMENT_KEY", "someClientKey")
+		f := flagUpdateEnv(t)
+		setEnvCred(t, envEnvironmentKey, f.srv.URL, "someClientKey")
 		e := echoJSON(t, "", "--sdk")
 		if e["envkey"] != "someClientKey" || e["authorization"] != "" {
 			t.Errorf("echo = %+v, want the SDK key and no admin auth", e)
@@ -6159,7 +6176,7 @@ func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 1, "apiUrl": "`+f.srv.URL+`"}`)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When — no --api-url flag anywhere
 	out, err := run("", "auth", "status")
@@ -6177,7 +6194,7 @@ func TestAuthStatusSeedsNameCache(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	if _, err := run("", "auth", "status", "--api-url", f.srv.URL); err != nil {
@@ -6194,7 +6211,7 @@ func TestEnvMasterKey(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
@@ -6221,11 +6238,60 @@ func TestEnvMasterKey(t *testing.T) {
 	}
 }
 
+// A discovered flagsmith.json can name any apiUrl, so an unscoped credential
+// — which names no host — must not follow it there. The scoped form is how a
+// self-hosted user opts in.
+func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
+	setup := func(t *testing.T) *fakeInstance {
+		t.Helper()
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		return f
+	}
+
+	t.Run("withheld from a host the config named", func(t *testing.T) {
+		// Given a key set as for SaaS, and a config pointing elsewhere
+		f := setup(t)
+		t.Setenv(envAPIKey, masterKey)
+
+		// When
+		_, err := run("", "flag", "list")
+
+		// Then — nothing is sent: resolution falls through to the keychain,
+		// which holds no session for that host
+		if !errors.Is(err, auth.ErrNotLoggedIn) {
+			t.Errorf("err = %v, want ErrNotLoggedIn (credential withheld)", err)
+		}
+		if got := f.featuresCalls(); got != 0 {
+			t.Errorf("features calls = %d, want 0 — no request should carry the key", got)
+		}
+	})
+
+	t.Run("sent when scoped to that host", func(t *testing.T) {
+		// Given the same config, with the key scoped to the instance
+		f := setup(t)
+		setMasterKey(t, f.srv.URL)
+
+		// When
+		out, err := run("", "flag", "list")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag list: %v\noutput: %s", err, out)
+		}
+		if got := f.featuresCalls(); got != 1 {
+			t.Errorf("features calls = %d, want 1", got)
+		}
+	})
+}
+
 func TestEnvAccessToken(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_ACCESS_TOKEN", bearerToken)
+	setEnvCred(t, envAccessToken, f.srv.URL, bearerToken)
 
 	// When
 	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
@@ -6234,7 +6300,7 @@ func TestEnvAccessToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auth status: %v", err)
 	}
-	for _, want := range []string{"kim@example.com", "$FLAGSMITH_ACCESS_TOKEN"} {
+	for _, want := range []string{"kim@example.com", "$" + scopedEnvName(envAccessToken, f.srv.URL)} {
 		if !strings.Contains(statusOut, want) {
 			t.Errorf("auth status output = %q, want it to contain %q", statusOut, want)
 		}
@@ -6245,7 +6311,7 @@ func TestEnvMasterKeyRejectsAccessToken(t *testing.T) {
 	// Given — a bearer/dotless token in the master-key variable
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", bearerToken)
+	setEnvCred(t, envAPIKey, f.srv.URL, bearerToken)
 
 	// When
 	_, err := run("", "auth", "status", "--api", f.srv.URL)
@@ -6260,8 +6326,8 @@ func TestEnvMasterKeyBeatsAccessToken(t *testing.T) {
 	// Given — both set; the master key takes precedence
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
-	t.Setenv("FLAGSMITH_ACCESS_TOKEN", bearerToken)
+	setMasterKey(t, f.srv.URL)
+	setEnvCred(t, envAccessToken, f.srv.URL, bearerToken)
 
 	// When
 	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
@@ -6279,7 +6345,7 @@ func TestEnvServerKeyRejected(t *testing.T) {
 	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
-	t.Setenv("FLAGSMITH_API_KEY", "ser.AbCdEf1234")
+	setEnvCred(t, envAPIKey, f.srv.URL, "ser.AbCdEf1234")
 
 	// When
 	_, err := run("", "auth", "status", "--api", f.srv.URL)
@@ -6301,7 +6367,7 @@ func TestEnvBeatsKeychain(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FLAGSMITH_API_KEY", masterKey)
+	setMasterKey(t, f.srv.URL)
 
 	// When
 	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +18,9 @@ import (
 )
 
 const (
-	envAPIKey      = "FLAGSMITH_API_KEY"
-	envAccessToken = "FLAGSMITH_ACCESS_TOKEN"
+	envAPIKey         = "FLAGSMITH_API_KEY"
+	envAccessToken    = "FLAGSMITH_ACCESS_TOKEN"
+	envEnvironmentKey = "FLAGSMITH_ENVIRONMENT_KEY"
 )
 
 // credMu guards a per-invocation memo of the resolved credential, keyed by
@@ -86,17 +86,17 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 // instance (refreshing and re-saving the session when expired). Each env var
 // maps to exactly one credential kind — no shape-guessing.
 func loadCredential(ctx context.Context) (*activeCredential, error) {
-	if v := os.Getenv(envAPIKey); v != "" {
+	if name, v := envCredential(envAPIKey, apiURL, defaultAPIURL); v != "" {
 		if err := auth.ValidateMasterKey(v); err != nil {
 			return nil, err
 		}
-		cred := &activeCredential{kind: auth.KindMaster, token: v, source: "$" + envAPIKey, auth: api.APIKey(v)}
+		cred := &activeCredential{kind: auth.KindMaster, token: v, source: "$" + name, auth: api.APIKey(v)}
 		cred.apiClient = newAPIClient(cred.auth)
 		return cred, nil
 	}
 
-	if v := os.Getenv(envAccessToken); v != "" {
-		cred := &activeCredential{kind: auth.KindBearer, token: v, source: "$" + envAccessToken, auth: api.Bearer(v)}
+	if name, v := envCredential(envAccessToken, apiURL, defaultAPIURL); v != "" {
+		cred := &activeCredential{kind: auth.KindBearer, token: v, source: "$" + name, auth: api.Bearer(v)}
 		cred.apiClient = newAPIClient(cred.auth)
 		return cred, nil
 	}
