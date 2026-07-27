@@ -14,21 +14,6 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 )
 
-// keyShaped reports whether ref can be tried as a client-side environment
-// key: non-empty and alphanumeric (so it is safe in a URL path). Names can
-// look like this too — their retrieve probe just misses.
-func keyShaped(ref string) bool {
-	if ref == "" {
-		return false
-	}
-	for _, r := range ref {
-		if !('a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9') {
-			return false
-		}
-	}
-	return true
-}
-
 // matchByName returns the canonical values (map keys) whose name matches ref
 // case-insensitively, sorted for determinism.
 func matchByName(canonicalToName map[string]string, ref string) []string {
@@ -77,23 +62,6 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 	if ref == "" {
 		return api.Environment{}, withHint(errors.New("no environment"),
 			"Pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`.")
-	}
-
-	// The common post-init ref is an exact client-side key, which the
-	// retrieve endpoint serves in one targeted call — much cheaper than the
-	// project's full environment list. Names can be key-shaped too; their
-	// probe just 404s and resolution falls back to the list below. A key
-	// belonging to another project also falls through, so the error names
-	// the project the context asked for.
-	if keyShaped(ref) {
-		e, err := cred.client().GetEnvironment(cmd.Context(), ref)
-		switch {
-		case err == nil && e.Project == projectID:
-			_ = cache.Merge(apiURL, &cache.Names{Environments: map[string]string{e.APIKey: e.Name}})
-			return *e, nil
-		case err != nil && !api.IsNotFound(err):
-			return api.Environment{}, err
-		}
 	}
 
 	envs, err := cred.client().Environments(cmd.Context(), projectID)
