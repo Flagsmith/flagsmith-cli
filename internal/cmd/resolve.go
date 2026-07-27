@@ -145,6 +145,7 @@ func resolveOrganisationID(cmd *cobra.Command, pc *projectContext, cred *activeC
 	if err != nil {
 		return 0, err
 	}
+	rememberOrganisations(orgs)
 	if name, ok := pc.Organisation.Value.(string); ok && name != "" {
 		byID := make(map[string]string, len(orgs))
 		for _, o := range orgs {

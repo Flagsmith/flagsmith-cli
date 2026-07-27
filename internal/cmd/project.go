@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
@@ -48,13 +49,29 @@ func resolveProjectRefID(cmd *cobra.Command, cred *activeCredential, ref string)
 	return strconv.Atoi(chosen)
 }
 
-// orgNameMap maps organisation id → name for display (best effort).
-func orgNameMap(cmd *cobra.Command, cred *activeCredential) map[int]string {
-	m := map[int]string{}
+// orgLabels maps the given organisation ids to names for display, from the
+// local name cache when it covers them all. Only a miss pays one
+// Organisations fetch, which reseeds the cache (04 §3); labels stay
+// best-effort either way.
+func orgLabels(cmd *cobra.Command, cred *activeCredential, ids []int) map[int]string {
+	cached := cache.Load(apiURL).Organisations
+	m := make(map[int]string, len(ids))
+	for _, id := range ids {
+		name := cached[strconv.Itoa(id)]
+		if name == "" {
+			m = map[int]string{}
+			break
+		}
+		m[id] = name
+	}
+	if len(m) == len(ids) {
+		return m
+	}
 	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {
 		return m
 	}
+	rememberOrganisations(orgs)
 	for _, o := range orgs {
 		m[o.ID] = o.Name
 	}
@@ -83,7 +100,7 @@ func renderProject(cmd *cobra.Command, cred *activeCredential, p *api.Project) e
 	return output.Render(cmd.OutOrStdout(), p, outputOpts(), func(w io.Writer) error {
 		return output.Detail(w, []output.Field{
 			{Label: "Project", Value: label(p.Name, p.ID)},
-			{Label: "Organisation", Value: orgLabel(orgNameMap(cmd, cred), p.Organisation)},
+			{Label: "Organisation", Value: orgLabel(orgLabels(cmd, cred, []int{p.Organisation}), p.Organisation)},
 		})
 	})
 }
@@ -119,7 +136,11 @@ var projectListCmd = &cobra.Command{
 				fmt.Fprintln(w, "No projects.")
 				return nil
 			}
-			names := orgNameMap(cmd, cred)
+			ids := make([]int, len(projects))
+			for i, p := range projects {
+				ids[i] = p.Organisation
+			}
+			names := orgLabels(cmd, cred, ids)
 			rows := make([][]string, len(projects))
 			for i, p := range projects {
 				rows[i] = []string{p.Name, strconv.Itoa(p.ID), orgLabel(names, p.Organisation)}

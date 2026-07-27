@@ -133,6 +133,7 @@ type fakeInstance struct {
 	edgeLookups    int                         // count of GET /edge-identities/ (uuid lookups)
 	envGetCalls    int                         // count of GET /environments/{key}/ (retrieve)
 	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
+	orgListCalls   int                         // count of GET /organisations/ list calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -315,6 +316,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
+		f.orgListCalls++
 		orgs := f.orgs
 		f.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{"count": len(orgs), "results": orgs})
@@ -1425,6 +1427,13 @@ func (f *fakeInstance) projectGets() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.projGetCalls
+}
+
+// organisationLists returns how many organisation list calls were served.
+func (f *fakeInstance) organisationLists() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.orgListCalls
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -5463,6 +5472,53 @@ func TestProject(t *testing.T) {
 		}
 		if !strings.Contains(out, "acme-api (101)") {
 			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("list --organisation labels orgs from the one resolution fetch", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
+		f.projects["3"] = []map[string]any{
+			{"id": 101, "name": "acme-api", "organisation": 3},
+		}
+
+		// When — the org is resolved by name, which fetches the org list once
+		out, err := run("", "project", "list", "--organisation", "Acme")
+
+		// Then — that same fetch (via the cache it seeds) labels the table
+		if err != nil {
+			t.Fatalf("project list --organisation: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Acme (3)") {
+			t.Errorf("output = %q, want the organisation labelled", out)
+		}
+		if got := f.organisationLists(); got != 1 {
+			t.Errorf("organisation list calls = %d, want 1", got)
+		}
+	})
+
+	t.Run("get labels the organisation from a warm cache without a fetch", func(t *testing.T) {
+		// Given a warm org-name cache (seeded by an earlier org resolution)
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
+		if _, err := run("", "project", "list", "--organisation", "Acme"); err != nil {
+			t.Fatalf("warm-up project list: %v", err)
+		}
+		before := f.organisationLists()
+
+		// When
+		out, err := run("", "project", "get", "acme-api")
+
+		// Then — the label renders with no further org fetch
+		if err != nil {
+			t.Fatalf("project get: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Acme (3)") {
+			t.Errorf("output = %q, want the organisation labelled", out)
+		}
+		if got := f.organisationLists(); got != before {
+			t.Errorf("organisation list calls = %d, want %d (no fetch on a warm cache)", got, before)
 		}
 	})
 
