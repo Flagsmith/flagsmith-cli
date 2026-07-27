@@ -5352,6 +5352,26 @@ func TestEnvironment(t *testing.T) {
 		}
 	})
 
+	t.Run("--jq implies JSON and filters the retrieve payload", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+
+		// When
+		out, err := run("", "environment", "get", "Production", "--jq", ".project")
+
+		// Then
+		if err != nil {
+			t.Fatalf("environment get --jq: %v\noutput: %s", err, out)
+		}
+		if strings.TrimSpace(out) != "101" {
+			t.Errorf("output = %q, want 101 (the retrieve payload's project)", out)
+		}
+		if got := f.environmentGets(); got != 1 {
+			t.Errorf("environment retrieves = %d, want 1 under --jq", got)
+		}
+	})
+
 	t.Run("--json mirrors the API fields via the retrieve payload", func(t *testing.T) {
 		// The retrieve serializer is richer than the list row (metadata), so
 		// machine output re-fetches for fidelity.
