@@ -28,7 +28,10 @@ func TestEnvCredential(t *testing.T) {
 	const self = "https://flagsmith.example"
 
 	t.Run("unscoped serves the default host", func(t *testing.T) {
+		// Given
 		t.Setenv(envAPIKey, key)
+
+		// When / Then
 		name, got := envCredential(envAPIKey, defaultAPIURL, defaultAPIURL)
 		if name != envAPIKey || got != key {
 			t.Errorf("= (%q, %q), want the unscoped variable", name, got)
@@ -36,14 +39,20 @@ func TestEnvCredential(t *testing.T) {
 	})
 
 	t.Run("unscoped is withheld from a non-default host", func(t *testing.T) {
+		// Given
 		t.Setenv(envAPIKey, key)
+
+		// When / Then
 		if name, got := envCredential(envAPIKey, self, defaultAPIURL); name != "" || got != "" {
 			t.Errorf("= (%q, %q), want no credential for a redirected host", name, got)
 		}
 	})
 
 	t.Run("host-scoped serves its own host", func(t *testing.T) {
+		// Given
 		t.Setenv("FLAGSMITH_API_KEY_flagsmith_example", key)
+
+		// When / Then
 		name, got := envCredential(envAPIKey, self, defaultAPIURL)
 		if name != "FLAGSMITH_API_KEY_flagsmith_example" || got != key {
 			t.Errorf("= (%q, %q), want the scoped variable", name, got)
@@ -51,15 +60,21 @@ func TestEnvCredential(t *testing.T) {
 	})
 
 	t.Run("host-scoped is ignored for another host", func(t *testing.T) {
+		// Given
 		t.Setenv("FLAGSMITH_API_KEY_flagsmith_example", key)
+
+		// When / Then
 		if name, _ := envCredential(envAPIKey, "https://other.example", defaultAPIURL); name != "" {
 			t.Errorf("name = %q, want the scope not to apply elsewhere", name)
 		}
 	})
 
 	t.Run("scoped outranks unscoped on the default host", func(t *testing.T) {
+		// Given both forms set
 		t.Setenv(envAPIKey, "unscoped-value")
 		t.Setenv("FLAGSMITH_API_KEY_api_flagsmith_com", key)
+
+		// When / Then
 		name, got := envCredential(envAPIKey, defaultAPIURL, defaultAPIURL)
 		if name != "FLAGSMITH_API_KEY_api_flagsmith_com" || got != key {
 			t.Errorf("= (%q, %q), want the more specific variable", name, got)
@@ -67,14 +82,20 @@ func TestEnvCredential(t *testing.T) {
 	})
 
 	t.Run("the variable name matches case-insensitively", func(t *testing.T) {
+		// Given an uppercase scoped variable
 		t.Setenv("FLAGSMITH_API_KEY_FLAGSMITH_EXAMPLE", key)
+
+		// When / Then
 		if _, got := envCredential(envAPIKey, self, defaultAPIURL); got != key {
 			t.Errorf("value = %q, want an uppercase scoped variable to match", got)
 		}
 	})
 
 	t.Run("scheme is not part of the scope", func(t *testing.T) {
+		// Given a scope set from an https URL
 		t.Setenv("FLAGSMITH_API_KEY_flagsmith_example", key)
+
+		// When / Then — the same scope covers the http one
 		if _, got := envCredential(envAPIKey, "http://flagsmith.example", defaultAPIURL); got != key {
 			t.Errorf("value = %q, want one scope to cover either scheme", got)
 		}

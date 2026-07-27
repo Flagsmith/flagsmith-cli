@@ -15,6 +15,12 @@ import (
 // receives the index so tables can join against a sibling slice built in the
 // same order.
 func renderList[T any](cmd *cobra.Command, items []T, empty string, headers []string, row func(int, T) []string, one, many string) error {
+	if items == nil {
+		// A list is [] when empty (05 §2), never null — some callers build
+		// their slice with append, so guarantee it here rather than at each
+		// of the call sites.
+		items = []T{}
+	}
 	return output.Render(cmd.OutOrStdout(), items, outputOpts(), func(w io.Writer) error {
 		if len(items) == 0 {
 			fmt.Fprintln(w, empty)

@@ -2151,7 +2151,10 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 // --version reports the resolved build version — the first question of
 // every bug report.
 func TestVersionFlag(t *testing.T) {
+	// When
 	out, err := run("", "--version")
+
+	// Then
 	if err != nil {
 		t.Fatalf("--version: %v\noutput: %s", err, out)
 	}
@@ -2167,10 +2170,13 @@ func TestSchemaURL(t *testing.T) {
 	orig := version.Version
 	t.Cleanup(func() { version.Version = orig })
 
+	// Given a release build — Then $schema pins to that tag
 	version.Version = "v1.2.3"
 	if got := schemaURL(); !strings.Contains(got, "/v1.2.3/schema/flagsmith.json") {
 		t.Errorf("schemaURL() = %q, want pinned to the release tag", got)
 	}
+
+	// Given any other build — Then it references main, which always exists
 	version.Version = "dev (2f71d6f)"
 	if got := schemaURL(); !strings.Contains(got, "/main/schema/flagsmith.json") {
 		t.Errorf("schemaURL() = %q, want main for a non-release build", got)
@@ -5166,6 +5172,34 @@ func TestFeatureSearchNarrowsFetch(t *testing.T) {
 	})
 }
 
+// A standard feature has no variants, and an empty list renders [] — the
+// slice is built here, so it never passes through getList's normalisation.
+func TestFeatureVariantListEmptyIsArray(t *testing.T) {
+	// Given a standard feature, which has no multivariate options
+	f := flagUpdateEnv(t)
+	withFeatures(f) // checkout-v2 is STANDARD
+
+	// When
+	out, err := run("", "feature", "variant", "list", "checkout-v2", "--json")
+
+	// Then
+	if err != nil {
+		t.Fatalf("feature variant list --json: %v\noutput: %s", err, out)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Errorf("output = %q, want []", out)
+	}
+
+	// And --jq '.[]' iterates zero items instead of erroring on null
+	out, err = run("", "feature", "variant", "list", "checkout-v2", "--jq", ".[]")
+	if err != nil {
+		t.Fatalf("feature variant list --jq: %v\noutput: %s", err, out)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("output = %q, want nothing", out)
+	}
+}
+
 func TestFeatureCreate(t *testing.T) {
 	t.Run("standard with a default value", func(t *testing.T) {
 		f := flagUpdateEnv(t)
@@ -6336,24 +6370,33 @@ func TestSDKKeyScopesToSDKSurface(t *testing.T) {
 	}
 
 	t.Run("a key scoped to the SDK host is used", func(t *testing.T) {
+		// Given a secret scoped to the SDK host
 		_, sdk := setup(t)
 		setEnvCred(t, envEnvironmentKey, sdk.srv.URL, "ser.sdkSurfaceSecret")
+
+		// When / Then
 		if got := sentKey(t); got != "ser.sdkSurfaceSecret" {
 			t.Errorf("X-Environment-Key = %q, want the SDK-scoped key", got)
 		}
 	})
 
 	t.Run("a key scoped to the admin host is not used here", func(t *testing.T) {
+		// Given a secret scoped to the Admin host instead
 		admin, _ := setup(t)
 		setEnvCred(t, envEnvironmentKey, admin.srv.URL, "ser.wrongSurfaceSecret")
+
+		// When / Then
 		if got := sentKey(t); got == "ser.wrongSurfaceSecret" {
 			t.Errorf("X-Environment-Key = %q — a key scoped to the Admin host must not reach the SDK surface", got)
 		}
 	})
 
 	t.Run("an unscoped key is withheld from a non-default SDK host", func(t *testing.T) {
+		// Given an unscoped secret and a non-default SDK host
 		setup(t)
 		t.Setenv(envEnvironmentKey, "ser.unscopedSecret")
+
+		// When / Then
 		if got := sentKey(t); got == "ser.unscopedSecret" {
 			t.Errorf("X-Environment-Key = %q — an unscoped secret must not follow a redirected SDK host", got)
 		}
