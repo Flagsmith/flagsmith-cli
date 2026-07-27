@@ -48,6 +48,14 @@ func splitLines(s string) []string {
 	return strings.Split(strings.TrimRight(s, "\n"), "\n")
 }
 
+// flattenCell makes a value safe to hand to tabwriter, which reads newlines
+// and tabs as structure: a newline ends the row — breaking the alignment of
+// every row after it, and desynchronising output lines from input rows — and
+// a tab starts a new cell. Values reach us unsanitised from the API, so they
+// are flattened to spaces here rather than at each call site. Runs of plain
+// spaces are left alone: they are content, not structure.
+var flattenCell = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace
+
 // Render writes data as JSON (applying JQ) when JSON output is requested,
 // otherwise delegates to human. human may be nil when only JSON is expected.
 func Render(w io.Writer, data any, opts Options, human func(io.Writer) error) error {
@@ -112,9 +120,18 @@ func renderJQ(w io.Writer, data any, expr string) error {
 func Table(w io.Writer, headers []string, rows [][]string) error {
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, strings.Join(headers, "\t"))
+	// Flatten each cell before joining: the tabs between them are the
+	// structure tabwriter aligns on.
+	writeRow := func(cells []string) {
+		flat := make([]string, len(cells))
+		for i, c := range cells {
+			flat[i] = flattenCell(c)
+		}
+		fmt.Fprintln(tw, strings.Join(flat, "\t"))
+	}
+	writeRow(headers)
 	for _, row := range rows {
-		fmt.Fprintln(tw, strings.Join(row, "\t"))
+		writeRow(row)
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -145,20 +162,25 @@ func Detail(w io.Writer, fields []Field) error {
 			hasSource = true
 		}
 	}
+	// Flatten into a copy: the colourer matches against what was written, and
+	// the caller's slice is not ours to modify.
+	flat := make([]Field, len(fields))
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
-	for _, f := range fields {
+	for i, f := range fields {
+		flat[i] = Field{Label: flattenCell(f.Label), Value: flattenCell(f.Value), Source: flattenCell(f.Source)}
 		if hasSource {
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", f.Label, f.Value, f.Source)
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", flat[i].Label, flat[i].Value, flat[i].Source)
 		} else {
-			fmt.Fprintf(tw, "%s\t%s\n", f.Label, f.Value)
+			fmt.Fprintf(tw, "%s\t%s\n", flat[i].Label, flat[i].Value)
 		}
 	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	// One row in, one line out — guaranteed by the flattening above.
 	for i, line := range splitLines(buf.String()) {
-		fmt.Fprintln(w, colorDetailLine(line, fields[i]))
+		fmt.Fprintln(w, colorDetailLine(line, flat[i]))
 	}
 	return nil
 }

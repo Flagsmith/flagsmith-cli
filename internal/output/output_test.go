@@ -300,6 +300,47 @@ func TestDetailColoursSurviveSpaceyValues(t *testing.T) {
 	}
 }
 
+// Values come from the API unsanitised, so a description or flag value may
+// contain newlines or tabs. tabwriter treats both as structure — a newline
+// ends the row (breaking alignment for everything after it) and a tab starts
+// a new cell — so the renderer flattens them to spaces first, as the table
+// view already does for its cells.
+func TestDetailFlattensStructuralWhitespace(t *testing.T) {
+	// Given values carrying a newline and a tab
+	var b bytes.Buffer
+	fields := []Field{
+		{Label: "Feature", Value: "banner", Source: "config"},
+		{Label: "Description", Value: "line one\nline two", Source: "config"},
+		{Label: "Value", Value: "a\tb", Source: "env"},
+	}
+
+	// When
+	color.NoColor = false
+	err := Detail(&b, fields)
+	color.NoColor = true
+
+	// Then
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+
+	// One line per field, whatever the values contained.
+	if got := len(strings.Split(strings.TrimRight(out, "\n"), "\n")); got != 3 {
+		t.Errorf("lines = %d, want 3 (one per field):\n%s", got, out)
+	}
+	if strings.Contains(out, "line one\nline two") || strings.Contains(out, "a\tb") {
+		t.Errorf("structural whitespace survived into the row: %q", out)
+	}
+	if !strings.Contains(out, "line one line two") || !strings.Contains(out, "a b") {
+		t.Errorf("output = %q, want the text preserved with spaces", out)
+	}
+	// Colouring still lands on the right columns.
+	if !strings.Contains(out, "\x1b[2mconfig\x1b[0m") || !strings.Contains(out, "\x1b[2menv\x1b[0m") {
+		t.Errorf("sources not dimmed exactly: %q", out)
+	}
+}
+
 func TestSuccess(t *testing.T) {
 	// Given
 	var b bytes.Buffer
