@@ -55,6 +55,20 @@ func New(userAgent string) *http.Client {
 	}
 	return &http.Client{
 		Transport: &transport{base: rt, userAgent: userAgent},
+		// Go strips Authorization when a redirect crosses hosts, but copies
+		// custom headers verbatim — and X-Environment-Key can carry a
+		// server-side (ser.) secret. Give it the same treatment. Setting
+		// CheckRedirect replaces the default policy, so the ten-hop cap
+		// comes with it.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			if req.URL.Host != via[0].URL.Host {
+				req.Header.Del("X-Environment-Key")
+			}
+			return nil
+		},
 	}
 }
 

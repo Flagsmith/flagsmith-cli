@@ -270,3 +270,54 @@ func TestShouldRetry(t *testing.T) {
 		t.Error("500 should be retried")
 	}
 }
+
+// Go's stdlib strips Authorization when a redirect crosses hosts, but copies
+// custom headers verbatim — and X-Environment-Key can carry a server-side
+// (ser.) secret via `flagsmith api --sdk`. It must get the same treatment.
+func TestRedirectStripsEnvironmentKeyAcrossHosts(t *testing.T) {
+	// Given a target on another host (port counts) and a redirector that can
+	// bounce either there or to itself
+	var got http.Header
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	defer other.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/self":
+			http.Redirect(w, r, "/final", http.StatusFound)
+		case "/final":
+			got = r.Header.Clone()
+		default:
+			http.Redirect(w, r, other.URL, http.StatusFound)
+		}
+	}))
+	defer origin.Close()
+	c := New("test-agent")
+
+	fetch := func(u string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, u, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Environment-Key", "ser.secret")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+
+	// When the redirect crosses hosts — Then the secret must not follow
+	fetch(origin.URL)
+	if v := got.Get("X-Environment-Key"); v != "" {
+		t.Errorf("X-Environment-Key = %q at the cross-host target, want it stripped", v)
+	}
+
+	// When the redirect stays on the origin — Then the key still flows
+	fetch(origin.URL + "/self")
+	if v := got.Get("X-Environment-Key"); v != "ser.secret" {
+		t.Errorf("X-Environment-Key = %q after a same-host redirect, want it kept", v)
+	}
+}
