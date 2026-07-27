@@ -291,6 +291,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
+			"issuer":                 f.srv.URL,
 			"authorization_endpoint": f.srv.URL + "/oauth/authorize/",
 			"token_endpoint":         f.srv.URL + "/o/token/",
 			"revocation_endpoint":    f.srv.URL + "/o/revoke_token/",

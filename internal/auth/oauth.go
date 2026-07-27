@@ -31,9 +31,92 @@ const (
 
 // Metadata is the subset of RFC 8414 authorization server metadata we use.
 type Metadata struct {
+	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	RevocationEndpoint    string `json:"revocation_endpoint"`
+}
+
+// validate anchors the metadata to the instance it was fetched for, per RFC
+// 8414 §3.3: metadata is served by one unauthenticated path, so without the
+// issuer anchor a compromised /.well-known/* route could redirect the refresh
+// token — the long-lived credential — to any host at the next quiet renewal.
+// The endpoints that receive credentials (token, revocation) must live on the
+// issuer over https; the authorization endpoint is browser-visited and
+// carries no CLI secret (Flagsmith serves it from the dashboard host), so it
+// may be cross-origin but must be https. Loopback hosts are exempt from
+// https so local instances keep working.
+func (md *Metadata) validate(apiURL string) error {
+	if md.Issuer == "" {
+		return fmt.Errorf("authorization server metadata carries no issuer — cannot verify it speaks for %s", apiURL)
+	}
+	issuer, err := url.Parse(md.Issuer)
+	if err != nil {
+		return fmt.Errorf("authorization server metadata carries an invalid issuer: %w", err)
+	}
+	want, err := url.Parse(apiURL)
+	if err != nil {
+		return err
+	}
+	if !sameURL(issuer, want) {
+		return fmt.Errorf("authorization server metadata is for %s, not %s — use the instance's canonical API URL", md.Issuer, apiURL)
+	}
+	if err := validCredentialEndpoint("token", md.TokenEndpoint, issuer); err != nil {
+		return err
+	}
+	if md.RevocationEndpoint != "" {
+		if err := validCredentialEndpoint("revocation", md.RevocationEndpoint, issuer); err != nil {
+			return err
+		}
+	}
+	authz, err := url.Parse(md.AuthorizationEndpoint)
+	if err != nil {
+		return fmt.Errorf("authorization endpoint %q is invalid: %w", md.AuthorizationEndpoint, err)
+	}
+	if !secureScheme(authz) {
+		return fmt.Errorf("authorization endpoint %s is not https", md.AuthorizationEndpoint)
+	}
+	return nil
+}
+
+// validCredentialEndpoint checks an endpoint the refresh token is sent to:
+// same origin as the issuer, over https (loopback exempt).
+func validCredentialEndpoint(name, endpoint string, issuer *url.URL) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("%s endpoint %q is invalid: %w", name, endpoint, err)
+	}
+	if !strings.EqualFold(u.Scheme, issuer.Scheme) || !strings.EqualFold(u.Host, issuer.Host) {
+		return fmt.Errorf("%s endpoint %s is not on %s — refusing to send credentials elsewhere", name, endpoint, issuer)
+	}
+	if !secureScheme(u) {
+		return fmt.Errorf("%s endpoint %s is not https", name, endpoint)
+	}
+	return nil
+}
+
+// sameURL compares scheme, host, and path, ignoring case and a trailing slash.
+func sameURL(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Host, b.Host) &&
+		strings.TrimRight(a.Path, "/") == strings.TrimRight(b.Path, "/")
+}
+
+// secureScheme reports whether an endpoint may receive OAuth traffic: https,
+// or plain http strictly on a loopback host (local instances).
+func secureScheme(u *url.URL) bool {
+	if strings.EqualFold(u.Scheme, "https") {
+		return true
+	}
+	if !strings.EqualFold(u.Scheme, "http") {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Metadata, error) {
@@ -56,6 +139,9 @@ func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Met
 	}
 	if md.AuthorizationEndpoint == "" || md.TokenEndpoint == "" {
 		return nil, bug.Mark(errors.New("authorization server metadata is missing required endpoints"))
+	}
+	if err := md.validate(strings.TrimRight(apiURL, "/")); err != nil {
+		return nil, err
 	}
 	return &md, nil
 }

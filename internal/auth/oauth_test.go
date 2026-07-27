@@ -48,6 +48,7 @@ func newFakeAuthServer(t *testing.T) *fakeAuthServer {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		md := map[string]string{
+			"issuer":                 f.srv.URL,
 			"authorization_endpoint": f.srv.URL + "/oauth/authorize/",
 			"token_endpoint":         f.srv.URL + "/o/token/",
 		}
@@ -401,6 +402,146 @@ func TestDiscover(t *testing.T) {
 			t.Error("expected an error for metadata without endpoints")
 		}
 	})
+
+	t.Run("a forged issuer is refused end to end", func(t *testing.T) {
+		// Given metadata claiming to speak for another instance — the shape a
+		// compromised /.well-known/* path would serve
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"issuer":"https://evil.example",
+				"authorization_endpoint":"https://evil.example/oauth/authorize/",
+				"token_endpoint":"https://evil.example/o/token/"}`)
+		}))
+		defer srv.Close()
+
+		// When / Then
+		_, err := Discover(context.Background(), http.DefaultClient, srv.URL)
+		if err == nil || !strings.Contains(err.Error(), "evil.example") || !strings.Contains(err.Error(), srv.URL) {
+			t.Errorf("err = %v, want a refusal naming both the issuer and the requested URL", err)
+		}
+	})
+
+	t.Run("a cross-origin token endpoint is refused end to end", func(t *testing.T) {
+		// Given a consistent issuer but the credential endpoint pointed away
+		var srv *httptest.Server
+		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"issuer":%q,
+				"authorization_endpoint":%q,
+				"token_endpoint":"https://evil.example/o/token/"}`,
+				srv.URL, srv.URL+"/oauth/authorize/")
+		}))
+		defer srv.Close()
+
+		// When / Then
+		_, err := Discover(context.Background(), http.DefaultClient, srv.URL)
+		if err == nil || !strings.Contains(err.Error(), "refusing to send credentials") {
+			t.Errorf("err = %v, want a credential-endpoint refusal", err)
+		}
+	})
+}
+
+// TestMetadataValidate pins the RFC 8414 anchoring rules: the issuer must be
+// the URL the CLI asked about, credential-bearing endpoints (token,
+// revocation) must live on it over https, and the browser-visited
+// authorization endpoint may be cross-origin (Flagsmith serves it from the
+// dashboard host) but must be https. Loopback is exempt from https so local
+// instances keep working.
+func TestMetadataValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		md      Metadata
+		apiURL  string
+		wantErr string // "" means valid
+	}{
+		{
+			name: "production shape: cross-origin authorization endpoint is fine",
+			md: Metadata{
+				Issuer:                "https://api.flagsmith.com",
+				AuthorizationEndpoint: "https://app.flagsmith.com/oauth/authorize/",
+				TokenEndpoint:         "https://api.flagsmith.com/o/token/",
+				RevocationEndpoint:    "https://api.flagsmith.com/o/revoke_token/",
+			},
+			apiURL: "https://api.flagsmith.com",
+		},
+		{
+			name: "trailing slashes do not matter",
+			md: Metadata{
+				Issuer:                "https://api.flagsmith.com/",
+				AuthorizationEndpoint: "https://app.flagsmith.com/oauth/authorize/",
+				TokenEndpoint:         "https://api.flagsmith.com/o/token/",
+			},
+			apiURL: "https://api.flagsmith.com",
+		},
+		{
+			name: "loopback http instance is allowed",
+			md: Metadata{
+				Issuer:                "http://127.0.0.1:8000",
+				AuthorizationEndpoint: "http://127.0.0.1:8000/oauth/authorize/",
+				TokenEndpoint:         "http://127.0.0.1:8000/o/token/",
+			},
+			apiURL: "http://127.0.0.1:8000",
+		},
+		{
+			name:    "missing issuer",
+			md:      Metadata{AuthorizationEndpoint: "https://x/a", TokenEndpoint: "https://x/t"},
+			apiURL:  "https://x",
+			wantErr: "no issuer",
+		},
+		{
+			name: "issuer for another instance",
+			md: Metadata{
+				Issuer:                "https://flagsmith.corp.com",
+				AuthorizationEndpoint: "https://flagsmith.corp.com/a",
+				TokenEndpoint:         "https://flagsmith.corp.com/t",
+			},
+			apiURL:  "https://api.flagsmith.com",
+			wantErr: "canonical",
+		},
+		{
+			name: "cross-origin revocation endpoint",
+			md: Metadata{
+				Issuer:                "https://api.flagsmith.com",
+				AuthorizationEndpoint: "https://app.flagsmith.com/a",
+				TokenEndpoint:         "https://api.flagsmith.com/t",
+				RevocationEndpoint:    "https://evil.example/r",
+			},
+			apiURL:  "https://api.flagsmith.com",
+			wantErr: "refusing to send credentials",
+		},
+		{
+			name: "cleartext non-loopback instance is refused",
+			md: Metadata{
+				Issuer:                "http://flagsmith.internal",
+				AuthorizationEndpoint: "http://flagsmith.internal/a",
+				TokenEndpoint:         "http://flagsmith.internal/t",
+			},
+			apiURL:  "http://flagsmith.internal",
+			wantErr: "https",
+		},
+		{
+			name: "cleartext authorization endpoint is refused",
+			md: Metadata{
+				Issuer:                "https://api.flagsmith.com",
+				AuthorizationEndpoint: "http://app.flagsmith.com/a",
+				TokenEndpoint:         "https://api.flagsmith.com/t",
+			},
+			apiURL:  "https://api.flagsmith.com",
+			wantErr: "https",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.md.validate(c.apiURL)
+			if c.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Errorf("validate() = %v, want an error containing %q", err, c.wantErr)
+			}
+		})
+	}
 }
 
 func TestEnsureFresh(t *testing.T) {
