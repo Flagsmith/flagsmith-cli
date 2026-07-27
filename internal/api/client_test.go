@@ -125,6 +125,29 @@ func TestProjects(t *testing.T) {
 		}
 	})
 
+	t.Run("an empty paginated list is an empty slice, not nil", func(t *testing.T) {
+		// Given — the Admin API paginates, so this is the live empty shape
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"count":0,"next":null,"results":[]}`)
+		}))
+		defer srv.Close()
+
+		// When
+		projects, err := testClient(srv.URL, Bearer("t"), srv).Projects(context.Background(), 3)
+
+		// Then — the documented JSON contract is [] for an empty list, so the
+		// slice must be non-nil (a nil slice renders null)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if projects == nil {
+			t.Error("projects = nil slice, want empty non-nil ([] not null)")
+		}
+		if len(projects) != 0 {
+			t.Errorf("projects = %+v, want empty", projects)
+		}
+	})
+
 	t.Run("bare array response", func(t *testing.T) {
 		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -260,6 +260,11 @@ func (c *Client) getList(ctx context.Context, path string, out any) error {
 			path += "?" + next.RawQuery
 		}
 	}
+	// The list contract is [] when empty (05 §2); a nil slice would marshal
+	// to null and leave the caller's slice nil, rendering null downstream.
+	if items == nil {
+		items = []json.RawMessage{}
+	}
 	combined, err := json.Marshal(items)
 	if err != nil {
 		return err

@@ -5741,6 +5741,30 @@ func TestOrganisation(t *testing.T) {
 		}
 	})
 
+	t.Run("an empty list renders [] not null, and --jq can iterate it", func(t *testing.T) {
+		// Given no organisations (05 §2: "Empty list: [] as JSON")
+		f := flagUpdateEnv(t)
+		f.orgs = nil
+
+		// When / Then — --json is the array literal
+		out, err := run("", "organisation", "list", "--json")
+		if err != nil {
+			t.Fatalf("organisation list --json: %v\noutput: %s", err, out)
+		}
+		if strings.TrimSpace(out) != "[]" {
+			t.Errorf("output = %q, want []", out)
+		}
+
+		// And --jq '.[]' iterates zero items instead of erroring on null
+		out, err = run("", "organisation", "list", "--jq", ".[]")
+		if err != nil {
+			t.Fatalf("organisation list --jq: %v\noutput: %s", err, out)
+		}
+		if strings.TrimSpace(out) != "" {
+			t.Errorf("output = %q, want nothing", out)
+		}
+	})
+
 	t.Run("get by name", func(t *testing.T) {
 		flagUpdateEnv(t)
 		out, err := run("", "organisation", "get", "Acme")
