@@ -268,6 +268,38 @@ func TestDetailWithSourceColumn(t *testing.T) {
 	}
 }
 
+// Column boundaries come from the known field content, not from scanning the
+// padded line — so values containing runs of spaces colour correctly, and a
+// row without a source emits no stray escape bytes.
+func TestDetailColoursSurviveSpaceyValues(t *testing.T) {
+	// Given a double-space value, a trailing-space value, and a sourceless row
+	fields := []Field{
+		{Label: "Organisation", Value: "Acme  Inc", Source: "config"},
+		{Label: "Trailing", Value: "ends with  ", Source: "env"},
+		{Label: "NoSource", Value: "double  space", Source: ""},
+	}
+	var b bytes.Buffer
+	color.NoColor = false
+	err := Detail(&b, fields)
+	color.NoColor = true
+	if err != nil {
+		t.Fatal(err)
+	}
+	colored := b.String()
+
+	// Then the dim paint wraps exactly the sources, never value fragments
+	if strings.Contains(colored, "\x1b[2mInc") || strings.Contains(colored, "\x1b[2mspace") {
+		t.Errorf("value fragment dimmed as a source: %q", colored)
+	}
+	if !strings.Contains(colored, "\x1b[2mconfig\x1b[0m") || !strings.Contains(colored, "\x1b[2menv\x1b[0m") {
+		t.Errorf("sources not dimmed exactly: %q", colored)
+	}
+	// And a row with no source carries no zero-width escape sequence
+	if strings.Contains(colored, "\x1b[2m\x1b[0m") {
+		t.Errorf("stray empty escape sequence on a sourceless row: %q", colored)
+	}
+}
+
 func TestSuccess(t *testing.T) {
 	// Given
 	var b bytes.Buffer

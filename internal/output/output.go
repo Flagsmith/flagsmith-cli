@@ -157,32 +157,26 @@ func Detail(w io.Writer, fields []Field) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
-	for _, line := range splitLines(buf.String()) {
-		fmt.Fprintln(w, colorDetailLine(line, hasSource))
+	for i, line := range splitLines(buf.String()) {
+		fmt.Fprintln(w, colorDetailLine(line, fields[i]))
 	}
 	return nil
 }
 
-// colorDetailLine colours an already-aligned detail line: the label (first
-// column) cyan and, when hasSource, the source (last column) dim. Columns
-// are separated by runs of two or more spaces; intra-cell spaces are single,
-// so the boundaries are unambiguous.
-func colorDetailLine(line string, hasSource bool) string {
+// colorDetailLine colours an already-aligned detail line: the label cyan
+// and, when the row has one, the source dim.
+func colorDetailLine(line string, f Field) string {
 	if color.NoColor {
 		return line
 	}
-	labelEnd := strings.Index(line, "  ")
-	if labelEnd < 0 {
-		return line
+	if f.Source != "" && strings.HasSuffix(line, f.Source) {
+		cut := len(line) - len(f.Source)
+		line = line[:cut] + paint(sgrFaint, line[cut:])
 	}
-	if !hasSource {
-		return paint(sgrCyan, line[:labelEnd]) + line[labelEnd:]
+	if f.Label != "" && strings.HasPrefix(line, f.Label) {
+		line = paint(sgrCyan, f.Label) + line[len(f.Label):]
 	}
-	srcStart := strings.LastIndex(line, "  ") + 2
-	if srcStart <= labelEnd+2 { // no distinct third column
-		return paint(sgrCyan, line[:labelEnd]) + line[labelEnd:]
-	}
-	return paint(sgrCyan, line[:labelEnd]) + line[labelEnd:srcStart] + paint(sgrFaint, line[srcStart:])
+	return line
 }
 
 // Success writes a ✓-prefixed confirmation line (callers pass stderr).
