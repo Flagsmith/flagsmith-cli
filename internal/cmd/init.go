@@ -47,7 +47,7 @@ var initCmd = &cobra.Command{
 // env var — a decision, as opposed to a flagsmith.json value which is a
 // default the prompts pre-select.
 func explicitValue(r resolved) (any, bool) {
-	if r.Source == sourceCLI || r.Source == sourceEnv {
+	if r.Value != nil && (r.Source == sourceCLI || r.Source == sourceEnv) {
 		return r.Value, true
 	}
 	return nil, false

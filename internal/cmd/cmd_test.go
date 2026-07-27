@@ -2026,6 +2026,46 @@ func TestInitNonInteractiveRequiresProject(t *testing.T) {
 	}
 }
 
+// An empty ref — e.g. --project "$PROJECT_ID" with the variable unset in CI —
+// is absent input, not a decision: exit 2 or fall through, never a panic.
+func TestInitEmptyRefExitsCleanly(t *testing.T) {
+	t.Run("--project empty exits 2 non-interactively", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		tempRepo(t)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		_, err := run("", "init", "--api-url", f.srv.URL, "--project", "", "--yes")
+
+		// Then
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Fatalf("err = %v, want a usage error (exit 2)", err)
+		}
+	})
+
+	t.Run("--organisation empty falls back to the lone organisation", func(t *testing.T) {
+		// Given one accessible organisation
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		tempRepo(t)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
+		out, err := run("", "init", "--organisation", "", "--api-url", f.srv.URL, "--create-project", "smoke", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("init --create-project: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Created project smoke") {
+			t.Errorf("output = %q, want the project created in the lone organisation", out)
+		}
+	})
+}
+
 func TestInitNoCredentials(t *testing.T) {
 	// Given
 	isolateStorage(t)
