@@ -141,15 +141,19 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		}
 	}
 
+	// A new segment override inherits the environment default — enabled state
+	// and value alike; an existing one keeps its current state. A value-only
+	// edit must never silently switch the segment off.
 	enabled := flagEnabled(target)
+	if target == nil {
+		enabled = flagEnabled(feature.EnvironmentState)
+	}
 	if m.enable {
 		enabled = true
 	}
 	if m.disable {
 		enabled = false
 	}
-	// A new segment override with no explicit value inherits the environment
-	// default; otherwise keep the target's current value.
 	value := req.EnvironmentDefault.Value
 	if target != nil {
 		value = featureValueFromScalar(currentScalar(target))

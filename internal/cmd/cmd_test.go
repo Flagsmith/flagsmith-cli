@@ -3613,6 +3613,25 @@ func TestFlagUpdateSegment(t *testing.T) {
 		}
 	})
 
+	t.Run("a new override inherits the env default state", func(t *testing.T) {
+		// Given onboarding_banner is ON in the environment and segment 7 has
+		// no override yet
+		f := flagUpdateEnv(t)
+
+		// When — a value-only edit creates the override
+		out, err := run("", "flag", "update", "onboarding_banner", "--segment", "7", "--value", "yo", "--yes")
+
+		// Then — the new override inherits enabled=true like it inherits the
+		// value; a value edit must not silently switch the segment off
+		if err != nil {
+			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["enabled"] != true {
+			t.Errorf("segment override = %+v, want enabled inherited from the env default (on)", ov)
+		}
+	})
+
 	t.Run("a new override inherits the env default value", func(t *testing.T) {
 		// Given no existing override; env default value is integer 25
 		f := flagUpdateEnv(t)
@@ -4522,6 +4541,26 @@ func TestFlagIdentity(t *testing.T) {
 		}
 		if !strings.Contains(out, "on") || !strings.Contains(out, "x") {
 			t.Errorf("output = %q, want the updated detail (on, value x)", out)
+		}
+	})
+
+	t.Run("core: a new override inherits the env default state", func(t *testing.T) {
+		// Given onboarding_banner is ON in the environment and user-1 has no
+		// override for it
+		f := flagUpdateEnv(t)
+
+		// When — a value-only edit creates the override
+		out, err := run("", "flag", "update", "onboarding_banner", "--identifier", "user-1", "--value", "yo", "--yes")
+
+		// Then — enabled inherits the environment default, like the value does
+		if err != nil {
+			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
+		}
+		f.mu.Lock()
+		w := f.lastIdentityWrite
+		f.mu.Unlock()
+		if w["enabled"] != true {
+			t.Errorf("core write = %+v, want enabled inherited from the env default (on)", w)
 		}
 	})
 

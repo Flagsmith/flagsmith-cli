@@ -120,7 +120,9 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 		return err
 	}
 
-	enabled := false
+	// A new override inherits the environment default — enabled state and
+	// value alike (see below); an existing one keeps its current state.
+	enabled := flagEnabled(feature.EnvironmentState)
 	if current != nil {
 		enabled = current.Enabled
 	}
