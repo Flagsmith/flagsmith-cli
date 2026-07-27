@@ -122,26 +122,16 @@ var projectListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return output.Render(cmd.OutOrStdout(), projects, outputOpts(), func(w io.Writer) error {
-			if len(projects) == 0 {
-				fmt.Fprintln(w, "No projects.")
-				return nil
-			}
-			ids := make([]int, len(projects))
-			for i, p := range projects {
-				ids[i] = p.Organisation
-			}
-			names := orgLabels(cmd, cred, ids)
-			rows := make([][]string, len(projects))
-			for i, p := range projects {
-				rows[i] = []string{p.Name, strconv.Itoa(p.ID), orgLabel(names, p.Organisation)}
-			}
-			if err := output.Table(w, []string{"NAME", "ID", "ORGANISATION"}, rows); err != nil {
-				return err
-			}
-			fmt.Fprintf(w, "\n%d %s\n", len(projects), plural(len(projects), "project", "projects"))
-			return nil
-		})
+		ids := make([]int, len(projects))
+		for i, p := range projects {
+			ids[i] = p.Organisation
+		}
+		names := orgLabels(cmd, cred, ids)
+		return renderList(cmd, projects, "No projects.",
+			[]string{"NAME", "ID", "ORGANISATION"},
+			func(_ int, p api.Project) []string {
+				return []string{p.Name, strconv.Itoa(p.ID), orgLabel(names, p.Organisation)}
+			}, "project", "projects")
 	},
 }
 

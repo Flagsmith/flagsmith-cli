@@ -82,21 +82,11 @@ var environmentListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return output.Render(cmd.OutOrStdout(), envs, outputOpts(), func(w io.Writer) error {
-			if len(envs) == 0 {
-				fmt.Fprintln(w, "No environments.")
-				return nil
-			}
-			rows := make([][]string, len(envs))
-			for i, e := range envs {
-				rows[i] = []string{e.Name, e.APIKey, e.Description}
-			}
-			if err := output.Table(w, []string{"NAME", "KEY", "DESCRIPTION"}, rows); err != nil {
-				return err
-			}
-			fmt.Fprintf(w, "\n%d %s\n", len(envs), plural(len(envs), "environment", "environments"))
-			return nil
-		})
+		return renderList(cmd, envs, "No environments.",
+			[]string{"NAME", "KEY", "DESCRIPTION"},
+			func(_ int, e api.Environment) []string {
+				return []string{e.Name, e.APIKey, e.Description}
+			}, "environment", "environments")
 	},
 }
 
@@ -306,17 +296,11 @@ var environmentKeyListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return output.Render(cmd.OutOrStdout(), keys, outputOpts(), func(w io.Writer) error {
-			if len(keys) == 0 {
-				fmt.Fprintln(w, "No server-side keys.")
-				return nil
-			}
-			rows := make([][]string, len(keys))
-			for i, k := range keys {
-				rows[i] = []string{k.Name, strconv.Itoa(k.ID), strconv.FormatBool(k.Active), k.CreatedAt, valueOrDash(k.ExpiresAt)}
-			}
-			return output.Table(w, []string{"NAME", "ID", "ACTIVE", "CREATED", "EXPIRES AT"}, rows)
-		})
+		return renderList(cmd, keys, "No server-side keys.",
+			[]string{"NAME", "ID", "ACTIVE", "CREATED", "EXPIRES AT"},
+			func(_ int, k api.EnvironmentAPIKey) []string {
+				return []string{k.Name, strconv.Itoa(k.ID), strconv.FormatBool(k.Active), k.CreatedAt, valueOrDash(k.ExpiresAt)}
+			}, "", "")
 	},
 }
 

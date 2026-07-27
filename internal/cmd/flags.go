@@ -239,27 +239,11 @@ var flagListCmd = &cobra.Command{
 		for i := range features {
 			views[i] = newFlagView(&features[i])
 		}
-		return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
-			if len(views) == 0 {
-				fmt.Fprintln(w, "No flags.")
-				return nil
-			}
-			rows := make([][]string, len(views))
-			for i, v := range views {
-				rows[i] = []string{
-					v.Feature,
-					v.Type,
-					boolState(v.Enabled),
-					truncateValue(valueDisplay(v.Value)),
-					lifecycleOrDash(v.LifecycleStage),
-				}
-			}
-			if err := output.Table(w, []string{"NAME", "TYPE", "STATE", "VALUE", "LIFECYCLE"}, rows); err != nil {
-				return err
-			}
-			fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "flag", "flags"))
-			return nil
-		})
+		return renderList(cmd, views, "No flags.",
+			[]string{"NAME", "TYPE", "STATE", "VALUE", "LIFECYCLE"},
+			func(_ int, v flagView) []string {
+				return []string{v.Feature, v.Type, boolState(v.Enabled), truncateValue(valueDisplay(v.Value)), lifecycleOrDash(v.LifecycleStage)}
+			}, "flag", "flags")
 	},
 }
 
@@ -311,21 +295,11 @@ func listSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env api.En
 	if len(names) > 0 {
 		_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic (04 §3)
 	}
-	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
-		if len(views) == 0 {
-			fmt.Fprintln(w, "No segment overrides.")
-			return nil
-		}
-		rows := make([][]string, len(views))
-		for i, v := range views {
-			rows[i] = []string{v.Feature, v.Type, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
-		}
-		if err := output.Table(w, []string{"NAME", "TYPE", "STATE", "VALUE"}, rows); err != nil {
-			return err
-		}
-		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "flag", "flags"))
-		return nil
-	})
+	return renderList(cmd, views, "No segment overrides.",
+		[]string{"NAME", "TYPE", "STATE", "VALUE"},
+		func(_ int, v segmentFlagView) []string {
+			return []string{v.Feature, v.Type, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}, "flag", "flags")
 }
 
 var (
@@ -483,21 +457,11 @@ func listFeatureSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env
 
 // renderSegmentOverrideList prints segment-override views in priority order.
 func renderSegmentOverrideList(cmd *cobra.Command, views []segmentFlagView) error {
-	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
-		if len(views) == 0 {
-			fmt.Fprintln(w, "No segment overrides.")
-			return nil
-		}
-		rows := make([][]string, len(views))
-		for i, v := range views {
-			rows[i] = []string{strconv.Itoa(v.Priority), v.Segment.display(), boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
-		}
-		if err := output.Table(w, []string{"PRIORITY", "SEGMENT", "STATE", "VALUE"}, rows); err != nil {
-			return err
-		}
-		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "override", "overrides"))
-		return nil
-	})
+	return renderList(cmd, views, "No segment overrides.",
+		[]string{"PRIORITY", "SEGMENT", "STATE", "VALUE"},
+		func(_ int, v segmentFlagView) []string {
+			return []string{strconv.Itoa(v.Priority), v.Segment.display(), boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}, "override", "overrides")
 }
 
 // listFeatureIdentityOverrides renders one feature's identity overrides,
@@ -526,21 +490,11 @@ func listFeatureIdentityOverrides(cmd *cobra.Command, cred *activeCredential, en
 			Value:      o.Value,
 		}
 	}
-	return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
-		if len(views) == 0 {
-			fmt.Fprintln(w, "No identity overrides.")
-			return nil
-		}
-		rows := make([][]string, len(views))
-		for i, v := range views {
-			rows[i] = []string{v.Identifier, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
-		}
-		if err := output.Table(w, []string{"IDENTIFIER", "STATE", "VALUE"}, rows); err != nil {
-			return err
-		}
-		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "override", "overrides"))
-		return nil
-	})
+	return renderList(cmd, views, "No identity overrides.",
+		[]string{"IDENTIFIER", "STATE", "VALUE"},
+		func(_ int, v identityFlagView) []string {
+			return []string{v.Identifier, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}, "override", "overrides")
 }
 
 // renderFlagDetail prints one flag's curated detail view (or its JSON).

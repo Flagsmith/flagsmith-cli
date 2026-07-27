@@ -84,21 +84,11 @@ var organisationListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return output.Render(cmd.OutOrStdout(), orgs, outputOpts(), func(w io.Writer) error {
-			if len(orgs) == 0 {
-				fmt.Fprintln(w, "No organisations.")
-				return nil
-			}
-			rows := make([][]string, len(orgs))
-			for i, o := range orgs {
-				rows[i] = []string{o.Name, strconv.Itoa(o.ID)}
-			}
-			if err := output.Table(w, []string{"NAME", "ID"}, rows); err != nil {
-				return err
-			}
-			fmt.Fprintf(w, "\n%d %s\n", len(orgs), plural(len(orgs), "organisation", "organisations"))
-			return nil
-		})
+		return renderList(cmd, orgs, "No organisations.",
+			[]string{"NAME", "ID"},
+			func(_ int, o api.Organisation) []string {
+				return []string{o.Name, strconv.Itoa(o.ID)}
+			}, "organisation", "organisations")
 	},
 }
 
@@ -188,11 +178,8 @@ var organisationDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete organisation %s", label(args[0], id))); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete organisation %s", label(args[0], id)), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteOrganisation(cmd.Context(), id); err != nil {
 			return err

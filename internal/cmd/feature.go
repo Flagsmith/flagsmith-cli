@@ -106,21 +106,11 @@ var featureListCmd = &cobra.Command{
 		for i := range features {
 			views[i] = toFeatureView(&features[i])
 		}
-		return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
-			if len(views) == 0 {
-				fmt.Fprintln(w, "No features.")
-				return nil
-			}
-			rows := make([][]string, len(views))
-			for i, v := range views {
-				rows[i] = []string{v.Name, strconv.Itoa(v.ID), v.Type, truncateValue(valueDisplay(v.Value)), v.Description}
-			}
-			if err := output.Table(w, []string{"NAME", "ID", "TYPE", "DEFAULT VALUE", "DESCRIPTION"}, rows); err != nil {
-				return err
-			}
-			fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "feature", "features"))
-			return nil
-		})
+		return renderList(cmd, views, "No features.",
+			[]string{"NAME", "ID", "TYPE", "DEFAULT VALUE", "DESCRIPTION"},
+			func(_ int, v featureView) []string {
+				return []string{v.Name, strconv.Itoa(v.ID), v.Type, truncateValue(valueDisplay(v.Value)), v.Description}
+			}, "feature", "features")
 	},
 }
 
@@ -416,17 +406,11 @@ var featureVariantListCmd = &cobra.Command{
 			return err
 		}
 		variants := toFeatureView(feat).Variants
-		return output.Render(cmd.OutOrStdout(), variants, outputOpts(), func(w io.Writer) error {
-			if len(variants) == 0 {
-				fmt.Fprintln(w, "No variants.")
-				return nil
-			}
-			rows := make([][]string, len(variants))
-			for i, v := range variants {
-				rows[i] = []string{fmt.Sprint(v.Value), formatWeight(v.Weight), v.Key, strconv.Itoa(v.ID)}
-			}
-			return output.Table(w, []string{"VALUE", "WEIGHT", "KEY", "ID"}, rows)
-		})
+		return renderList(cmd, variants, "No variants.",
+			[]string{"VALUE", "WEIGHT", "KEY", "ID"},
+			func(_ int, v variantView) []string {
+				return []string{fmt.Sprint(v.Value), formatWeight(v.Weight), v.Key, strconv.Itoa(v.ID)}
+			}, "", "")
 	},
 }
 

@@ -94,26 +94,18 @@ var segmentListCmd = &cobra.Command{
 		for i := range segs {
 			views[i] = toSegmentView(&segs[i])
 		}
-		return output.Render(cmd.OutOrStdout(), views, outputOpts(), func(w io.Writer) error {
-			if len(segs) == 0 {
-				fmt.Fprintln(w, "No segments.")
-				return nil
-			}
-			rows := make([][]string, len(segs))
-			for i := range segs {
-				rows[i] = []string{
+		// The condition count comes from the raw rules; the row joins back to
+		// segs by index (views mirror it in order).
+		return renderList(cmd, views, "No segments.",
+			[]string{"NAME", "ID", "CONDITIONS", "DESCRIPTION"},
+			func(i int, _ segmentView) []string {
+				return []string{
 					segs[i].Name,
 					strconv.Itoa(segs[i].ID),
 					strconv.Itoa(countConditions(segs[i].Rules)),
 					segs[i].Description,
 				}
-			}
-			if err := output.Table(w, []string{"NAME", "ID", "CONDITIONS", "DESCRIPTION"}, rows); err != nil {
-				return err
-			}
-			fmt.Fprintf(w, "\n%d %s\n", len(segs), plural(len(segs), "segment", "segments"))
-			return nil
-		})
+			}, "segment", "segments")
 	},
 }
 
