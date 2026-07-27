@@ -64,24 +64,23 @@ Unless a static credential is set explicitly, the `Flagsmith/setup-cli@v1` actio
 
 ## 5. SDK API auth
 
-- Credential: `FLAGSMITH_ENVIRONMENT_KEY` — SDK auth, takes precedence. Accepts client-side *and* server-side (`ser.*`) keys; the env var is the only home for server-side keys, which are secrets and rejected everywhere else.
+- Credential: `FLAGSMITH_ENVIRONMENT_KEY` — SDK auth, takes precedence. Accepts client-side *and* server-side (`ser.*`) keys; the env var is the only home for server-side keys, which are secrets and rejected everywhere else. Because it can hold a secret, it has a host-scoped form (§6), scoped to the *SDK* API URL's host. `FLAGSMITH_ENVIRONMENT` needs none: client-side keys are public.
 - Context: `FLAGSMITH_ENVIRONMENT` — the *default environment* as a client-side key, same semantics as `environment` in `flagsmith.json` (see 04-project-config.md). Client-side keys double as SDK auth, so either source alone suffices for flag evaluation with zero Admin API creds.
 
 ## 6. Credential precedence & env vars
 
 Admin API:
 
-1. Command-line flags
-2. `FLAGSMITH_API_KEY` — Master API key → `Authorization: Api-Key …`
-3. `FLAGSMITH_ACCESS_TOKEN` — OAuth-style access token (OIDC-exchanged in CI) → `Authorization: Bearer …`
-4. Logged-in profile (keychain) — OAuth session
+1. `FLAGSMITH_API_KEY[_<HOST>]`. Host-scoped if `apiUrl` explicitly set to a non-default host.
+2. `FLAGSMITH_ACCESS_TOKEN[_<HOST>]`. Host-scoped if `apiUrl` explicitly set to a non-default host.
+3. Logged-in profile (keychain) — OAuth session. Always host-scoped.
 
 SDK API (sent as `X-Environment-Key`):
 
-1. Command-line flags (`-e` with a client-side key)
-2. `FLAGSMITH_ENVIRONMENT_KEY` (SDK auth: client- or server-side key)
-3. `FLAGSMITH_ENVIRONMENT` (default environment: client-side key)
-4. `environment` in the nearest `flagsmith.json`
+1. Command-line flags. `-e` with a client-side key.
+2. `FLAGSMITH_ENVIRONMENT_KEY[_<HOST>]` SDK auth: client- or server-side key. Host-scoped if `sdkApiUrl` explicitly set to a non-default host.
+3. `FLAGSMITH_ENVIRONMENT`. Client-side key, or name from which the client-side key is derived.
+4. `environment` in the nearest `flagsmith.json`.
 
 Each Admin API variable maps to one credential kind:
 
@@ -93,7 +92,23 @@ Each Admin API variable maps to one credential kind:
 - starts with `ser.`: a server-side environment key in the wrong variable. Point at `FLAGSMITH_ENVIRONMENT_KEY`.
 - a legacy 40-char hex authtoken: point at `flagsmith login` or a Master API key.
 
-`flagsmith auth status` always prints which source is active.
+`flagsmith auth status` always prints which source is active, naming the exact variable when a host-scoped one was used.
+
+### Host-scoped credentials
+
+Every secret-bearing credential variable has a host-scoped form, and the unscoped form is trusted only for default SaaS hosts.
+
+`<HOST>` is the API URL's host and port, with `-` written `__` and `.`, `:` written `_`. Matching is case-insensitive:
+
+| API URL | Variable |
+|---|---|
+| `https://api.flagsmith.com` | `FLAGSMITH_API_KEY_api_flagsmith_com` |
+| `https://flagsmith.corp-internal.io` | `FLAGSMITH_API_KEY_flagsmith_corp__internal_io` |
+| `http://localhost:8000` | `FLAGSMITH_API_KEY_localhost_8000` |
+
+The scheme is not part of the scope: one scope covers `host:port` over either scheme.
+
+If host-scoped credential not provided, CLI looks in the keychain next.
 
 ## 7. Storage
 
