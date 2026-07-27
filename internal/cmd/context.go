@@ -61,6 +61,29 @@ func parseRef(raw string) any {
 	return raw
 }
 
+// contextValue applies the flag → env → config → default precedence for one
+// context value. transform normalises the raw flag/env string; fileVal
+// reports the config file's (already typed and normalised) value, when set;
+// def is the final fallback.
+func contextValue(cmd *cobra.Command, flagName, flagVal, envVar string,
+	transform func(string) any, fileVal func() (any, bool), def any) resolved {
+	switch {
+	case cmd.Flags().Changed(flagName):
+		return resolved{Value: transform(flagVal), Source: sourceCLI}
+	case os.Getenv(envVar) != "":
+		return resolved{Value: transform(os.Getenv(envVar)), Source: sourceEnv}
+	}
+	if v, ok := fileVal(); ok {
+		return resolved{Value: v, Source: sourceConfig}
+	}
+	return resolved{Value: def, Source: sourceDefault}
+}
+
+// asString and trimSlash are the transforms context values use: environments
+// pass through verbatim, URLs lose their trailing slash once here.
+func asString(raw string) any  { return raw }
+func trimSlash(raw string) any { return strings.TrimRight(raw, "/") }
+
 // resolveContext applies the context precedence for every value and
 // annotates names from the local cache. It performs no network calls and
 // needs no credentials.
@@ -104,41 +127,25 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 		file = &config.File{}
 	}
 
-	// project (an ID or a name; see parseRef)
-	switch {
-	case cmd.Flags().Changed("project"):
-		pc.Project = resolved{Value: parseRef(projectFlag), Source: sourceCLI}
-	case os.Getenv("FLAGSMITH_PROJECT") != "":
-		pc.Project = resolved{Value: parseRef(os.Getenv("FLAGSMITH_PROJECT")), Source: sourceEnv}
-	case file.Project != nil:
-		pc.Project = resolved{Value: file.Project.Value(), Source: sourceConfig}
-	default:
-		pc.Project = resolved{Value: nil, Source: sourceDefault}
-	}
-
-	// organisation (an ID or a name; see parseRef)
-	switch {
-	case cmd.Flags().Changed("organisation"):
-		pc.Organisation = resolved{Value: parseRef(organisationFlag), Source: sourceCLI}
-	case os.Getenv("FLAGSMITH_ORGANISATION") != "":
-		pc.Organisation = resolved{Value: parseRef(os.Getenv("FLAGSMITH_ORGANISATION")), Source: sourceEnv}
-	case file.Organisation != nil:
-		pc.Organisation = resolved{Value: file.Organisation.Value(), Source: sourceConfig}
-	default:
-		pc.Organisation = resolved{Value: nil, Source: sourceDefault}
-	}
+	// project and organisation (an ID or a name; see parseRef)
+	pc.Project = contextValue(cmd, "project", projectFlag, "FLAGSMITH_PROJECT", parseRef,
+		func() (any, bool) {
+			if file.Project == nil {
+				return nil, false
+			}
+			return file.Project.Value(), true
+		}, nil)
+	pc.Organisation = contextValue(cmd, "organisation", organisationFlag, "FLAGSMITH_ORGANISATION", parseRef,
+		func() (any, bool) {
+			if file.Organisation == nil {
+				return nil, false
+			}
+			return file.Organisation.Value(), true
+		}, nil)
 
 	// environment (client-side key; ser.* never belongs in context)
-	switch {
-	case cmd.Flags().Changed("environment"):
-		pc.Environment = resolved{Value: environmentFlag, Source: sourceCLI}
-	case os.Getenv("FLAGSMITH_ENVIRONMENT") != "":
-		pc.Environment = resolved{Value: os.Getenv("FLAGSMITH_ENVIRONMENT"), Source: sourceEnv}
-	case file.Environment != "":
-		pc.Environment = resolved{Value: file.Environment, Source: sourceConfig}
-	default:
-		pc.Environment = resolved{Value: nil, Source: sourceDefault}
-	}
+	pc.Environment = contextValue(cmd, "environment", environmentFlag, "FLAGSMITH_ENVIRONMENT", asString,
+		func() (any, bool) { return file.Environment, file.Environment != "" }, nil)
 	if key, ok := pc.Environment.Value.(string); ok && strings.HasPrefix(key, "ser.") {
 		return nil, withHint(
 			errors.New("the environment context takes a client-side key"),
@@ -146,30 +153,16 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 	}
 
 	// apiUrl
-	switch {
-	case cmd.Flags().Changed("api-url"):
-		pc.APIURL = resolved{Value: strings.TrimRight(apiURLFlag, "/"), Source: sourceCLI}
-	case os.Getenv("FLAGSMITH_API_URL") != "":
-		pc.APIURL = resolved{Value: strings.TrimRight(os.Getenv("FLAGSMITH_API_URL"), "/"), Source: sourceEnv}
-	case file.APIURL != "":
-		pc.APIURL = resolved{Value: strings.TrimRight(file.APIURL, "/"), Source: sourceConfig}
-	default:
-		pc.APIURL = resolved{Value: defaultAPIURL, Source: sourceDefault}
-	}
+	pc.APIURL = contextValue(cmd, "api-url", apiURLFlag, "FLAGSMITH_API_URL", trimSlash,
+		func() (any, bool) { return strings.TrimRight(file.APIURL, "/"), file.APIURL != "" }, defaultAPIURL)
 
 	// sdkApiUrl: explicit, else follows a non-default apiUrl, else Edge
-	switch {
-	case cmd.Flags().Changed("sdk-api-url"):
-		pc.SDKAPIURL = resolved{Value: strings.TrimRight(sdkAPIURLFlag, "/"), Source: sourceCLI}
-	case os.Getenv("FLAGSMITH_SDK_API_URL") != "":
-		pc.SDKAPIURL = resolved{Value: strings.TrimRight(os.Getenv("FLAGSMITH_SDK_API_URL"), "/"), Source: sourceEnv}
-	case file.SDKAPIURL != "":
-		pc.SDKAPIURL = resolved{Value: strings.TrimRight(file.SDKAPIURL, "/"), Source: sourceConfig}
-	case pc.APIURL.Source != sourceDefault:
-		pc.SDKAPIURL = resolved{Value: pc.APIURL.Value, Source: sourceDefault}
-	default:
-		pc.SDKAPIURL = resolved{Value: defaultSDKAPIURL, Source: sourceDefault}
+	sdkDefault := any(defaultSDKAPIURL)
+	if pc.APIURL.Source != sourceDefault {
+		sdkDefault = pc.APIURL.Value
 	}
+	pc.SDKAPIURL = contextValue(cmd, "sdk-api-url", sdkAPIURLFlag, "FLAGSMITH_SDK_API_URL", trimSlash,
+		func() (any, bool) { return strings.TrimRight(file.SDKAPIURL, "/"), file.SDKAPIURL != "" }, sdkDefault)
 
 	// Cosmetic name enrichment from the local cache — never the network.
 	names := cache.Load(pc.apiURL())
