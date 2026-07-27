@@ -121,6 +121,7 @@ func resolveProjectID(cmd *cobra.Command, pc *projectContext, cred *activeCreden
 	for _, p := range projects {
 		byID[strconv.Itoa(p.ID)] = p.Name
 	}
+	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic (04 §3)
 	hits := matchByName(byID, name)
 	if len(hits) == 0 {
 		return 0, withHint(

@@ -131,6 +131,8 @@ type fakeInstance struct {
 	stListCalls    int                         // count of GET /features/featurestates/ calls
 	idLookupCalls  int                         // count of GET /identities/ (identifier lookups)
 	edgeLookups    int                         // count of GET /edge-identities/ (uuid lookups)
+	envGetCalls    int                         // count of GET /environments/{key}/ (retrieve)
+	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
 	updateCalls    int                         // count of update-flag-v2 calls
 	lastUpdate     map[string]any              // last update-flag-v2 request body
@@ -401,6 +403,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
+		f.envGetCalls++
 		_, env := f.envByAPIKey(r.PathValue("api_key"))
 		f.mu.Unlock()
 		if env == nil {
@@ -611,6 +614,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		}
 		id, _ := strconv.Atoi(r.PathValue("project"))
 		f.mu.Lock()
+		f.projGetCalls++
 		resp := map[string]any{"id": id, "name": "acme-api", "organisation": 3}
 		if p := f.projectByID(id); p != nil {
 			resp = map[string]any{}
@@ -1407,6 +1411,20 @@ func (f *fakeInstance) edgeIdentityLookups() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.edgeLookups
+}
+
+// environmentGets returns how many single-environment retrieves were served.
+func (f *fakeInstance) environmentGets() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.envGetCalls
+}
+
+// projectGets returns how many single-project retrieves were served.
+func (f *fakeInstance) projectGets() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.projGetCalls
 }
 
 // defaultFeatures is the stock project features list (with per-environment
@@ -5198,10 +5216,21 @@ func TestEnvironment(t *testing.T) {
 		}
 	})
 
-	t.Run("get by name", func(t *testing.T) {
-		f := flagUpdateEnv(t)
+	t.Run("get by name renders from the list row, project label from the cache", func(t *testing.T) {
+		// Given the project referenced by name, so resolving it seeds the
+		// project-name cache in the same invocation
+		isolateStorage(t)
+		f := newFakeInstance(t)
 		withEnvironments(f)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": "acme-api", "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+		t.Setenv("FLAGSMITH_API_KEY", masterKey)
+
+		// When
 		out, err := run("", "environment", "get", "Production")
+
+		// Then — no retrieve calls: the list row carries the human detail,
+		// and the project label comes from the name cache
 		if err != nil {
 			t.Fatalf("environment get: %v\noutput: %s", err, out)
 		}
@@ -5210,9 +5239,34 @@ func TestEnvironment(t *testing.T) {
 				t.Errorf("output = %q, want %q", out, want)
 			}
 		}
+		if got := f.environmentGets(); got != 0 {
+			t.Errorf("environment retrieves = %d, want 0 (the list row is enough)", got)
+		}
+		if got := f.projectGets(); got != 0 {
+			t.Errorf("project retrieves = %d, want 0 (the label is cached)", got)
+		}
 	})
 
-	t.Run("--json mirrors the API fields", func(t *testing.T) {
+	t.Run("get with a cold name cache degrades to the bare project id", func(t *testing.T) {
+		// Given a numeric project ref — nothing seeds the cache
+		f := flagUpdateEnv(t)
+		withEnvironments(f)
+
+		// When
+		out, err := run("", "environment", "get", "Production")
+
+		// Then
+		if err != nil {
+			t.Fatalf("environment get: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "101") || strings.Contains(out, "acme-api") {
+			t.Errorf("output = %q, want the bare project id without a name", out)
+		}
+	})
+
+	t.Run("--json mirrors the API fields via the retrieve payload", func(t *testing.T) {
+		// The retrieve serializer is richer than the list row (metadata), so
+		// machine output re-fetches for fidelity.
 		f := flagUpdateEnv(t)
 		withEnvironments(f)
 		out, err := run("", "environment", "get", "Production", "--json")
@@ -5225,6 +5279,9 @@ func TestEnvironment(t *testing.T) {
 		}
 		if v["use_v2_feature_versioning"] != true || v["api_key"] != "K2mVsGdXhZ8kQqZ9pJmNbJ" {
 			t.Errorf("env = %+v, want raw API fields", v)
+		}
+		if got := f.environmentGets(); got != 1 {
+			t.Errorf("environment retrieves = %d, want 1 for --json fidelity", got)
 		}
 	})
 

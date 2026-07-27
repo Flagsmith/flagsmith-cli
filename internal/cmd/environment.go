@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
@@ -87,12 +88,12 @@ func versioningLabel(v2 bool) string {
 	return "v1"
 }
 
-func renderEnvironment(cmd *cobra.Command, cred *activeCredential, e *api.Environment) error {
+func renderEnvironment(cmd *cobra.Command, e *api.Environment) error {
 	return output.Render(cmd.OutOrStdout(), e, outputOpts(), func(w io.Writer) error {
-		projLabel := strconv.Itoa(e.Project)
-		if p, err := cred.client().GetProject(cmd.Context(), e.Project); err == nil && p.Name != "" {
-			projLabel = label(p.Name, e.Project)
-		}
+		// The project name comes from the local name cache — strictly
+		// cosmetic, so a miss degrades to the bare id rather than paying a
+		// round-trip for a label (04 §3).
+		projLabel := label(cache.Load(apiURL).Projects[strconv.Itoa(e.Project)], e.Project)
 		return output.Detail(w, []output.Field{
 			{Label: "Environment", Value: label(e.Name, e.APIKey)},
 			{Label: "Project", Value: projLabel},
@@ -147,11 +148,16 @@ var environmentGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		env, err := cred.client().GetEnvironment(cmd.Context(), ref.APIKey)
-		if err != nil {
-			return err
+		// The human detail's fields are all in the resolved list row. The
+		// retrieve payload is richer (metadata), so machine output re-fetches
+		// for fidelity.
+		env := ref
+		if jsonOutput() {
+			if env, err = cred.client().GetEnvironment(cmd.Context(), ref.APIKey); err != nil {
+				return err
+			}
 		}
-		return renderEnvironment(cmd, cred, env)
+		return renderEnvironment(cmd, env)
 	},
 }
 
@@ -174,7 +180,7 @@ var environmentCreateCmd = &cobra.Command{
 			return err
 		}
 		output.Success(cmd.ErrOrStderr(), "Created environment %s", label(env.Name, env.APIKey))
-		return renderEnvironment(cmd, cred, env)
+		return renderEnvironment(cmd, env)
 	},
 }
 
@@ -202,7 +208,7 @@ var environmentUpdateCmd = &cobra.Command{
 			return err
 		}
 		output.Success(cmd.ErrOrStderr(), "Updated environment %s", label(env.Name, env.APIKey))
-		return renderEnvironment(cmd, cred, env)
+		return renderEnvironment(cmd, env)
 	},
 }
 
@@ -254,7 +260,7 @@ var environmentCloneCmd = &cobra.Command{
 			return err
 		}
 		output.Success(cmd.ErrOrStderr(), "Cloned %s into %s", ref.Name, label(clone.Name, clone.APIKey))
-		return renderEnvironment(cmd, cred, clone)
+		return renderEnvironment(cmd, clone)
 	},
 }
 
