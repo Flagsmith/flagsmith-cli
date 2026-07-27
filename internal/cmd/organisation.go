@@ -24,13 +24,19 @@ var (
 	orgWebhookEmailFlag string
 )
 
-// credentialContext resolves just the credential (and points the auth layer at
-// the instance) — organisation commands need no project.
-func credentialContext(cmd *cobra.Command) (*activeCredential, error) {
-	if _, err := applyContext(cmd); err != nil {
-		return nil, err
+// credentialContext resolves the invocation context and credential without
+// demanding a project — for organisation commands and for project commands,
+// whose organisation scope is optional.
+func credentialContext(cmd *cobra.Command) (*projectContext, *activeCredential, error) {
+	pc, err := applyContext(cmd)
+	if err != nil {
+		return nil, nil, err
 	}
-	return resolveCredential(cmd.Context())
+	cred, err := resolveCredential(cmd.Context())
+	if err != nil {
+		return nil, nil, err
+	}
+	return pc, cred, nil
 }
 
 // resolveOrganisationRefID turns an organisation reference (id or name) into an id.
@@ -77,7 +83,7 @@ var organisationListCmd = &cobra.Command{
 	Short:   "List organisations",
 	Example: "  flagsmith organisation list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, err := credentialContext(cmd)
+		_, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -99,7 +105,7 @@ var organisationGetCmd = &cobra.Command{
 	Example: "  flagsmith organisation get acme",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, err := credentialContext(cmd)
+		_, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -121,7 +127,7 @@ var organisationCreateCmd = &cobra.Command{
 	Example: `  flagsmith organisation create "Acme Inc"`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, err := credentialContext(cmd)
+		_, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -147,7 +153,7 @@ var organisationUpdateCmd = &cobra.Command{
 		if len(body) == 0 {
 			return usageErrorf("nothing to update — pass --name, --force-2fa, or --webhook-email")
 		}
-		cred, err := credentialContext(cmd)
+		_, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
@@ -170,7 +176,7 @@ var organisationDeleteCmd = &cobra.Command{
 	Example: "  flagsmith organisation delete acme --yes",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, err := credentialContext(cmd)
+		_, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}

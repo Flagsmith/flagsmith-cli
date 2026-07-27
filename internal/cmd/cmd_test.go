@@ -5602,6 +5602,47 @@ func TestProject(t *testing.T) {
 		}
 	})
 
+	t.Run("--organisation scopes name resolution", func(t *testing.T) {
+		// Given "site" exists only in Beta (7), and the user scopes to Acme (3)
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
+		f.projects["7"] = []map[string]any{{"id": 701, "name": "site", "organisation": 7}}
+
+		// When / Then — the name must not resolve in an organisation the user
+		// excluded; a single match in the wrong organisation is the trap
+		_, err := run("", "project", "get", "site", "--organisation", "Acme")
+		if err == nil || !strings.Contains(err.Error(), `"site" not found in organisation 3`) {
+			t.Errorf("err = %v, want not-found scoped to organisation 3", err)
+		}
+
+		// And the same ref resolves when the scope actually holds it
+		out, err := run("", "project", "get", "site", "--organisation", "Beta")
+		if err != nil {
+			t.Fatalf("project get --organisation Beta: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "site (701)") {
+			t.Errorf("output = %q, want site (701)", out)
+		}
+	})
+
+	t.Run("a name still resolves across organisations without a scope", func(t *testing.T) {
+		// Given no organisation in context (flagUpdateEnv's config sets none)
+		f := flagUpdateEnv(t)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
+		f.projects["7"] = []map[string]any{{"id": 701, "name": "site", "organisation": 7}}
+
+		// When
+		out, err := run("", "project", "get", "site")
+
+		// Then
+		if err != nil {
+			t.Fatalf("project get: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "site (701)") {
+			t.Errorf("output = %q, want site (701)", out)
+		}
+	})
+
 	t.Run("delete by id prints the id once, not duplicated", func(t *testing.T) {
 		// Given a cold name cache and a numeric ref
 		f := flagUpdateEnv(t)

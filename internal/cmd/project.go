@@ -23,20 +23,29 @@ var (
 	projectFeatureRegexFlag string
 )
 
-// resolveProjectRefID turns a project reference (id or name) into an id.
-func resolveProjectRefID(cmd *cobra.Command, cred *activeCredential, ref string) (int, error) {
+// resolveProjectRefID turns a project reference (id or name) into an id. A
+// name resolves within the organisation context when one is set, and across every
+// accessible project otherwise.
+func resolveProjectRefID(cmd *cobra.Command, pc *projectContext, cred *activeCredential, ref string) (int, error) {
 	if id, err := strconv.Atoi(ref); err == nil {
 		return id, nil
 	}
-	projects, err := cred.client().Projects(cmd.Context(), 0)
+	orgID := 0
+	notFound := fmt.Errorf("project %q not found", ref)
+	if pc.Organisation.Value != nil {
+		var err error
+		if orgID, err = resolveOrganisationID(cmd, pc, cred); err != nil {
+			return 0, err
+		}
+		notFound = fmt.Errorf("project %q not found in organisation %d", ref, orgID)
+	}
+	projects, err := cred.client().Projects(cmd.Context(), orgID)
 	if err != nil {
 		return 0, err
 	}
 	byID := idNameMap(projects, func(p api.Project) (string, string) { return strconv.Itoa(p.ID), p.Name })
 	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic (04 §3)
-	return resolveIDRef(cmd, "project", ref, byID,
-		fmt.Errorf("project %q not found", ref),
-		hintProjectList)
+	return resolveIDRef(cmd, "project", ref, byID, notFound, hintProjectList)
 }
 
 // orgLabels maps the given organisation ids to names for display, from the
@@ -141,11 +150,11 @@ var projectGetCmd = &cobra.Command{
 	Example: "  flagsmith project get acme-api",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, err := credentialContext(cmd)
+		pc, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
-		id, err := resolveProjectRefID(cmd, cred, args[0])
+		id, err := resolveProjectRefID(cmd, pc, cred, args[0])
 		if err != nil {
 			return err
 		}
@@ -198,11 +207,11 @@ var projectUpdateCmd = &cobra.Command{
 		if len(body) == 0 {
 			return usageErrorf("nothing to update — pass --name, --hide-disabled-flags, or --feature-name-regex")
 		}
-		cred, err := credentialContext(cmd)
+		pc, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
-		id, err := resolveProjectRefID(cmd, cred, args[0])
+		id, err := resolveProjectRefID(cmd, pc, cred, args[0])
 		if err != nil {
 			return err
 		}
@@ -221,11 +230,11 @@ var projectDeleteCmd = &cobra.Command{
 	Example: "  flagsmith project delete acme-api --yes",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, err := credentialContext(cmd)
+		pc, cred, err := credentialContext(cmd)
 		if err != nil {
 			return err
 		}
-		id, err := resolveProjectRefID(cmd, cred, args[0])
+		id, err := resolveProjectRefID(cmd, pc, cred, args[0])
 		if err != nil {
 			return err
 		}
