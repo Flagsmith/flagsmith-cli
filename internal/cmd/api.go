@@ -71,7 +71,12 @@ func runAPI(cmd *cobra.Command, args []string) error {
 
 	full := strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(args[0], "/")
 	if len(query) > 0 {
-		full += "?" + query.Encode()
+		// The path may carry its own query string already; join, don't restart.
+		sep := "?"
+		if strings.Contains(full, "?") {
+			sep = "&"
+		}
+		full += sep + query.Encode()
 	}
 
 	resp, respBody, err := apiDo(cmd.Context(), method, full, body, contentType, headers, applyAuth)

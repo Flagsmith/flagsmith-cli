@@ -5947,6 +5947,23 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("fields join a path that already has a query string", func(t *testing.T) {
+		// Given a path carrying ?organisation=3 — the field must join with &,
+		// not start a second ? that fuses both into one bogus value
+		flagUpdateEnv(t)
+		out, err := run("", "api", "api/v1/echo/?organisation=3", "-X", "GET", "-F", "page=2")
+		if err != nil {
+			t.Fatalf("api: %v\noutput: %s", err, out)
+		}
+		var e map[string]any
+		if err := json.Unmarshal([]byte(out), &e); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if e["query"] != "organisation=3&page=2" {
+			t.Errorf("query = %q, want organisation=3&page=2", e["query"])
+		}
+	})
+
 	t.Run("raw body from stdin", func(t *testing.T) {
 		flagUpdateEnv(t)
 		e := echoJSON(t, `{"x":1}`, "-X", "POST", "--input", "-")
