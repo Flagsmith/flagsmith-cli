@@ -240,11 +240,8 @@ var projectDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete project %s", label(args[0], id))); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete project %s", label(args[0], id)), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteProject(cmd.Context(), id); err != nil {
 			return err

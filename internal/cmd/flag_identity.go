@@ -149,11 +149,8 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 
 	scope := fmt.Sprintf("identifier %s in environment %s", identifier, environmentLabel(env))
 	errOut := cmd.ErrOrStderr()
-	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Update %s for %s?", feature.Name, scope)); err != nil {
+	if ok, err := confirmed(cmd, fmt.Sprintf("Update %s for %s?", feature.Name, scope), "changed"); !ok || err != nil {
 		return err
-	} else if !ok {
-		fmt.Fprintln(errOut, "Aborted; nothing changed.")
-		return nil
 	}
 
 	if edge {
@@ -204,11 +201,8 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 
 	scope := fmt.Sprintf("identifier %s in environment %s", identifier, environmentLabel(env))
 	errOut := cmd.ErrOrStderr()
-	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Delete %s override for %s?", name, scope)); err != nil {
+	if ok, err := confirmed(cmd, fmt.Sprintf("Delete %s override for %s?", name, scope), "changed"); !ok || err != nil {
 		return err
-	} else if !ok {
-		fmt.Fprintln(errOut, "Aborted; nothing changed.")
-		return nil
 	}
 
 	if edge {

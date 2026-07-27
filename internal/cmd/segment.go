@@ -243,11 +243,8 @@ var segmentDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete segment %s", label(args[0], id))); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete segment %s", label(args[0], id)), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteSegment(cmd.Context(), projectID, id); err != nil {
 			return err

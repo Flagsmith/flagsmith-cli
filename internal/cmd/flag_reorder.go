@@ -126,11 +126,8 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 
 	errOut := cmd.ErrOrStderr()
 	prompt := fmt.Sprintf("Reorder %d segment overrides for %s in environment %s?", len(ordered), name, environmentLabel(env))
-	if ok, err := confirmOrYes(cmd, prompt); err != nil {
+	if ok, err := confirmed(cmd, prompt, "changed"); !ok || err != nil {
 		return err
-	} else if !ok {
-		fmt.Fprintln(errOut, "Aborted; nothing changed.")
-		return nil
 	}
 	if err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, req); err != nil {
 		return err

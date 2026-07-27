@@ -193,11 +193,8 @@ var environmentDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete environment %s", label(ref.Name, ref.APIKey))); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete environment %s", label(ref.Name, ref.APIKey)), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteEnvironment(cmd.Context(), ref.APIKey); err != nil {
 			return err
@@ -374,11 +371,8 @@ var environmentKeyDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete server-side key %d from %s", keyID, ref.Name)); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete server-side key %d from %s", keyID, ref.Name), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteEnvironmentAPIKey(cmd.Context(), ref.APIKey, keyID); err != nil {
 			return err

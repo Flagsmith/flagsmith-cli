@@ -370,13 +370,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if interactive() && !yesFlag {
 			fmt.Fprintf(out, "%s exists — updating it.\n\n%s\n", config.FileName, fileDiff(old, newFile))
 		}
-		ok, err := confirmOrYes(cmd, "Write changes?")
-		if err != nil {
+		if ok, err := confirmed(cmd, "Write changes?", "written"); !ok || err != nil {
 			return err
-		}
-		if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing written.")
-			return nil
 		}
 	}
 

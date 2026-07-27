@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -77,4 +78,19 @@ func confirmOrYes(cmd *cobra.Command, label string) (bool, error) {
 		return false, usageErrorf("pass --yes to confirm %q without an interactive terminal", label)
 	}
 	return prompt.Confirm(promptIO(cmd), label)
+}
+
+// confirmed resolves a confirmation and, on decline, prints the standard
+// abort line: "Aborted; nothing <outcome>." — outcome names what was left
+// untouched (deleted / changed / written). A decline reports ok=false with a
+// nil error, so callers can `if !ok || err != nil { return err }`.
+func confirmed(cmd *cobra.Command, prompt, outcome string) (bool, error) {
+	ok, err := confirmOrYes(cmd, prompt)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Aborted; nothing %s.\n", outcome)
+	}
+	return ok, nil
 }

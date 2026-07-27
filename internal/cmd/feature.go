@@ -291,11 +291,8 @@ var featureDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete feature %s", label(args[0], id))); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete feature %s", label(args[0], id)), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteFeature(cmd.Context(), projectID, id); err != nil {
 			return err
@@ -549,11 +546,8 @@ var featureVariantDeleteCmd = &cobra.Command{
 				"Run `flagsmith feature variant list %s` to see its variants.", args[0])
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmOrYes(cmd, fmt.Sprintf("delete variant %s from %s", label(variantLabel(variant), variant.ID), args[0])); err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete variant %s from %s", label(variantLabel(variant), variant.ID), args[0]), "deleted"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing deleted.")
-			return nil
 		}
 		if err := cred.client().DeleteMVOption(cmd.Context(), projectID, id, variant.ID); err != nil {
 			return err

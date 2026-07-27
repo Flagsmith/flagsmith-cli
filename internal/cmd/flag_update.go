@@ -172,11 +172,8 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	errOut := cmd.ErrOrStderr()
-	if ok, err := confirmOrYes(cmd, fmt.Sprintf("Update %s %s?", name, scope)); err != nil {
+	if ok, err := confirmed(cmd, fmt.Sprintf("Update %s %s?", name, scope), "changed"); !ok || err != nil {
 		return err
-	} else if !ok {
-		fmt.Fprintln(errOut, "Aborted; nothing changed.")
-		return nil
 	}
 
 	if err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, req); err != nil {
@@ -252,11 +249,8 @@ var flagDeleteCmd = &cobra.Command{
 		segmentLabel := label(cache.Load(apiURL).Segments[strconv.Itoa(segmentID)], segmentID)
 		errOut := cmd.ErrOrStderr()
 		prompt := fmt.Sprintf("delete %s override for segment %s in %s", name, segmentLabel, environmentLabel(env))
-		if ok, err := confirmOrYes(cmd, prompt+"?"); err != nil {
+		if ok, err := confirmed(cmd, prompt+"?", "changed"); !ok || err != nil {
 			return err
-		} else if !ok {
-			fmt.Fprintln(errOut, "Aborted; nothing changed.")
-			return nil
 		}
 		if err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, featureRefFor(name), segmentID); err != nil {
 			return err
