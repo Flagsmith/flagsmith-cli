@@ -113,7 +113,7 @@ In addition to a `flagsmith.json` file, every value can be provided via a global
 
 `flagsmith.json`'s schema is described by `schema/flagsmith.json`.
 
-Every file generated via `flagsmith init` includes a `"$schema": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/<CLI version tag>/schema/flagsmith.json"` entry. 
+Every file generated via `flagsmith init` includes a `"$schema": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/<CLI version tag>/schema/flagsmith.json"` entry.
 
 ## 3. Named references and name cache
 

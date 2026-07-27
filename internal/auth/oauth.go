@@ -250,8 +250,8 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 		results <- callback{code: q.Get("code")}
 	})
 	server := &http.Server{Handler: mux}
-	go server.Serve(ln) //nolint:errcheck // returns ErrServerClosed on shutdown
-	defer server.Shutdown(context.Background())
+	go server.Serve(ln)                         //nolint:errcheck // returns ErrServerClosed on shutdown
+	defer server.Shutdown(context.Background()) //nolint:errcheck // best-effort teardown
 
 	fmt.Fprintf(out, "Log in to Flagsmith in your browser:\n\n  %s\n\n", authURL)
 	if openBrowser != nil {

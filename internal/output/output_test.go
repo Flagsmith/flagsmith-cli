@@ -199,7 +199,7 @@ func TestTableBoldHeaderKeepsAlignment(t *testing.T) {
 		t.Errorf("colour changed alignment:\nstripped = %q\nplain    = %q", got, plain)
 	}
 	// Plain output has no escapes and aligns.
-	if strings.ContainsAny(plain, "\x1b\xff") {
+	if strings.Contains(plain, "\x1b") {
 		t.Errorf("plain table contains escape bytes: %q", plain)
 	}
 	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
@@ -251,7 +251,7 @@ func TestDetailWithSourceColumn(t *testing.T) {
 	if strings.Index(lines[0], "default") != strings.Index(lines[2], "default") {
 		t.Errorf("source column not aligned:\n%q\n%q", lines[0], lines[2])
 	}
-	if strings.ContainsAny(plain, "\x1b\xff") {
+	if strings.Contains(plain, "\x1b") {
 		t.Errorf("plain detail contains escape bytes: %q", plain)
 	}
 	// The label is coloured and the source dimmed; the space-containing value

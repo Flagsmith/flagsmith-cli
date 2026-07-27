@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/spf13/cobra"
-
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/internal/httpx"
 	"github.com/Flagsmith/flagsmith-cli/internal/version"
@@ -36,14 +34,4 @@ func sharedHTTPClient() *http.Client {
 // given auth scheme, over the shared HTTP client.
 func newAPIClient(a api.Auth) *api.Client {
 	return api.NewClient(apiURL, a, api.WithHTTPClient(sharedHTTPClient()), api.WithUserAgent(userAgent()))
-}
-
-// apiClient resolves the credential and returns an Admin API client for the
-// current instance.
-func apiClient(cmd *cobra.Command) (*api.Client, error) {
-	cred, err := resolveCredential(cmd.Context())
-	if err != nil {
-		return nil, err
-	}
-	return cred.client(), nil
 }

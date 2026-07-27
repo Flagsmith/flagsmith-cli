@@ -264,7 +264,7 @@ func statusOK(code int) bool { return code >= 200 && code < 300 }
 func apiError(cmd *cobra.Command, method, u string, resp *http.Response, body []byte) error {
 	errOut := cmd.ErrOrStderr()
 	if len(body) > 0 {
-		errOut.Write(body)
+		_, _ = errOut.Write(body) // best-effort: the error below is the signal
 		if !bytes.HasSuffix(body, []byte("\n")) {
 			fmt.Fprintln(errOut)
 		}

@@ -94,7 +94,7 @@ $ cat variants.json
 $ flagsmith feature create banner-copy --value hello --variants @variants.json
 ✓ Created feature banner-copy (233885)
 Feature         banner-copy (233885)
-Description     
+Description
 Type            multivariate
 Default value   hello
 Enabled         false
