@@ -91,6 +91,36 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	return req, nil
 }
 
+// The typed CRUD helpers live at package level because Go methods cannot
+// take type parameters. Every resource method is one of these three shapes.
+
+// getOne fetches a single resource.
+func getOne[T any](ctx context.Context, c *Client, path string) (*T, error) {
+	out := new(T)
+	if err := c.get(ctx, path, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// getMany fetches a list resource, following pagination.
+func getMany[T any](ctx context.Context, c *Client, path string) ([]T, error) {
+	var out []T
+	if err := c.getList(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// send issues a mutating request and decodes the response.
+func send[T any](ctx context.Context, c *Client, method, path string, body any) (*T, error) {
+	out := new(T)
+	if err := c.sendJSON(ctx, method, path, body, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -116,11 +146,7 @@ type User struct {
 }
 
 func (c *Client) UsersMe(ctx context.Context) (*User, error) {
-	user := &User{}
-	if err := c.get(ctx, "/api/v1/auth/users/me/", user); err != nil {
-		return nil, err
-	}
-	return user, nil
+	return getOne[User](ctx, c, "/api/v1/auth/users/me/")
 }
 
 // rawItem holds the raw API JSON for a resource so JSON output can mirror the
@@ -158,39 +184,22 @@ func (o *Organisation) UnmarshalJSON(b []byte) error {
 }
 
 func (c *Client) Organisations(ctx context.Context) ([]Organisation, error) {
-	var orgs []Organisation
-	if err := c.getList(ctx, "/api/v1/organisations/", &orgs); err != nil {
-		return nil, err
-	}
-	return orgs, nil
+	return getMany[Organisation](ctx, c, "/api/v1/organisations/")
 }
 
 // GetOrganisation fetches one organisation.
 func (c *Client) GetOrganisation(ctx context.Context, orgID int) (*Organisation, error) {
-	o := &Organisation{}
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/organisations/%d/", orgID), o); err != nil {
-		return nil, err
-	}
-	return o, nil
+	return getOne[Organisation](ctx, c, fmt.Sprintf("/api/v1/organisations/%d/", orgID))
 }
 
 // CreateOrganisation creates an organisation from a flat field body.
 func (c *Client) CreateOrganisation(ctx context.Context, body map[string]any) (*Organisation, error) {
-	o := &Organisation{}
-	if err := c.sendJSON(ctx, http.MethodPost, "/api/v1/organisations/", body, o); err != nil {
-		return nil, err
-	}
-	return o, nil
+	return send[Organisation](ctx, c, http.MethodPost, "/api/v1/organisations/", body)
 }
 
 // UpdateOrganisation patches an organisation's fields.
 func (c *Client) UpdateOrganisation(ctx context.Context, orgID int, body map[string]any) (*Organisation, error) {
-	o := &Organisation{}
-	path := fmt.Sprintf("/api/v1/organisations/%d/", orgID)
-	if err := c.sendJSON(ctx, http.MethodPatch, path, body, o); err != nil {
-		return nil, err
-	}
-	return o, nil
+	return send[Organisation](ctx, c, http.MethodPatch, fmt.Sprintf("/api/v1/organisations/%d/", orgID), body)
 }
 
 // DeleteOrganisation removes an organisation.
@@ -438,25 +447,17 @@ func (p Project) MarshalJSON() ([]byte, error) {
 // GetProject fetches a single project — notably its use_edge_identities flag,
 // which decides whether identity overrides use the core or edge endpoints.
 func (c *Client) GetProject(ctx context.Context, projectID int) (*Project, error) {
-	p := &Project{}
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/projects/%d/", projectID), p); err != nil {
-		return nil, err
-	}
-	return p, nil
+	return getOne[Project](ctx, c, fmt.Sprintf("/api/v1/projects/%d/", projectID))
 }
 
 // Projects lists an organisation's projects. organisationID 0 lists all
 // accessible projects (the endpoint's organisation filter is optional).
 func (c *Client) Projects(ctx context.Context, organisationID int) ([]Project, error) {
-	var projects []Project
 	path := "/api/v1/projects/"
 	if organisationID != 0 {
 		path += fmt.Sprintf("?organisation=%d", organisationID)
 	}
-	if err := c.getList(ctx, path, &projects); err != nil {
-		return nil, err
-	}
-	return projects, nil
+	return getMany[Project](ctx, c, path)
 }
 
 // SubscriptionMetadata is an organisation's plan limits. A nil field means the
@@ -469,12 +470,7 @@ type SubscriptionMetadata struct {
 
 // GetSubscriptionMetadata returns the organisation's plan limits.
 func (c *Client) GetSubscriptionMetadata(ctx context.Context, orgID int) (*SubscriptionMetadata, error) {
-	m := &SubscriptionMetadata{}
-	path := fmt.Sprintf("/api/v1/organisations/%d/get-subscription-metadata/", orgID)
-	if err := c.get(ctx, path, m); err != nil {
-		return nil, err
-	}
-	return m, nil
+	return getOne[SubscriptionMetadata](ctx, c, fmt.Sprintf("/api/v1/organisations/%d/get-subscription-metadata/", orgID))
 }
 
 // CreateProject creates a project from a flat field body (name + organisation
@@ -484,8 +480,7 @@ func (c *Client) GetSubscriptionMetadata(ctx context.Context, orgID int) (*Subsc
 // lack CREATE_PROJECT" denial. So on a 403 we check whether the org is actually
 // at its plan's project limit and, only then, surface it as ErrPlanGated.
 func (c *Client) CreateProject(ctx context.Context, body map[string]any) (*Project, error) {
-	p := &Project{}
-	err := c.sendJSON(ctx, http.MethodPost, "/api/v1/projects/", body, p)
+	p, err := send[Project](ctx, c, http.MethodPost, "/api/v1/projects/", body)
 	if err == nil {
 		return p, nil
 	}
@@ -520,12 +515,7 @@ func (c *Client) projectCapReached(ctx context.Context, orgID int) (limit, count
 // UpdateProject patches a project's fields (organisation is immutable and
 // ignored if sent).
 func (c *Client) UpdateProject(ctx context.Context, projectID int, body map[string]any) (*Project, error) {
-	p := &Project{}
-	path := fmt.Sprintf("/api/v1/projects/%d/", projectID)
-	if err := c.sendJSON(ctx, http.MethodPatch, path, body, p); err != nil {
-		return nil, err
-	}
-	return p, nil
+	return send[Project](ctx, c, http.MethodPatch, fmt.Sprintf("/api/v1/projects/%d/", projectID), body)
 }
 
 // DeleteProject removes a project.
@@ -584,24 +574,16 @@ type MultivariateOption struct {
 // ProjectFeatures lists a project's features (no environment context).
 // includeArchived controls whether archived features are returned.
 func (c *Client) ProjectFeatures(ctx context.Context, projectID int, includeArchived bool) ([]Feature, error) {
-	var features []Feature
 	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
 	if !includeArchived {
 		path += "?is_archived=false"
 	}
-	if err := c.getList(ctx, path, &features); err != nil {
-		return nil, err
-	}
-	return features, nil
+	return getMany[Feature](ctx, c, path)
 }
 
 // GetFeature fetches one project feature (with its multivariate options).
 func (c *Client) GetFeature(ctx context.Context, projectID, featureID int) (*Feature, error) {
-	f := &Feature{}
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID), f); err != nil {
-		return nil, err
-	}
-	return f, nil
+	return getOne[Feature](ctx, c, fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID))
 }
 
 // FeatureWrite is the create/update body. Pointer fields distinguish "unset"
@@ -617,23 +599,13 @@ type FeatureWrite struct {
 
 // CreateFeature creates a project feature (project taken from the URL).
 func (c *Client) CreateFeature(ctx context.Context, projectID int, in FeatureWrite) (*Feature, error) {
-	out := &Feature{}
-	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
-	if err := c.sendJSON(ctx, http.MethodPost, path, in, out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return send[Feature](ctx, c, http.MethodPost, fmt.Sprintf("/api/v1/projects/%d/features/", projectID), in)
 }
 
 // UpdateFeature patches the mutable fields of a feature (name, initial value,
 // and default-enabled are read-only server-side and ignored if sent).
 func (c *Client) UpdateFeature(ctx context.Context, projectID, featureID int, in FeatureWrite) (*Feature, error) {
-	out := &Feature{}
-	path := fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID)
-	if err := c.sendJSON(ctx, http.MethodPatch, path, in, out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return send[Feature](ctx, c, http.MethodPatch, fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID), in)
 }
 
 // DeleteFeature removes a feature.
@@ -648,23 +620,15 @@ func mvOptionsPath(projectID, featureID int) string {
 
 // CreateMVOption adds a multivariate option (variant) to a feature.
 func (c *Client) CreateMVOption(ctx context.Context, projectID, featureID int, in MultivariateOption) (*MultivariateOption, error) {
-	out := &MultivariateOption{}
-	if err := c.sendJSON(ctx, http.MethodPost, mvOptionsPath(projectID, featureID), in, out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return send[MultivariateOption](ctx, c, http.MethodPost, mvOptionsPath(projectID, featureID), in)
 }
 
 // UpdateMVOption patches a multivariate option in place (preserving the id, so
 // per-environment weight overrides survive).
 func (c *Client) UpdateMVOption(ctx context.Context, projectID, featureID, optionID int, in MultivariateOption) (*MultivariateOption, error) {
-	out := &MultivariateOption{}
 	in.Feature = featureID // even a partial update must carry feature: the serializer reads it in validate() (else 500)
 	path := fmt.Sprintf("%s%d/", mvOptionsPath(projectID, featureID), optionID)
-	if err := c.sendJSON(ctx, http.MethodPatch, path, in, out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return send[MultivariateOption](ctx, c, http.MethodPatch, path, in)
 }
 
 // DeleteMVOption removes a multivariate option.
@@ -689,7 +653,6 @@ func (f Feature) CodeReferences() int {
 // contains match on the name, so callers still pick their exact match — which
 // keeps single-feature commands off the full (expensive) project list.
 func (c *Client) Features(ctx context.Context, projectID, environmentID, segmentID int, search string) ([]Feature, error) {
-	var features []Feature
 	q := url.Values{}
 	if environmentID != 0 {
 		q.Set("environment", strconv.Itoa(environmentID))
@@ -704,10 +667,7 @@ func (c *Client) Features(ctx context.Context, projectID, environmentID, segment
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
-	if err := c.getList(ctx, path, &features); err != nil {
-		return nil, err
-	}
-	return features, nil
+	return getMany[Feature](ctx, c, path)
 }
 
 // FeatureSegment links a feature to one segment override in an environment:
@@ -723,12 +683,7 @@ type FeatureSegment struct {
 // FeatureSegments lists a feature's segment overrides in one environment, in
 // priority order. Both filters are required by the endpoint.
 func (c *Client) FeatureSegments(ctx context.Context, environmentID, featureID int) ([]FeatureSegment, error) {
-	var fss []FeatureSegment
-	path := fmt.Sprintf("/api/v1/features/feature-segments/?environment=%d&feature=%d", environmentID, featureID)
-	if err := c.getList(ctx, path, &fss); err != nil {
-		return nil, err
-	}
-	return fss, nil
+	return getMany[FeatureSegment](ctx, c, fmt.Sprintf("/api/v1/features/feature-segments/?environment=%d&feature=%d", environmentID, featureID))
 }
 
 // TypedValue is the nested feature_state_value wire form the admin
@@ -774,12 +729,7 @@ type EnvironmentFeatureState struct {
 // FeatureStates lists a feature's live states in one environment. Callers join
 // segment overrides onto FeatureSegments rows via FeatureSegment.
 func (c *Client) FeatureStates(ctx context.Context, environmentID, featureID int) ([]EnvironmentFeatureState, error) {
-	var states []EnvironmentFeatureState
-	path := fmt.Sprintf("/api/v1/features/featurestates/?environment=%d&feature=%d", environmentID, featureID)
-	if err := c.getList(ctx, path, &states); err != nil {
-		return nil, err
-	}
-	return states, nil
+	return getMany[EnvironmentFeatureState](ctx, c, fmt.Sprintf("/api/v1/features/featurestates/?environment=%d&feature=%d", environmentID, featureID))
 }
 
 // IdentityOverrideRow is one identity's override of a feature, as listed by
@@ -793,15 +743,15 @@ type IdentityOverrideRow struct {
 // CoreIdentityOverrides lists every core (Postgres) identity override for a
 // feature, via the environment featurestates list's identity mode.
 func (c *Client) CoreIdentityOverrides(ctx context.Context, envKey string, featureID int) ([]IdentityOverrideRow, error) {
-	var raw []struct {
+	type coreRow struct {
 		Identity struct {
 			Identifier string `json:"identifier"`
 		} `json:"identity"`
 		Enabled bool `json:"enabled"`
 		Value   any  `json:"feature_state_value"`
 	}
-	path := fmt.Sprintf("/api/v1/environments/%s/featurestates/?anyIdentity=1&feature=%d", envKey, featureID)
-	if err := c.getList(ctx, path, &raw); err != nil {
+	raw, err := getMany[coreRow](ctx, c, fmt.Sprintf("/api/v1/environments/%s/featurestates/?anyIdentity=1&feature=%d", envKey, featureID))
+	if err != nil {
 		return nil, err
 	}
 	rows := make([]IdentityOverrideRow, len(raw))
@@ -983,40 +933,23 @@ func (e Environment) MarshalJSON() ([]byte, error) {
 }
 
 func (c *Client) Environments(ctx context.Context, projectID int) ([]Environment, error) {
-	var envs []Environment
-	path := fmt.Sprintf("/api/v1/environments/?project=%d", projectID)
-	if err := c.getList(ctx, path, &envs); err != nil {
-		return nil, err
-	}
-	return envs, nil
+	return getMany[Environment](ctx, c, fmt.Sprintf("/api/v1/environments/?project=%d", projectID))
 }
 
 // GetEnvironment fetches one environment by its client-side api_key.
 func (c *Client) GetEnvironment(ctx context.Context, apiKey string) (*Environment, error) {
-	e := &Environment{}
-	if err := c.get(ctx, "/api/v1/environments/"+apiKey+"/", e); err != nil {
-		return nil, err
-	}
-	return e, nil
+	return getOne[Environment](ctx, c, "/api/v1/environments/"+apiKey+"/")
 }
 
 // CreateEnvironment creates an environment from a flat field body (name +
 // project required). The client-side api_key is minted server-side.
 func (c *Client) CreateEnvironment(ctx context.Context, body map[string]any) (*Environment, error) {
-	e := &Environment{}
-	if err := c.sendJSON(ctx, http.MethodPost, "/api/v1/environments/", body, e); err != nil {
-		return nil, err
-	}
-	return e, nil
+	return send[Environment](ctx, c, http.MethodPost, "/api/v1/environments/", body)
 }
 
 // UpdateEnvironment patches an environment (project is immutable and ignored).
 func (c *Client) UpdateEnvironment(ctx context.Context, apiKey string, body map[string]any) (*Environment, error) {
-	e := &Environment{}
-	if err := c.sendJSON(ctx, http.MethodPatch, "/api/v1/environments/"+apiKey+"/", body, e); err != nil {
-		return nil, err
-	}
-	return e, nil
+	return send[Environment](ctx, c, http.MethodPatch, "/api/v1/environments/"+apiKey+"/", body)
 }
 
 // DeleteEnvironment removes an environment by api_key.
@@ -1026,11 +959,7 @@ func (c *Client) DeleteEnvironment(ctx context.Context, apiKey string) error {
 
 // CloneEnvironment clones an environment into a new one named by body["name"].
 func (c *Client) CloneEnvironment(ctx context.Context, apiKey string, body map[string]any) (*Environment, error) {
-	e := &Environment{}
-	if err := c.sendJSON(ctx, http.MethodPost, "/api/v1/environments/"+apiKey+"/clone/", body, e); err != nil {
-		return nil, err
-	}
-	return e, nil
+	return send[Environment](ctx, c, http.MethodPost, "/api/v1/environments/"+apiKey+"/clone/", body)
 }
 
 // EnvironmentDocument fetches the environment document (the offline-evaluation
@@ -1056,21 +985,13 @@ type EnvironmentAPIKey struct {
 
 // EnvironmentAPIKeys lists an environment's server-side keys.
 func (c *Client) EnvironmentAPIKeys(ctx context.Context, envKey string) ([]EnvironmentAPIKey, error) {
-	var keys []EnvironmentAPIKey
-	if err := c.getList(ctx, "/api/v1/environments/"+envKey+"/api-keys/", &keys); err != nil {
-		return nil, err
-	}
-	return keys, nil
+	return getMany[EnvironmentAPIKey](ctx, c, "/api/v1/environments/"+envKey+"/api-keys/")
 }
 
 // CreateEnvironmentAPIKey mints a server-side key; the response includes the
 // full key value (shown once).
 func (c *Client) CreateEnvironmentAPIKey(ctx context.Context, envKey string, body map[string]any) (*EnvironmentAPIKey, error) {
-	k := &EnvironmentAPIKey{}
-	if err := c.sendJSON(ctx, http.MethodPost, "/api/v1/environments/"+envKey+"/api-keys/", body, k); err != nil {
-		return nil, err
-	}
-	return k, nil
+	return send[EnvironmentAPIKey](ctx, c, http.MethodPost, "/api/v1/environments/"+envKey+"/api-keys/", body)
 }
 
 // DeleteEnvironmentAPIKey removes a server-side key by id.
@@ -1103,9 +1024,8 @@ type identity struct {
 // IdentityByIdentifier resolves an identifier to its numeric identity id via
 // the core Admin API. found is false when no identity matches.
 func (c *Client) IdentityByIdentifier(ctx context.Context, envKey, identifier string) (id int, found bool, err error) {
-	var ids []identity
-	path := fmt.Sprintf("/api/v1/environments/%s/identities/?%s", envKey, exactQuery(identifier))
-	if err := c.getList(ctx, path, &ids); err != nil {
+	ids, err := getMany[identity](ctx, c, fmt.Sprintf("/api/v1/environments/%s/identities/?%s", envKey, exactQuery(identifier)))
+	if err != nil {
 		return 0, false, err
 	}
 	for _, i := range ids {
@@ -1118,9 +1038,9 @@ func (c *Client) IdentityByIdentifier(ctx context.Context, envKey, identifier st
 
 // CreateIdentity creates a core identity and returns its id.
 func (c *Client) CreateIdentity(ctx context.Context, envKey, identifier string) (int, error) {
-	out := &identity{}
 	path := fmt.Sprintf("/api/v1/environments/%s/identities/", envKey)
-	if err := c.sendJSON(ctx, http.MethodPost, path, map[string]any{"identifier": identifier}, out); err != nil {
+	out, err := send[identity](ctx, c, http.MethodPost, path, map[string]any{"identifier": identifier})
+	if err != nil {
 		return 0, err
 	}
 	return out.ID, nil
@@ -1128,9 +1048,9 @@ func (c *Client) CreateIdentity(ctx context.Context, envKey, identifier string) 
 
 // IdentityOverride returns a core identity's override for a feature, or nil.
 func (c *Client) IdentityOverride(ctx context.Context, envKey string, identityID, featureID int) (*IdentityFeatureState, error) {
-	var states []IdentityFeatureState
 	path := fmt.Sprintf("/api/v1/environments/%s/identities/%d/featurestates/?feature=%d", envKey, identityID, featureID)
-	if err := c.getList(ctx, path, &states); err != nil {
+	states, err := getMany[IdentityFeatureState](ctx, c, path)
+	if err != nil {
 		return nil, err
 	}
 	if len(states) > 0 {
@@ -1168,9 +1088,8 @@ type edgeIdentity struct {
 // EdgeIdentityUUID resolves an identifier to its edge identity uuid, or found
 // false when none exists yet.
 func (c *Client) EdgeIdentityUUID(ctx context.Context, envKey, identifier string) (uuid string, found bool, err error) {
-	var ids []edgeIdentity
-	path := fmt.Sprintf("/api/v1/environments/%s/edge-identities/?%s", envKey, exactQuery(identifier))
-	if err := c.getList(ctx, path, &ids); err != nil {
+	ids, err := getMany[edgeIdentity](ctx, c, fmt.Sprintf("/api/v1/environments/%s/edge-identities/?%s", envKey, exactQuery(identifier)))
+	if err != nil {
 		return "", false, err
 	}
 	for _, i := range ids {
@@ -1184,9 +1103,9 @@ func (c *Client) EdgeIdentityUUID(ctx context.Context, envKey, identifier string
 // EdgeIdentityOverride returns an edge identity's override for a feature, or
 // nil. It is keyed by the identity uuid (the identifier endpoint has no GET).
 func (c *Client) EdgeIdentityOverride(ctx context.Context, envKey, identityUUID string, featureID int) (*IdentityFeatureState, error) {
-	var states []IdentityFeatureState
 	path := fmt.Sprintf("/api/v1/environments/%s/edge-identities/%s/edge-featurestates/?feature=%d", envKey, identityUUID, featureID)
-	if err := c.getList(ctx, path, &states); err != nil {
+	states, err := getMany[IdentityFeatureState](ctx, c, path)
+	if err != nil {
 		return nil, err
 	}
 	if len(states) > 0 {
@@ -1244,43 +1163,24 @@ type Segment struct {
 // Segments lists a project's segments. include controls whether
 // feature-specific segments are returned.
 func (c *Client) Segments(ctx context.Context, projectID int, include bool) ([]Segment, error) {
-	var segs []Segment
-	path := fmt.Sprintf("/api/v1/projects/%d/segments/?include_feature_specific=%t", projectID, include)
-	if err := c.getList(ctx, path, &segs); err != nil {
-		return nil, err
-	}
-	return segs, nil
+	return getMany[Segment](ctx, c, fmt.Sprintf("/api/v1/projects/%d/segments/?include_feature_specific=%t", projectID, include))
 }
 
 // GetSegment fetches one segment with its full rule tree.
 func (c *Client) GetSegment(ctx context.Context, projectID, segmentID int) (*Segment, error) {
-	s := &Segment{}
-	if err := c.get(ctx, fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID), s); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return getOne[Segment](ctx, c, fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID))
 }
 
 // CreateSegment creates a segment (project taken from the URL).
 func (c *Client) CreateSegment(ctx context.Context, projectID int, in Segment) (*Segment, error) {
-	out := &Segment{}
 	in.Project = projectID // the serializer requires project in the body, not just the URL
-	path := fmt.Sprintf("/api/v1/projects/%d/segments/", projectID)
-	if err := c.sendJSON(ctx, http.MethodPost, path, in, out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return send[Segment](ctx, c, http.MethodPost, fmt.Sprintf("/api/v1/projects/%d/segments/", projectID), in)
 }
 
 // UpdateSegment replaces a segment's rule tree and fields (PUT).
 func (c *Client) UpdateSegment(ctx context.Context, projectID, segmentID int, in Segment) (*Segment, error) {
-	out := &Segment{}
 	in.Project = projectID // the serializer requires project in the body, not just the URL
-	path := fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID)
-	if err := c.sendJSON(ctx, http.MethodPut, path, in, out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return send[Segment](ctx, c, http.MethodPut, fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID), in)
 }
 
 // DeleteSegment removes a segment.
