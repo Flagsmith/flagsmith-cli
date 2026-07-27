@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
@@ -177,14 +178,20 @@ var organisationDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// The ref's name half only — never the typed id — with the cached
+		// display name (seeded by name resolution) filling in when known.
+		name := cache.Load(apiURL).Organisations[strconv.Itoa(id)]
+		if name == "" {
+			name = nameRef(args[0])
+		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmed(cmd, fmt.Sprintf("delete organisation %s", label(args[0], id)), "deleted"); !ok || err != nil {
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete organisation %s", label(name, id)), "deleted"); !ok || err != nil {
 			return err
 		}
 		if err := cred.client().DeleteOrganisation(cmd.Context(), id); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted organisation %s", label(args[0], id))
+		output.Success(errOut, "Deleted organisation %s", label(name, id))
 		return nil
 	},
 }

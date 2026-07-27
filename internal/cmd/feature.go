@@ -281,13 +281,15 @@ var featureDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		if ok, err := confirmed(cmd, fmt.Sprintf("delete feature %s", label(args[0], id)), "deleted"); !ok || err != nil {
+		// Features have no name cache; the ref's name half (or nothing).
+		name := nameRef(args[0])
+		if ok, err := confirmed(cmd, fmt.Sprintf("delete feature %s", label(name, id)), "deleted"); !ok || err != nil {
 			return err
 		}
 		if err := cred.client().DeleteFeature(cmd.Context(), projectID, id); err != nil {
 			return err
 		}
-		output.Success(errOut, "Deleted feature %s", label(args[0], id))
+		output.Success(errOut, "Deleted feature %s", label(name, id))
 		return nil
 	},
 }

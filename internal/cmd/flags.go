@@ -381,21 +381,11 @@ func findFeature(features []api.Feature, ref string) *api.Feature {
 	return nil
 }
 
-// searchRef returns the server-side search term for a feature reference: the
-// ref itself for names, or "" for all-digit id refs, which a name search
-// would never match.
-func searchRef(ref string) string {
-	if _, err := strconv.Atoi(ref); err == nil {
-		return ""
-	}
-	return ref
-}
-
 // requireFeature fetches the environment's features narrowed by the ref (a
 // server-side contains match on names; id refs fetch unfiltered) and requires
 // exactly the referenced one.
 func requireFeature(cmd *cobra.Command, cred *activeCredential, projectID int, env api.Environment, segmentID int, ref string) (*api.Feature, error) {
-	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, searchRef(ref))
+	features, err := cred.client().Features(cmd.Context(), projectID, env.ID, segmentID, nameRef(ref))
 	if err != nil {
 		return nil, err
 	}

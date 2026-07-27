@@ -5523,6 +5523,40 @@ func TestProject(t *testing.T) {
 		}
 	})
 
+	t.Run("delete by id prints the id once, not duplicated", func(t *testing.T) {
+		// Given a cold name cache and a numeric ref
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "project", "delete", "101", "--yes")
+
+		// Then — the typed ref is an id, not a name: no "101 (101)"
+		if err != nil {
+			t.Fatalf("project delete: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Deleted project 101") || strings.Contains(out, "101 (101)") {
+			t.Errorf("output = %q, want the bare id, not duplicated", out)
+		}
+		_ = f
+	})
+
+	t.Run("delete by name labels with the name and id", func(t *testing.T) {
+		// Given — resolving the name seeds the cache in the same invocation
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "project", "delete", "acme-api", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("project delete: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Deleted project acme-api (101)") {
+			t.Errorf("output = %q, want the name and id", out)
+		}
+		_ = f
+	})
+
 	t.Run("get labels the organisation from a warm cache without a fetch", func(t *testing.T) {
 		// Given a warm org-name cache (seeded by an earlier org resolution)
 		f := flagUpdateEnv(t)
