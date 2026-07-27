@@ -32,21 +32,11 @@ func resolveProjectRefID(cmd *cobra.Command, cred *activeCredential, ref string)
 	if err != nil {
 		return 0, err
 	}
-	byID := make(map[string]string, len(projects))
-	for _, p := range projects {
-		byID[strconv.Itoa(p.ID)] = p.Name
-	}
-	hits := matchByName(byID, ref)
-	if len(hits) == 0 {
-		return 0, withHint(
-			fmt.Errorf("project %q not found", ref),
-			hintProjectList)
-	}
-	chosen, err := pickCandidate(cmd, "project", "id", ref, hits, byID)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(chosen)
+	byID := idNameMap(projects, func(p api.Project) (string, string) { return strconv.Itoa(p.ID), p.Name })
+	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic (04 §3)
+	return resolveIDRef(cmd, "project", ref, byID,
+		fmt.Errorf("project %q not found", ref),
+		hintProjectList)
 }
 
 // orgLabels maps the given organisation ids to names for display, from the

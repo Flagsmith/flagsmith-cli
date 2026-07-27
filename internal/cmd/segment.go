@@ -266,22 +266,11 @@ func resolveSegmentID(cmd *cobra.Command, cred *activeCredential, projectID int,
 	if err != nil {
 		return 0, err
 	}
-	byID := make(map[string]string, len(segs))
-	for _, s := range segs {
-		byID[strconv.Itoa(s.ID)] = s.Name
-	}
+	byID := idNameMap(segs, func(s api.Segment) (string, string) { return strconv.Itoa(s.ID), s.Name })
 	_ = cache.Merge(apiURL, &cache.Names{Segments: byID}) // opportunistic (04 §3)
-	hits := matchByName(byID, ref)
-	if len(hits) == 0 {
-		return 0, withHint(
-			fmt.Errorf("segment %q not found in project %d", ref, projectID),
-			hintSegmentList)
-	}
-	chosen, err := pickCandidate(cmd, "segment", "id", ref, hits, byID)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(chosen)
+	return resolveIDRef(cmd, "segment", ref, byID,
+		fmt.Errorf("segment %q not found in project %d", ref, projectID),
+		hintSegmentList)
 }
 
 // resolveFeatureID turns a feature reference (id or name) into an id, without

@@ -27,40 +27,6 @@ var (
 	envBannerTextFlag   string
 )
 
-// resolveEnvironmentRef turns an environment reference (name or api_key) into
-// its full record, scoped to the project.
-func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID int, ref string) (*api.Environment, error) {
-	envs, err := cred.client().Environments(cmd.Context(), projectID)
-	if err != nil {
-		return nil, err
-	}
-	for i := range envs {
-		if envs[i].APIKey == ref {
-			return &envs[i], nil
-		}
-	}
-	byKey := make(map[string]string, len(envs))
-	for _, e := range envs {
-		byKey[e.APIKey] = e.Name
-	}
-	hits := matchByName(byKey, ref)
-	if len(hits) == 0 {
-		return nil, withHint(
-			fmt.Errorf("environment %q not found in project %d", ref, projectID),
-			hintEnvironmentList)
-	}
-	chosen, err := pickCandidate(cmd, "environment", "key", ref, hits, byKey)
-	if err != nil {
-		return nil, err
-	}
-	for i := range envs {
-		if envs[i].APIKey == chosen {
-			return &envs[i], nil
-		}
-	}
-	return nil, fmt.Errorf("environment %q not found in project %d", ref, projectID)
-}
-
 func envBodyFromFlags(cmd *cobra.Command) map[string]any {
 	body := map[string]any{}
 	if cmd.Flags().Changed("name") {

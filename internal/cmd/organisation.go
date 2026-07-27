@@ -41,21 +41,11 @@ func resolveOrganisationRefID(cmd *cobra.Command, cred *activeCredential, ref st
 	if err != nil {
 		return 0, err
 	}
-	byID := make(map[string]string, len(orgs))
-	for _, o := range orgs {
-		byID[strconv.Itoa(o.ID)] = o.Name
-	}
-	hits := matchByName(byID, ref)
-	if len(hits) == 0 {
-		return 0, withHint(
-			fmt.Errorf("organisation %q not found", ref),
-			hintOrganisationList)
-	}
-	chosen, err := pickCandidate(cmd, "organisation", "id", ref, hits, byID)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(chosen)
+	rememberOrganisations(orgs)
+	byID := idNameMap(orgs, func(o api.Organisation) (string, string) { return strconv.Itoa(o.ID), o.Name })
+	return resolveIDRef(cmd, "organisation", ref, byID,
+		fmt.Errorf("organisation %q not found", ref),
+		hintOrganisationList)
 }
 
 // orgBodyFromFlags collects the organisation fields the user set.

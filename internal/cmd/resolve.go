@@ -14,6 +14,32 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 )
 
+// idNameMap builds the canonical→name map that ref resolution and the name
+// cache work on, from any fetched slice.
+func idNameMap[T any](items []T, entry func(T) (canonical, name string)) map[string]string {
+	m := make(map[string]string, len(items))
+	for _, it := range items {
+		k, v := entry(it)
+		m[k] = v
+	}
+	return m
+}
+
+// resolveIDRef resolves a name reference to a numeric id against a fetched
+// id→name map: no match errors with the hint, several disambiguate via
+// pickCandidate (05 §2).
+func resolveIDRef(cmd *cobra.Command, entity, ref string, byID map[string]string, notFound error, hint string) (int, error) {
+	hits := matchByName(byID, ref)
+	if len(hits) == 0 {
+		return 0, withHint(notFound, hint)
+	}
+	chosen, err := pickCandidate(cmd, entity, "id", ref, hits, byID)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(chosen)
+}
+
 // matchByName returns the canonical values (map keys) whose name matches ref
 // case-insensitively, sorted for determinism.
 func matchByName(canonicalToName map[string]string, ref string) []string {
@@ -63,40 +89,51 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 		return api.Environment{}, withHint(errors.New("no environment"),
 			"Pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`.")
 	}
-
-	envs, err := cred.client().Environments(cmd.Context(), projectID)
+	e, err := resolveEnvironmentRef(cmd, cred, projectID, ref)
 	if err != nil {
 		return api.Environment{}, err
 	}
-	byKey := make(map[string]string, len(envs))
-	for _, e := range envs {
-		byKey[e.APIKey] = e.Name
-	}
-	_ = cache.Merge(apiURL, &cache.Names{Environments: byKey})
+	return *e, nil
+}
 
-	for _, e := range envs {
-		if e.APIKey == ref {
-			return e, nil
-		}
+// resolveEnvironmentRef turns an environment reference (an api_key or a name)
+// into its full record, scoped to the project, seeding the name cache on the
+// way. Environments are canonically addressed by key, so an exact key match
+// wins before name matching.
+func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID int, ref string) (*api.Environment, error) {
+	envs, err := cred.client().Environments(cmd.Context(), projectID)
+	if err != nil {
+		return nil, err
 	}
+	byKey := idNameMap(envs, func(e api.Environment) (string, string) { return e.APIKey, e.Name })
+	_ = cache.Merge(apiURL, &cache.Names{Environments: byKey}) // opportunistic (04 §3)
+
+	find := func(key string) *api.Environment {
+		for i := range envs {
+			if envs[i].APIKey == key {
+				return &envs[i]
+			}
+		}
+		return nil
+	}
+	if e := find(ref); e != nil {
+		return e, nil
+	}
+	notFound := withHint(
+		fmt.Errorf("environment %q not found in project %d", ref, projectID),
+		hintEnvironmentList)
 	hits := matchByName(byKey, ref)
 	if len(hits) == 0 {
-		return api.Environment{}, withHint(
-			fmt.Errorf("environment %q not found in project %d", ref, projectID),
-			hintEnvironmentList)
+		return nil, notFound
 	}
 	chosen, err := pickCandidate(cmd, "environment", "key", ref, hits, byKey)
 	if err != nil {
-		return api.Environment{}, err
+		return nil, err
 	}
-	for _, e := range envs {
-		if e.APIKey == chosen {
-			return e, nil
-		}
+	if e := find(chosen); e != nil {
+		return e, nil
 	}
-	return api.Environment{}, withHint(
-		fmt.Errorf("environment %q not found in project %d", ref, projectID),
-		hintEnvironmentList)
+	return nil, notFound
 }
 
 // resolveProjectID turns the project reference (an id or a name) into an id.
@@ -117,22 +154,11 @@ func resolveProjectID(cmd *cobra.Command, pc *projectContext, cred *activeCreden
 	if err != nil {
 		return 0, err
 	}
-	byID := make(map[string]string, len(projects))
-	for _, p := range projects {
-		byID[strconv.Itoa(p.ID)] = p.Name
-	}
+	byID := idNameMap(projects, func(p api.Project) (string, string) { return strconv.Itoa(p.ID), p.Name })
 	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic (04 §3)
-	hits := matchByName(byID, name)
-	if len(hits) == 0 {
-		return 0, withHint(
-			fmt.Errorf("project %q not found in organisation %d", name, orgID),
-			hintProjectList)
-	}
-	chosen, err := pickCandidate(cmd, "project", "id", name, hits, byID)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(chosen)
+	return resolveIDRef(cmd, "project", name, byID,
+		fmt.Errorf("project %q not found in organisation %d", name, orgID),
+		hintProjectList)
 }
 
 // resolveOrganisationID turns the organisation reference (an id or a name)
@@ -147,21 +173,10 @@ func resolveOrganisationID(cmd *cobra.Command, pc *projectContext, cred *activeC
 	}
 	rememberOrganisations(orgs)
 	if name, ok := pc.Organisation.Value.(string); ok && name != "" {
-		byID := make(map[string]string, len(orgs))
-		for _, o := range orgs {
-			byID[strconv.Itoa(o.ID)] = o.Name
-		}
-		hits := matchByName(byID, name)
-		if len(hits) == 0 {
-			return 0, withHint(
-				fmt.Errorf("organisation %q not found", name),
-				hintOrganisationList)
-		}
-		chosen, err := pickCandidate(cmd, "organisation", "id", name, hits, byID)
-		if err != nil {
-			return 0, err
-		}
-		return strconv.Atoi(chosen)
+		byID := idNameMap(orgs, func(o api.Organisation) (string, string) { return strconv.Itoa(o.ID), o.Name })
+		return resolveIDRef(cmd, "organisation", name, byID,
+			fmt.Errorf("organisation %q not found", name),
+			hintOrganisationList)
 	}
 	if len(orgs) == 1 {
 		return orgs[0].ID, nil
