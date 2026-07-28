@@ -17,23 +17,78 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/output"
 )
 
-// evalView is the curated JSON/detail shape for one resolved flag: what an SDK
-// hands the application, and nothing else. Human output and JSON stay in
-// lockstep.
+// evalView is one resolved flag as the human view shows it — what an SDK hands
+// the application, and nothing else.
 type evalView struct {
-	Feature string `json:"feature"`
-	Enabled bool   `json:"enabled"`
-	Value   any    `json:"value"`
+	Feature string
+	Enabled bool
+	Value   any
 }
 
 func newEvalView(f flagsmith.Flag) evalView {
 	return evalView{Feature: f.FeatureName, Enabled: f.Enabled, Value: f.Value}
 }
 
+const evaluationResultSchema = "https://raw.githubusercontent.com/Flagsmith/flagsmith/main/sdk/evaluation-result.json"
+
+// evalResult is `--json`: an EvaluationResult, as much of it as a remote
+// evaluation can fill.
+type evalResult struct {
+	Schema string              `json:"$schema"`
+	Flags  map[string]evalFlag `json:"flags"`
+}
+
+// evalFlag is one flag in an EvaluationResult, and is also what naming a feature
+// prints on its own.
+type evalFlag struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	Value   any    `json:"value"`
+}
+
+func newEvalFlag(v evalView) evalFlag {
+	return evalFlag{Name: v.Feature, Enabled: v.Enabled, Value: v.Value}
+}
+
+func newEvalResult(views []evalView) evalResult {
+	flags := make(map[string]evalFlag, len(views))
+	for _, v := range views {
+		flags[v.Feature] = newEvalFlag(v)
+	}
+	return evalResult{Schema: evaluationResultSchema, Flags: flags}
+}
+
+// sdkState is `--js`: the state a Flagsmith frontend SDK hydrates from.
+type sdkState struct {
+	API   string            `json:"api"`
+	Flags map[string]jsFlag `json:"flags"`
+}
+
+// jsFlag is one flag in the hydration state.
+type jsFlag struct {
+	Enabled bool `json:"enabled"`
+	Value   any  `json:"value"`
+}
+
+// newSDKState keys flags by feature name, as the frontend SDKs look them up.
+func newSDKState(sdkURL string, views []evalView) sdkState {
+	flags := make(map[string]jsFlag, len(views))
+	for _, v := range views {
+		flags[v.Feature] = jsFlag{Enabled: v.Enabled, Value: v.Value}
+	}
+	return sdkState{API: sdkAPIBase(sdkURL), Flags: flags}
+}
+
+// sdkAPIBase is the SDK API base URL as the SDKs write it, trailing slash and all.
+func sdkAPIBase(sdkURL string) string {
+	return strings.TrimRight(sdkURL, "/") + "/api/v1/"
+}
+
 var (
 	evalIdentityFlag string
 	evalTraitFlags   []string
 	evalPersistFlag  bool
+	evalJSFlag       bool
 )
 
 var evaluateCmd = &cobra.Command{
@@ -50,7 +105,10 @@ var evaluateCmd = &cobra.Command{
   flagsmith evaluate --identity user-123 --trait plan=premium --trait age=42
 
   # one feature, for scripting
-  flagsmith eval onboarding --identity user-123 --jq .value`,
+  flagsmith eval onboarding --identity user-123 --jq .value
+
+  # bootstrap a frontend SDK (can be provided as state)
+  flagsmith eval --js > state.json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runEvaluate,
 }
@@ -58,6 +116,13 @@ var evaluateCmd = &cobra.Command{
 func runEvaluate(cmd *cobra.Command, args []string) error {
 	if evalPersistFlag && evalIdentityFlag == "" {
 		return usageErrorf("there is no identity to persist — pass --identity, or drop --persist")
+	}
+	if evalJSFlag && jsonFlag {
+		return usageErrorf("--js and --json are different shapes — pass one or the other")
+	}
+	// --js takes the environment whole or not at all.
+	if evalJSFlag && len(args) == 1 {
+		return usageErrorf("--js describes a whole environment — drop %q, or drop --js", args[0])
 	}
 	traits, err := parseTraits(evalTraitFlags)
 	if err != nil {
@@ -84,17 +149,57 @@ func runEvaluate(cmd *cobra.Command, args []string) error {
 		if flag == nil {
 			return withHint(fmt.Errorf("no flag named %q was resolved", args[0]), hintEvaluate)
 		}
-		return renderEvalDetail(cmd, newEvalView(*flag))
+		return renderEvaluation(cmd, sdkURL, []evalView{newEvalView(*flag)}, true)
 	}
 	views := make([]evalView, len(all))
 	for i, flag := range all {
 		views[i] = newEvalView(flag)
 	}
-	return renderList(cmd, views, "No flags.",
-		[]string{"FEATURE", "ENABLED", "VALUE"},
-		func(_ int, v evalView) []string {
-			return []string{v.Feature, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
-		}, "flag", "flags")
+	return renderEvaluation(cmd, sdkURL, views, false)
+}
+
+// renderEvaluation writes the resolved flags: an EvaluationResult, or the
+// frontend SDK's hydration state for --js, or the human table.
+func renderEvaluation(cmd *cobra.Command, sdkURL string, views []evalView, single bool) error {
+	var doc any = newEvalResult(views)
+	if single {
+		doc = newEvalFlag(views[0])
+	}
+	if evalJSFlag {
+		doc = newSDKState(sdkURL, views)
+		// An SDK handed a state with no flags has nothing to hydrate and waits
+		// for a fetch a serverState-only app never makes. The file is still
+		// written: with options of its own, an SDK fetches and is fine.
+		if len(views) == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(),
+				"Warning: no flags to hydrate from — an SDK given this state will wait for a fetch")
+		}
+	}
+	opts := outputOpts()
+	opts.JSON = opts.JSON || evalJSFlag
+	return output.Render(cmd.OutOrStdout(), doc, opts, func(w io.Writer) error {
+		if single {
+			v := views[0]
+			return output.Detail(w, []output.Field{
+				{Label: "Feature", Value: v.Feature},
+				{Label: "Enabled", Value: boolState(v.Enabled)},
+				{Label: "Value", Value: valueDisplay(v.Value)},
+			})
+		}
+		if len(views) == 0 {
+			fmt.Fprintln(w, "No flags.")
+			return nil
+		}
+		rows := make([][]string, len(views))
+		for i, v := range views {
+			rows[i] = []string{v.Feature, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+		}
+		if err := output.Table(w, []string{"FEATURE", "ENABLED", "VALUE"}, rows); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "flag", "flags"))
+		return nil
+	})
 }
 
 // evaluateFlags resolves the environment's flags over the SDK API: the
@@ -192,21 +297,11 @@ func evalError(sdkURL string, err error) error {
 	return bug.Mark(fmt.Errorf("evaluating flags on %s returned %s", sdkURL, apiErr.ResponseStatus))
 }
 
-// renderEvalDetail prints one resolved flag's detail view (or its JSON).
-func renderEvalDetail(cmd *cobra.Command, v evalView) error {
-	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
-		return output.Detail(w, []output.Field{
-			{Label: "Feature", Value: v.Feature},
-			{Label: "Enabled", Value: boolState(v.Enabled)},
-			{Label: "Value", Value: valueDisplay(v.Value)},
-		})
-	})
-}
-
 func init() {
 	f := evaluateCmd.Flags()
 	f.StringVar(&evalIdentityFlag, "identity", "", "resolve for this identifier")
 	f.StringArrayVar(&evalTraitFlags, "trait", nil, "trait key=value to evaluate with (repeatable)")
 	f.BoolVar(&evalPersistFlag, "persist", false, "persist the identity and its traits instead of evaluating transiently")
+	f.BoolVar(&evalJSFlag, "js", false, "output the state a Flagsmith frontend SDK hydrates from")
 	rootCmd.AddCommand(evaluateCmd)
 }

@@ -5917,6 +5917,16 @@ func evalEnv(t *testing.T) *fakeInstance {
 	return f
 }
 
+// evalDoc parses an evaluate command's machine-readable output.
+func evalDoc(t *testing.T, out string) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("parsing %q: %v", out, err)
+	}
+	return doc
+}
+
 // captureOSStderr collects what run writes to the process's stderr — where a
 // library's own logger lands, bypassing the command's writers entirely.
 func captureOSStderr(t *testing.T, run func()) string {
@@ -5993,7 +6003,7 @@ func TestEvaluate(t *testing.T) {
 		}
 	})
 
-	t.Run("json is a curated array", func(t *testing.T) {
+	t.Run("json is an EvaluationResult", func(t *testing.T) {
 		// Given
 		evalEnv(t)
 
@@ -6004,21 +6014,141 @@ func TestEvaluate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("evaluate --json: %v\noutput: %s", err, out)
 		}
-		var flags []map[string]any
-		if err := json.Unmarshal([]byte(out), &flags); err != nil {
-			t.Fatalf("parsing %q: %v", out, err)
+		doc := evalDoc(t, out)
+		if got, _ := doc["$schema"].(string); !strings.HasSuffix(got, "/sdk/evaluation-result.json") {
+			t.Errorf("$schema = %q, want the SDK's evaluation-result schema", got)
 		}
+		flags, _ := doc["flags"].(map[string]any)
 		if len(flags) != 2 {
-			t.Fatalf("flags = %+v", flags)
+			t.Fatalf("flags = %+v, want one entry per feature, keyed by name", flags)
 		}
-		if flags[0]["feature"] != "onboarding_banner" || flags[0]["enabled"] != true || flags[0]["value"] != nil {
-			t.Errorf("item = %+v, want the resolved flag hoisted", flags[0])
+		banner, _ := flags["onboarding_banner"].(map[string]any)
+		if banner["name"] != "onboarding_banner" || banner["enabled"] != true {
+			t.Errorf("flag = %+v, want the resolved state", banner)
 		}
-		if flags[1]["value"] != float64(25) {
-			t.Errorf("item = %+v, want the resolved value", flags[1])
+		if v, ok := banner["value"]; !ok || v != nil {
+			t.Errorf("flag = %+v, want an explicit null value — the schema requires the field", banner)
 		}
-		if len(flags[0]) != 3 {
-			t.Errorf("item = %+v, want feature/enabled/value only", flags[0])
+		items, _ := flags["max_items"].(map[string]any)
+		if items["value"] != float64(25) || items["enabled"] != false {
+			t.Errorf("flag = %+v, want the resolved value", items)
+		}
+		// Omitted until the SDK API returns them: absent, never faked.
+		for _, absent := range []string{"reason", "variant"} {
+			if _, ok := items[absent]; ok {
+				t.Errorf("flag = %+v, want %q omitted rather than invented", items, absent)
+			}
+		}
+		if _, ok := doc["segments"]; ok {
+			t.Errorf("doc = %+v, want segments omitted rather than invented", doc)
+		}
+	})
+
+	t.Run("--js is the frontend SDK's hydration state", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = []map[string]any{
+			{"enabled": true, "feature_state_value": "Welcome!",
+				"feature": map[string]any{"id": 1, "name": "banner-text"}},
+		}
+
+		// When
+		out, err := run("", "evaluate", "--js")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --js: %v\noutput: %s", err, out)
+		}
+		doc := evalDoc(t, out)
+		api, _ := doc["api"].(string)
+		if !strings.HasSuffix(api, "/api/v1/") {
+			t.Errorf("api = %q, want the SDK API base with its trailing slash", api)
+		}
+		flags, _ := doc["flags"].(map[string]any)
+		flag, ok := flags["banner-text"].(map[string]any)
+		if !ok {
+			t.Fatalf("flags = %+v, want the feature name as the key, verbatim", flags)
+		}
+		if flag["enabled"] != true || flag["value"] != "Welcome!" {
+			t.Errorf("flag = %+v", flag)
+		}
+		if _, ok := flag["name"]; ok {
+			t.Errorf("flag = %+v, want no name — the key is the name", flag)
+		}
+		if _, ok := doc["$schema"]; ok {
+			t.Errorf("doc = %+v, want no $schema — this is not an EvaluationResult", doc)
+		}
+	})
+
+	t.Run("--js and --json are mutually exclusive", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		_, err := run("", "evaluate", "--js", "--json")
+
+		// Then
+		var usage *usageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("err = %v, want a usage error", err)
+		}
+	})
+
+	t.Run("--js refuses a named feature", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		_, err := run("", "evaluate", "max_items", "--js")
+
+		// Then
+		var usage *usageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("err = %v, want a usage error — a one-flag state is a dud", err)
+		}
+	})
+
+	t.Run("--jq filters whichever shape was asked for", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		jsOut, err := run("", "evaluate", "--js", "--jq", ".flags.max_items.value")
+		if err != nil {
+			t.Fatalf("evaluate --js --jq: %v", err)
+		}
+		jsonOut, err := run("", "evaluate", "--jq", ".flags.max_items.name")
+		if err != nil {
+			t.Fatalf("evaluate --jq: %v", err)
+		}
+
+		// Then
+		if strings.TrimSpace(jsOut) != "25" {
+			t.Errorf("--js --jq = %q, want 25", jsOut)
+		}
+		if strings.TrimSpace(jsonOut) != "max_items" {
+			t.Errorf("--jq = %q, want max_items", jsonOut)
+		}
+	})
+
+	t.Run("--js warns rather than ship a state nothing can hydrate", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = []map[string]any{}
+
+		// When
+		out, errOut, err := runSplit("", "evaluate", "--js")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --js: %v", err)
+		}
+		if !strings.Contains(errOut, "Warning:") {
+			t.Errorf("stderr = %q, want a warning that the state is empty", errOut)
+		}
+		flags, _ := evalDoc(t, out)["flags"].(map[string]any)
+		if len(flags) != 0 {
+			t.Errorf("flags = %+v, want an empty map", flags)
 		}
 	})
 
@@ -6443,12 +6573,16 @@ func TestEvaluateIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("evaluate max_items --identity: %v\noutput: %s", err, out)
 		}
-		var flag map[string]any
-		if err := json.Unmarshal([]byte(out), &flag); err != nil {
-			t.Fatalf("parsing %q: %v", out, err)
-		}
-		if flag["feature"] != "max_items" || flag["enabled"] != true || flag["value"] != float64(99) {
+		// Naming a feature prints the flag on its own, with no document around it,
+		// so `--jq .value` reads it.
+		flag := evalDoc(t, out)
+		if flag["name"] != "max_items" || flag["enabled"] != true || flag["value"] != float64(99) {
 			t.Errorf("flag = %+v", flag)
+		}
+		for _, absent := range []string{"$schema", "flags"} {
+			if _, ok := flag[absent]; ok {
+				t.Errorf("flag = %+v, want no %q — one flag is not an EvaluationResult", flag, absent)
+			}
 		}
 	})
 }
