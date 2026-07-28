@@ -99,6 +99,33 @@ func TestProjects(t *testing.T) {
 		}
 	})
 
+	t.Run("stops walking a pagination loop", func(t *testing.T) {
+		// Given a server whose next link never terminates. It gives up one page
+		// past the cap so an absent cap fails the test instead of hanging it.
+		const wantPages = 1000
+		var hits int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
+			if hits > wantPages {
+				fmt.Fprint(w, `{"count":0,"next":null,"results":[]}`)
+				return
+			}
+			fmt.Fprintf(w, `{"count":0,"next":"http://pagination.invalid/api/v1/projects/?organisation=3&page=%d","results":[]}`, hits+1)
+		}))
+		defer srv.Close()
+
+		// When
+		_, err := testClient(srv.URL, Bearer("t"), srv).Projects(context.Background(), 3)
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "did not terminate") {
+			t.Fatalf("err = %v, want the pagination walk to be capped", err)
+		}
+		if hits != wantPages {
+			t.Errorf("server hits = %d, want %d (stopped at the cap)", hits, wantPages)
+		}
+	})
+
 	t.Run("lists ask for the largest page", func(t *testing.T) {
 		// Given
 		var gotPageSize string

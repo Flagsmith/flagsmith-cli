@@ -216,10 +216,18 @@ func (c *Client) DeleteOrganisation(ctx context.Context, orgID int) error {
 // across every page via the DRF "next" link. The "next" URL's scheme and host
 // are discarded and only its path + query are reused against the base URL,
 // which keeps pagination working behind proxies that rewrite the host.
+// maxPages bounds the pagination walk. At the page size lists ask for this is
+// ~1M items, so it only ever trips on a server whose next link cycles — which
+// would otherwise spin the commands that opt out of the invocation deadline.
+const maxPages = 1000
+
 func (c *Client) getList(ctx context.Context, path string, out any) error {
 	path = withPageSize(path)
 	var items []json.RawMessage
-	for path != "" {
+	for pages := 0; path != ""; pages++ {
+		if pages >= maxPages {
+			return bug.Mark(fmt.Errorf("pagination did not terminate after %d pages", maxPages))
+		}
 		var raw json.RawMessage
 		if err := c.get(ctx, path, &raw); err != nil {
 			return err
