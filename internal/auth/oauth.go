@@ -26,6 +26,10 @@ const (
 	Scope = "admin-api"
 
 	loginTimeout = 5 * time.Minute
+
+	// shutdownTimeout bounds the loopback server's teardown, so a client still
+	// holding a connection cannot outlive the login it belongs to.
+	shutdownTimeout = 5 * time.Second
 )
 
 // Metadata is a subset of RFC 8414 authorization server metadata.
@@ -230,27 +234,41 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 		err  error
 	}
 	results := make(chan callback, 1)
+	// Only the first callback is ever read, so later ones — a refreshed success
+	// tab, a prefetch, anything else that can reach the loopback port — are
+	// dropped. Sending unconditionally would park their handlers forever and
+	// with them the deferred Shutdown, hanging a login that already succeeded.
+	deliver := func(c callback) {
+		select {
+		case results <- c:
+		default:
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("state") != state {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
-			results <- callback{err: bug.Mark(errors.New("state mismatch in callback — possible interception, aborting"))}
+			deliver(callback{err: bug.Mark(errors.New("state mismatch in callback — possible interception, aborting"))})
 			return
 		}
 		if errCode := q.Get("error"); errCode != "" {
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, resultPage("Login failed", "You can close this tab and return to your terminal."))
-			results <- callback{err: bug.Mark(fmt.Errorf("authorization failed: %s", errCode))}
+			deliver(callback{err: bug.Mark(fmt.Errorf("authorization failed: %s", errCode))})
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, resultPage("Login complete", "You can close this tab and return to your terminal."))
-		results <- callback{code: q.Get("code")}
+		deliver(callback{code: q.Get("code")})
 	})
 	server := &http.Server{Handler: mux}
-	go server.Serve(ln)                         //nolint:errcheck // returns ErrServerClosed on shutdown
-	defer server.Shutdown(context.Background()) //nolint:errcheck // best-effort teardown
+	go server.Serve(ln) //nolint:errcheck // returns ErrServerClosed on shutdown
+	defer func() {
+		stop, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		server.Shutdown(stop) //nolint:errcheck // best-effort teardown
+	}()
 
 	fmt.Fprintf(out, "Log in to Flagsmith in your browser:\n\n  %s\n\n", authURL)
 	if openBrowser != nil {

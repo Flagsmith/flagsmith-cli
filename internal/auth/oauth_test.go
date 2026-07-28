@@ -346,6 +346,50 @@ func TestLoginExchangeFailure(t *testing.T) {
 	}
 }
 
+func TestLoginSurvivesRepeatedCallbacks(t *testing.T) {
+	// Given a token endpoint that holds the exchange open. The extra callbacks
+	// have to land while Login is still inside it: once Login returns, the
+	// deferred teardown has closed the listener and they would be refused.
+	f := newFakeAuthServer(t)
+	exchanging, release := make(chan struct{}), make(chan struct{})
+	f.tokenHandler = func(form url.Values) (int, any) {
+		close(exchanging)
+		<-release
+		return defaultTokenResponse(form)
+	}
+	out, results := startLogin(t, context.Background(), f.srv.URL, nil)
+	q, redirectURI := waitForAuthURL(t, out)
+	callback := redirectURI + "?code=c&state=" + url.QueryEscape(q.Get("state"))
+
+	// When the browser delivers the callback three times — a user refreshing
+	// the success tab. The third gets a client that gives up: a handler parked
+	// on the results channel never answers it, and the client disconnecting
+	// does not unpark the handler.
+	if _, err := http.Get(callback); err != nil {
+		t.Fatalf("delivering callback: %v", err)
+	}
+	<-exchanging
+	if _, err := http.Get(callback); err != nil {
+		t.Fatalf("delivering second callback: %v", err)
+	}
+	impatient := &http.Client{Timeout: 2 * time.Second}
+	resp, err := impatient.Get(callback)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	// Release before asserting: a failure that left the exchange blocked would
+	// hang this test's cleanup instead of reporting.
+	close(release)
+
+	// Then
+	if err != nil {
+		t.Fatalf("third callback went unanswered, so its handler is parked: %v", err)
+	}
+	if r := awaitLogin(t, results); r.err != nil {
+		t.Fatalf("Login should ignore repeat callbacks, got: %v", r.err)
+	}
+}
+
 func TestDiscover(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		// Given
