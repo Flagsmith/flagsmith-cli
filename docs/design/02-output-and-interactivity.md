@@ -18,6 +18,7 @@ Interactive behaviour and output are governed by global flags / environment vari
 - Every prompt has a flag equivalent, enforced structurally. Flags always win, and a fully-flagged invocation asks nothing even in a TTY.
 - Missing input that a TTY prompt would need always loudly exits with code 2, naming the flag.
 - A confirmation resolves as: proceed with `--yes`; otherwise prompt if TTY available; otherwise (`--no-input`, `FLAGSMITH_NO_INPUT`, or no TTY) exit 2 naming `--yes`.
+- `FLAGSMITH_NO_INPUT=false` leaves prompting on. `FLAGSMITH_DEBUG` follows the same rule.
 
 ## 2. Output
 

@@ -42,4 +42,4 @@ The stdout/stderr split, `--json`/`--jq` and common exit codes are defined in [0
 
 ## 6. Pagination
 
-`list` fetches every page and returns the aggregate. `--limit N` caps the number of items.
+`list` fetches every page and returns the aggregate.
