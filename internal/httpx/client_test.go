@@ -329,3 +329,71 @@ func TestRedirectStripsEnvironmentKeyAcrossHosts(t *testing.T) {
 		t.Errorf("X-Environment-Key = %q after a same-host redirect, want it kept", v)
 	}
 }
+
+// Credentials follow a redirect only back to the exact origin the request
+// started at. Go's own rule is laxer — it forwards Authorization to any
+// subdomain and ignores the scheme — and it never protects custom headers,
+// so X-Environment-Key needs this too.
+func TestCheckRedirectStripsSecrets(t *testing.T) {
+	cases := []struct {
+		name     string
+		from, to string
+		wantKept bool
+	}{
+		{"same origin", "https://api.example/a", "https://api.example/b", true},
+		{"upgrade to https is fine", "http://api.example/a", "https://api.example/b", true},
+		{"scheme downgrade on the same host", "https://api.example/a", "http://api.example/b", false},
+		{"different host", "https://api.example/a", "https://evil.example/b", false},
+		{"subdomain of the original host", "https://api.example/a", "https://evil.api.example/b", false},
+		{"parent of the original host", "https://api.example/a", "https://example/b", false},
+		{"different port", "https://api.example/a", "https://api.example:8443/b", false},
+		{"host case is not a difference", "https://API.example/a", "https://api.example/b", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Given a redirect from → to, carrying both secret headers
+			from, err := http.NewRequest(http.MethodGet, c.from, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			to, err := http.NewRequest(http.MethodGet, c.to, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Literal names, not secretHeaders: the test must fail if a
+			// header is dropped from the production list.
+			for _, h := range []string{"Authorization", "X-Environment-Key"} {
+				to.Header.Set(h, "secret")
+			}
+
+			// When
+			if err := checkRedirect(to, []*http.Request{from}); err != nil {
+				t.Fatal(err)
+			}
+
+			// Then both headers survive together, or neither does
+			for _, h := range []string{"Authorization", "X-Environment-Key"} {
+				if kept := to.Header.Get(h) != ""; kept != c.wantKept {
+					t.Errorf("%s kept = %v, want %v", h, kept, c.wantKept)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckRedirectCapsHops(t *testing.T) {
+	// Given a chain already at the cap
+	req, err := http.NewRequest(http.MethodGet, "https://api.example/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	via := make([]*http.Request, maxRedirects)
+	for i := range via {
+		via[i] = req
+	}
+
+	// When / Then — setting CheckRedirect replaces Go's cap, so ours must hold
+	if err := checkRedirect(req, via); err == nil {
+		t.Error("err = nil, want the redirect chain to stop")
+	}
+}

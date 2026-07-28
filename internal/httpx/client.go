@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -54,22 +55,50 @@ func New(userAgent string) *http.Client {
 		rt = &tracer{base: rt, out: os.Stderr}
 	}
 	return &http.Client{
-		Transport: &transport{base: rt, userAgent: userAgent},
-		// Go strips Authorization when a redirect crosses hosts, but copies
-		// custom headers verbatim — and X-Environment-Key can carry a
-		// server-side (ser.) secret. Give it the same treatment. Setting
-		// CheckRedirect replaces the default policy, so the ten-hop cap
-		// comes with it.
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-			if req.URL.Host != via[0].URL.Host {
-				req.Header.Del("X-Environment-Key")
-			}
-			return nil
-		},
+		Transport:     &transport{base: rt, userAgent: userAgent},
+		CheckRedirect: checkRedirect,
 	}
+}
+
+// maxRedirects mirrors the cap in Go's default policy, which setting
+// CheckRedirect replaces.
+const maxRedirects = 10
+
+// secretHeaders never travel to an origin the request did not start at.
+// Authorization carries the Admin credential; X-Environment-Key can carry a
+// server-side (ser.) environment key, also a secret.
+var secretHeaders = []string{"Authorization", "X-Environment-Key"}
+
+// checkRedirect strips credentials when a redirect leaves the origin the
+// request began at. Go's own rule is laxer in two ways: it forwards
+// Authorization to any subdomain of the initial host (shouldCopyHeaderOnRedirect
+// → isDomainOrSubdomain, so api.example → evil.api.example keeps it), and it
+// applies to Authorization only, copying custom headers verbatim. It also
+// ignores the scheme, so https → http on the same host would re-send both
+// secrets in cleartext. Require the same host and no downgrade instead.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return errors.New("stopped after 10 redirects")
+	}
+	if !sameOrigin(via[0].URL, req.URL) {
+		for _, h := range secretHeaders {
+			req.Header.Del(h)
+		}
+	}
+	return nil
+}
+
+// sameOrigin reports whether credentials may follow a redirect from → to:
+// the same host (exactly — not a subdomain), over the same scheme or an
+// upgrade to https, never a downgrade away from it.
+func sameOrigin(from, to *url.URL) bool {
+	if !strings.EqualFold(from.Host, to.Host) {
+		return false
+	}
+	if strings.EqualFold(from.Scheme, "https") && !strings.EqualFold(to.Scheme, "https") {
+		return false
+	}
+	return true
 }
 
 // envBool reads a boolean switch from the environment: presence alone is not
