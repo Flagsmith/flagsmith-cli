@@ -211,9 +211,12 @@ var authTokenCmd = &cobra.Command{
 	Short: "Print the active Admin API credential (for curl and scripts)",
 	Example: `  flagsmith auth token
 
-  # e.g. drive curl with it
-  curl -H "Authorization: Api-Key $(flagsmith auth token)" \
-    https://api.flagsmith.com/api/v1/organisations/`,
+  # to call the API, prefer flagsmith api: the credential never leaves the process
+  flagsmith api api/v1/organisations/
+
+  # with curl, pipe the header in
+  flagsmith auth token | sed 's/^/Authorization: Api-Key /' |
+    curl -H @- https://api.flagsmith.com/api/v1/organisations/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := applyContext(cmd); err != nil {
 			return err
