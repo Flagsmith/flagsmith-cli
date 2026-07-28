@@ -115,7 +115,12 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	}
 	for i, segmentID := range ordered {
 		priority := i
-		state := stateByFS[current[segmentID].ID]
+		// A zero state would echo the override as off with an empty value, so a
+		// priority-only move would quietly rewrite it.
+		state, ok := stateByFS[current[segmentID].ID]
+		if !ok {
+			return fmt.Errorf("no feature state found for the override on segment %d; refusing to reorder", segmentID)
+		}
 		req.SegmentOverrides = append(req.SegmentOverrides, api.SegmentOverride{
 			SegmentID: segmentID,
 			Enabled:   state.Enabled,

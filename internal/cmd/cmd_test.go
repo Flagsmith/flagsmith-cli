@@ -4368,6 +4368,32 @@ func TestFlagReorder(t *testing.T) {
 	// Fixture: max_items has overrides beta-optin (57, priority 0, "blue",
 	// on) and us-adults (42, priority 1, 25, off); env default off/25.
 
+	t.Run("refuses to reorder when an override has no state row", func(t *testing.T) {
+		// Given us-adults' state row missing — as a concurrent delete would
+		// leave it. Echoing a zero state would disable and blank the override.
+		f := flagUpdateEnv(t)
+		withFeatureOverridesFixture(f)
+		str := func(s string) map[string]any { return map[string]any{"type": "unicode", "string_value": s} }
+		withFeatureStates(f, 2,
+			map[string]any{"id": 9000, "feature_segment": nil, "enabled": false, "feature_state_value": str("default")},
+			map[string]any{"id": 9001, "feature_segment": 1200, "enabled": true, "feature_state_value": str("blue")},
+		)
+
+		// When
+		_, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "42") {
+			t.Errorf("err = %v, want a refusal naming the segment", err)
+		}
+		f.mu.Lock()
+		calls := f.updateCalls
+		f.mu.Unlock()
+		if calls != 0 {
+			t.Errorf("update calls = %d, want no write at all", calls)
+		}
+	})
+
 	t.Run("re-permutes every override in one request", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withFeatureOverridesFixture(f)
