@@ -121,7 +121,7 @@ var projectListCmd = &cobra.Command{
 			return err
 		}
 		orgID := 0
-		if cmd.Flags().Changed("organisation") {
+		if pc.Organisation.Value != nil {
 			if orgID, err = resolveOrganisationID(cmd, pc, cred); err != nil {
 				return err
 			}

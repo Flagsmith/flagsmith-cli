@@ -5800,6 +5800,33 @@ func TestProject(t *testing.T) {
 		}
 	})
 
+	t.Run("list scopes to an organisation from config", func(t *testing.T) {
+		// Given a directory pinned to organisation 3, and a project elsewhere.
+		// project get resolves within the pinned org, so list must agree.
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"organisation": 3, "project": 101, "apiUrl": "`+f.srv.URL+`"}`)
+		setMasterKey(t, f.srv.URL)
+		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 4, "name": "Other"}}
+		f.projects["3"] = []map[string]any{{"id": 101, "name": "acme-api", "organisation": 3}}
+		f.projects["4"] = []map[string]any{{"id": 201, "name": "other-api", "organisation": 4}}
+
+		// When
+		out, err := run("", "project", "list")
+
+		// Then
+		if err != nil {
+			t.Fatalf("project list: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "acme-api") {
+			t.Errorf("output = %q, want the pinned organisation's project", out)
+		}
+		if strings.Contains(out, "other-api") {
+			t.Errorf("output = %q, want no project from outside the pinned organisation", out)
+		}
+	})
+
 	t.Run("get by name", func(t *testing.T) {
 		flagUpdateEnv(t)
 		out, err := run("", "project", "get", "acme-api")
