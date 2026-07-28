@@ -26,7 +26,7 @@ var rawTerminal = func() bool {
 // It is a liveness guarantee (never block on a human), orthogonal to --yes
 // (authorization). See docs/design/02-output-and-interactivity.md.
 func noInput() bool {
-	return noInputFlag || os.Getenv("FLAGSMITH_NO_INPUT") != ""
+	return noInputFlag || envBool("FLAGSMITH_NO_INPUT")
 }
 
 // interactive reports whether prompting is allowed: a TTY on stdin and no

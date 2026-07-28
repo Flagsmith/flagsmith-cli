@@ -50,7 +50,7 @@ func New(userAgent string) *http.Client {
 	// FLAGSMITH_DEBUG turns on per-request tracing to stderr. Wrapping the base
 	// transport (rather than the retrying one) means every attempt is traced
 	// individually, retries included.
-	if os.Getenv("FLAGSMITH_DEBUG") != "" {
+	if envBool("FLAGSMITH_DEBUG") {
 		rt = &tracer{base: rt, out: os.Stderr}
 	}
 	return &http.Client{
@@ -70,6 +70,18 @@ func New(userAgent string) *http.Client {
 			return nil
 		},
 	}
+}
+
+// envBool reads a boolean switch from the environment: presence alone is not
+// truth, so FLAGSMITH_DEBUG=0 leaves tracing off. Duplicated rather than
+// shared because this package deliberately imports nothing internal; the
+// convention it implements is documented at internal/cmd.envBool.
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 // tracer logs one line per HTTP round trip — method, URL, status, wall-clock

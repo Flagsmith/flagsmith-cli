@@ -212,14 +212,22 @@ func TestDebugTracing(t *testing.T) {
 		}
 	})
 
-	t.Run("New enables tracing only when FLAGSMITH_DEBUG is set", func(t *testing.T) {
-		t.Setenv("FLAGSMITH_DEBUG", "")
-		if _, ok := New("ua").Transport.(*transport).base.(*tracer); ok {
-			t.Error("tracing must be off when FLAGSMITH_DEBUG is unset")
+	t.Run("New enables tracing only when FLAGSMITH_DEBUG is truthy", func(t *testing.T) {
+		tracing := func() bool {
+			_, ok := New("ua").Transport.(*transport).base.(*tracer)
+			return ok
 		}
-		t.Setenv("FLAGSMITH_DEBUG", "1")
-		if _, ok := New("ua").Transport.(*transport).base.(*tracer); !ok {
-			t.Error("tracing must be on when FLAGSMITH_DEBUG is set")
+		for _, off := range []string{"", "0", "false", "off"} {
+			t.Setenv("FLAGSMITH_DEBUG", off)
+			if tracing() {
+				t.Errorf("tracing must be off for FLAGSMITH_DEBUG=%q", off)
+			}
+		}
+		for _, on := range []string{"1", "true", "yes"} {
+			t.Setenv("FLAGSMITH_DEBUG", on)
+			if !tracing() {
+				t.Errorf("tracing must be on for FLAGSMITH_DEBUG=%q", on)
+			}
 		}
 	})
 }

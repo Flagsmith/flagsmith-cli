@@ -5174,6 +5174,46 @@ func TestFeatureSearchNarrowsFetch(t *testing.T) {
 
 // A standard feature has no variants, and an empty list renders [] — the
 // slice is built here, so it never passes through getList's normalisation.
+// A falsey value must switch the behaviour off, not merely be "set".
+func TestFalseyEnvSwitches(t *testing.T) {
+	t.Run("FLAGSMITH_JSON_OUTPUT=0 keeps human output", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		_ = f
+		t.Setenv("FLAGSMITH_JSON_OUTPUT", "0")
+
+		// When
+		out, err := run("", "organisation", "list")
+
+		// Then — the human table, not JSON
+		if err != nil {
+			t.Fatalf("organisation list: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "NAME") || strings.HasPrefix(strings.TrimSpace(out), "[") {
+			t.Errorf("output = %q, want the human table", out)
+		}
+	})
+
+	t.Run("FLAGSMITH_NO_INPUT=false still prompts", func(t *testing.T) {
+		// Given a TTY and the liveness switch explicitly off
+		f := flagUpdateEnv(t)
+		_ = f
+		fakeTTY(t)
+		t.Setenv("FLAGSMITH_NO_INPUT", "false")
+
+		// When a confirmation is needed and the answer is no
+		out, err := run("n\n", "project", "delete", "101")
+
+		// Then it prompted rather than refusing for want of a TTY
+		if err != nil {
+			t.Fatalf("project delete: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "Aborted; nothing deleted.") {
+			t.Errorf("output = %q, want the prompt to have run and been declined", out)
+		}
+	})
+}
+
 func TestFeatureVariantListEmptyIsArray(t *testing.T) {
 	// Given a standard feature, which has no multivariate options
 	f := flagUpdateEnv(t)

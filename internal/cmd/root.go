@@ -98,7 +98,7 @@ var (
 
 // jsonOutput reports whether machine-readable output was requested.
 func jsonOutput() bool {
-	return jsonFlag || jqFlag != "" || os.Getenv("FLAGSMITH_JSON_OUTPUT") != ""
+	return jsonFlag || jqFlag != "" || envBool("FLAGSMITH_JSON_OUTPUT")
 }
 
 // outputOpts is the render format for the current invocation.

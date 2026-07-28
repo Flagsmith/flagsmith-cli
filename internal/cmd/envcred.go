@@ -13,6 +13,20 @@ import (
 // form, and the unscoped form is trusted only for the surface's default host
 // (see docs/design/03-authentication.md §6).
 
+// envBool reads a boolean switch from the environment. Presence alone is not
+// truth: `FLAGSMITH_NO_INPUT=false` must leave prompting on, and
+// `FLAGSMITH_JSON_OUTPUT=0` must leave human output on — a CI job that sets
+// these from a template variable would otherwise get the opposite of what it
+// wrote. Unset or empty is false; 0/false/no/off (any case) are false;
+// anything else is true, so `=1` and `=anything` keep working.
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
+}
+
 // scopedEnvName is the host-scoped form of a credential variable for an
 // instance URL: the host and port with `-` written `__` and `.` and `:`
 // written `_`. The scheme is not part of the scope.

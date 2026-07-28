@@ -1,6 +1,9 @@
 package cmd
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // The host suffix encodes host and port so a credential variable can name the
 // instance it belongs to: `-` doubles, `.` and `:` become single underscores.
@@ -17,6 +20,34 @@ func TestScopedEnvName(t *testing.T) {
 		if got := scopedEnvName(envAPIKey, in); got != want {
 			t.Errorf("scopedEnvName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Boolean switches read a value, not merely presence: FLAGSMITH_NO_INPUT=false
+// must not disable prompting.
+func TestEnvBool(t *testing.T) {
+	cases := map[string]bool{
+		"":      false,
+		"0":     false,
+		"false": false,
+		"FALSE": false,
+		"no":    false,
+		"off":   false,
+		" 0 ":   false,
+		"1":     true,
+		"true":  true,
+		"yes":   true,
+		"on":    true,
+	}
+	for in, want := range cases {
+		t.Setenv("FLAGSMITH_TEST_BOOL", in)
+		if got := envBool("FLAGSMITH_TEST_BOOL"); got != want {
+			t.Errorf("envBool(%q) = %v, want %v", in, got, want)
+		}
+	}
+	os.Unsetenv("FLAGSMITH_TEST_BOOL")
+	if envBool("FLAGSMITH_TEST_BOOL") {
+		t.Error("envBool on an unset variable = true, want false")
 	}
 }
 
