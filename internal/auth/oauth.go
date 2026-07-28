@@ -30,6 +30,11 @@ const (
 	// shutdownTimeout bounds the loopback server's teardown, so a client still
 	// holding a connection cannot outlive the login it belongs to.
 	shutdownTimeout = 5 * time.Second
+
+	// readHeaderTimeout bounds how long a client may take to send its request
+	// headers. The only legitimate one is a browser on this machine, so this is
+	// generous; it stops a connection being held open indefinitely instead.
+	readHeaderTimeout = 5 * time.Second
 )
 
 // Metadata is a subset of RFC 8414 authorization server metadata.
@@ -262,7 +267,7 @@ func Login(ctx context.Context, httpClient *http.Client, apiURL string, openBrow
 		fmt.Fprint(w, resultPage("Login complete", "You can close this tab and return to your terminal."))
 		deliver(callback{code: q.Get("code")})
 	})
-	server := &http.Server{Handler: mux}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: readHeaderTimeout}
 	go server.Serve(ln) //nolint:errcheck // returns ErrServerClosed on shutdown
 	defer func() {
 		stop, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
