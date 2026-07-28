@@ -610,7 +610,10 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if f.workflowGated {
+		f.mu.Lock()
+		gated := f.workflowGated
+		f.mu.Unlock()
+		if gated {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -628,7 +631,10 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if f.segmentMissing {
+		f.mu.Lock()
+		missing := f.segmentMissing
+		f.mu.Unlock()
+		if missing {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -3191,7 +3197,7 @@ func TestFlagListSegmentFansOut(t *testing.T) {
 			"id": 1200 + id, "segment": 12, "segment_name": "powerusers", "priority": id - 1, "environment": 1,
 		})
 	}
-	f.fsDelay = 30 * time.Millisecond
+	withFeatureSegmentDelay(f, 30*time.Millisecond)
 
 	// When
 	out, err := run("", "flag", "list", "--segment", "12")
@@ -3494,7 +3500,7 @@ func TestFlagUpdate(t *testing.T) {
 
 	t.Run("workflow-gated environment is reported clearly", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		f.workflowGated = true
+		withWorkflowGating(f)
 		_, err := run("", "flag", "update", "max_items", "--enable", "--yes")
 		if !errors.Is(err, api.ErrWorkflowGated) {
 			t.Errorf("err = %v, want ErrWorkflowGated", err)
@@ -3545,6 +3551,38 @@ func withFeatureStates(f *fakeInstance, featureID int, rows ...map[string]any) {
 		f.featureStates = map[string][]map[string]any{}
 	}
 	f.featureStates[strconv.Itoa(featureID)] = rows
+}
+
+// The fake serves requests concurrently (see fsPeak), so every field a handler
+// reads is set through a locked setter rather than assigned directly.
+
+// withWorkflowGating makes the update endpoints answer 403.
+func withWorkflowGating(f *fakeInstance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.workflowGated = true
+}
+
+// withMissingSegmentOverride makes delete-segment-override answer 404.
+func withMissingSegmentOverride(f *fakeInstance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.segmentMissing = true
+}
+
+// withEdgeIdentities makes the project report use_edge_identities.
+func withEdgeIdentities(f *fakeInstance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.useEdge = true
+}
+
+// withFeatureSegmentDelay adds latency to feature-segments, so overlapping
+// requests are observable in fsPeak.
+func withFeatureSegmentDelay(f *fakeInstance, d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fsDelay = d
 }
 
 // withSegmentOverride sets project 101's features to a single max_items
@@ -4514,7 +4552,7 @@ func TestFlagDelete(t *testing.T) {
 
 	t.Run("missing override reports not found", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		f.segmentMissing = true
+		withMissingSegmentOverride(f)
 		_, err := run("", "flag", "delete", "max_items", "--segment", "99", "--yes")
 		if err == nil || !strings.Contains(err.Error(), "segment 99") {
 			t.Errorf("err = %v, want a not-found error naming the segment", err)
@@ -4601,7 +4639,7 @@ func TestFlagIdentity(t *testing.T) {
 
 	t.Run("edge: update via the identifier endpoint", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		f.useEdge = true
+		withEdgeIdentities(f)
 
 		out, err := run("", "flag", "update", "max_items", "--identifier", "edge-user", "--enable", "--value", "7", "--yes")
 		if err != nil {
@@ -4622,7 +4660,7 @@ func TestFlagIdentity(t *testing.T) {
 
 	t.Run("edge: get resolves uuid then reads", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		f.useEdge = true
+		withEdgeIdentities(f)
 		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: false, value: "e"}}
 
 		out, err := run("", "flag", "get", "max_items", "--identifier", "edge-user")
@@ -4638,7 +4676,7 @@ func TestFlagIdentity(t *testing.T) {
 
 	t.Run("edge: delete via the identifier endpoint", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		f.useEdge = true
+		withEdgeIdentities(f)
 		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: true, value: "e"}}
 
 		out, err := run("", "flag", "delete", "max_items", "--identifier", "edge-user", "--yes")
@@ -4724,7 +4762,7 @@ func TestFlagIdentity(t *testing.T) {
 	t.Run("edge: update resolves the uuid once", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
-		f.useEdge = true
+		withEdgeIdentities(f)
 		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: false, value: "e"}}
 
 		// When
