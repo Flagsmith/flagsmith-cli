@@ -5172,8 +5172,6 @@ func TestFeatureSearchNarrowsFetch(t *testing.T) {
 	})
 }
 
-// A standard feature has no variants, and an empty list renders [] — the
-// slice is built here, so it never passes through getList's normalisation.
 // A falsey value must switch the behaviour off, not merely be "set".
 func TestFalseyEnvSwitches(t *testing.T) {
 	t.Run("FLAGSMITH_JSON_OUTPUT=0 keeps human output", func(t *testing.T) {
@@ -5214,6 +5212,8 @@ func TestFalseyEnvSwitches(t *testing.T) {
 	})
 }
 
+// A standard feature has no variants, and an empty list renders [] — the
+// slice is built here, so it never passes through getList's normalisation.
 func TestFeatureVariantListEmptyIsArray(t *testing.T) {
 	// Given a standard feature, which has no multivariate options
 	f := flagUpdateEnv(t)

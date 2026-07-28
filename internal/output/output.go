@@ -48,13 +48,15 @@ func splitLines(s string) []string {
 	return strings.Split(strings.TrimRight(s, "\n"), "\n")
 }
 
-// flattenCell makes a value safe to hand to tabwriter, which reads newlines
-// and tabs as structure: a newline ends the row — breaking the alignment of
+// flattenCell makes a value safe to hand to tabwriter, which reads all four
+// of \t \v \n \f as structure: a newline ends the row — breaking the alignment of
 // every row after it, and desynchronising output lines from input rows — and
 // a tab starts a new cell. Values reach us unsanitised from the API, so they
 // are flattened to spaces here rather than at each call site. Runs of plain
 // spaces are left alone: they are content, not structure.
-var flattenCell = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace
+var flattenCell = strings.NewReplacer(
+	"\r\n", " ", "\n", " ", "\r", " ", "\t", " ", "\v", " ", "\f", " ",
+).Replace
 
 // Render writes data as JSON (applying JQ) when JSON output is requested,
 // otherwise delegates to human. human may be nil when only JSON is expected.

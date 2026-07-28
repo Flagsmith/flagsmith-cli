@@ -312,6 +312,8 @@ func TestDetailFlattensStructuralWhitespace(t *testing.T) {
 		{Label: "Feature", Value: "banner", Source: "config"},
 		{Label: "Description", Value: "line one\nline two", Source: "config"},
 		{Label: "Value", Value: "a\tb", Source: "env"},
+		{Label: "Vertical", Value: "a\vb", Source: "env"},
+		{Label: "FormFeed", Value: "a\fb", Source: "env"},
 	}
 
 	// When
@@ -326,11 +328,13 @@ func TestDetailFlattensStructuralWhitespace(t *testing.T) {
 	out := b.String()
 
 	// One line per field, whatever the values contained.
-	if got := len(strings.Split(strings.TrimRight(out, "\n"), "\n")); got != 3 {
-		t.Errorf("lines = %d, want 3 (one per field):\n%s", got, out)
+	if got := len(strings.Split(strings.TrimRight(out, "\n"), "\n")); got != len(fields) {
+		t.Errorf("lines = %d, want %d (one per field):\n%s", got, len(fields), out)
 	}
-	if strings.Contains(out, "line one\nline two") || strings.Contains(out, "a\tb") {
-		t.Errorf("structural whitespace survived into the row: %q", out)
+	for _, bad := range []string{"line one\nline two", "a\tb", "a\vb", "a\fb"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("structural whitespace %q survived into the row: %q", bad, out)
+		}
 	}
 	if !strings.Contains(out, "line one line two") || !strings.Contains(out, "a b") {
 		t.Errorf("output = %q, want the text preserved with spaces", out)
