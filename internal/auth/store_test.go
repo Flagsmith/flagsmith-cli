@@ -167,6 +167,23 @@ func TestLoadNotLoggedIn(t *testing.T) {
 	}
 }
 
+func TestLoadFailsWithoutKeychain(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	keyring.MockInitWithError(errors.New("keychain locked"))
+
+	// When
+	_, err := Load(saasURL)
+
+	// Then
+	if !errors.Is(err, ErrKeychainUnavailable) {
+		t.Errorf("err = %v, want ErrKeychainUnavailable", err)
+	}
+	if errors.Is(err, ErrNotLoggedIn) {
+		t.Error("an unreadable keychain must not read as not logged in")
+	}
+}
+
 func TestCredentialsKindAccessors(t *testing.T) {
 	t.Run("stored credentials without a kind are oauth (back-compat)", func(t *testing.T) {
 		// Given

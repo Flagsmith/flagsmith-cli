@@ -82,11 +82,17 @@ func Save(c *Credentials) error {
 	return nil
 }
 
-// Load returns the stored session for an instance, or ErrNotLoggedIn.
+// Load returns the stored session for an instance, or ErrNotLoggedIn when the
+// keychain holds none. A keychain that cannot be read at all is reported as
+// ErrKeychainUnavailable: telling that user to log in sends them through the
+// whole browser flow only to fail at Save.
 func Load(apiURL string) (*Credentials, error) {
 	raw, err := keyring.Get(keyringService, instanceKey(apiURL))
-	if err != nil {
+	if errors.Is(err, keyring.ErrNotFound) {
 		return nil, ErrNotLoggedIn
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrKeychainUnavailable, err)
 	}
 	c := &Credentials{}
 	if err := json.Unmarshal([]byte(raw), c); err != nil {
