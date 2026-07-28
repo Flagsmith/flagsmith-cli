@@ -420,15 +420,10 @@ func toRuleView(r *api.SegmentRule, top bool) ruleView {
 // renderSegment prints a segment's detail view + rule tree (human) or curated
 // JSON.
 func renderSegment(cmd *cobra.Command, seg *api.Segment) error {
+	view := toSegmentView(seg)
+	// toSegmentView decodes IN values in place, so the tree this walks is the
+	// decoded one the view already describes.
 	top := topRule(seg.Rules)
-	if top != nil {
-		decodeInValues(top)
-	}
-	view := segmentView{ID: seg.ID, Name: seg.Name, Description: seg.Description, Feature: seg.Feature}
-	if top != nil {
-		rv := toRuleView(top, true)
-		view.Rules = &rv
-	}
 	return output.Render(cmd.OutOrStdout(), view, outputOpts(), func(w io.Writer) error {
 		if err := output.Detail(w, []output.Field{
 			{Label: "Segment", Value: label(seg.Name, seg.ID)},
