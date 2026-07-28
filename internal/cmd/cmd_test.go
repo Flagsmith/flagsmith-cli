@@ -4637,6 +4637,23 @@ func TestFlagIdentity(t *testing.T) {
 		}
 	})
 
+	t.Run("core: delete reports a missing identity before confirming", func(t *testing.T) {
+		// Given an identifier the environment has never seen, and no --yes: the
+		// confirmation would fail first if it came before the lookup.
+		flagUpdateEnv(t)
+
+		// When
+		_, err := run("", "flag", "delete", "max_items", "--identifier", "ghost")
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), `identity "ghost" not found`) {
+			t.Errorf("err = %v, want the missing identity", err)
+		}
+		if err != nil && strings.Contains(err.Error(), "--yes") {
+			t.Error("asked to confirm deleting an override that does not exist")
+		}
+	})
+
 	t.Run("edge: update via the identifier endpoint", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withEdgeIdentities(f)

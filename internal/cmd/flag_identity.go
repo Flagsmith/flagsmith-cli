@@ -201,6 +201,23 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 		return err
 	}
 
+	// Resolve before confirming, so a missing identity or override is reported
+	// instead of prompting to delete something that isn't there. The edge branch
+	// has no equivalent pre-check; its API answers for itself.
+	var handle identityHandle
+	var override *api.IdentityFeatureState
+	if !edge {
+		if handle, override, err = lookupIdentityOverride(cmd, cred, env.APIKey, feature.ID, identifier, false); err != nil {
+			return err
+		}
+		if !handle.found {
+			return fmt.Errorf("identity %q not found in %s", identifier, environmentLabel(env))
+		}
+		if override == nil {
+			return fmt.Errorf("%q has no override for identifier %q in %s", name, identifier, environmentLabel(env))
+		}
+	}
+
 	scope := fmt.Sprintf("identifier %s in environment %s", identifier, environmentLabel(env))
 	errOut := cmd.ErrOrStderr()
 	if ok, err := confirmed(cmd, fmt.Sprintf("Delete %s override for %s?", name, scope), "changed"); !ok || err != nil {
@@ -210,16 +227,6 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	if edge {
 		err = cred.client().DeleteEdgeIdentityOverride(cmd.Context(), env.APIKey, identifier, feature.ID)
 	} else {
-		handle, override, lerr := lookupIdentityOverride(cmd, cred, env.APIKey, feature.ID, identifier, false)
-		if lerr != nil {
-			return lerr
-		}
-		if !handle.found {
-			return fmt.Errorf("identity %q not found in %s", identifier, environmentLabel(env))
-		}
-		if override == nil {
-			return fmt.Errorf("%q has no override for identifier %q in %s", name, identifier, environmentLabel(env))
-		}
 		err = cred.client().DeleteIdentityOverride(cmd.Context(), env.APIKey, handle.id, override.ID)
 	}
 	if err != nil {
