@@ -3,6 +3,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -95,6 +96,13 @@ func TestLoadMissIsEmptyNotNil(t *testing.T) {
 // not secrets, but nothing else on this machine needs them either, and the
 // CLI writes nothing else to disk.
 func TestMergeWritesPrivately(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows has no POSIX mode bits: os.Stat synthesises 0666/0777 and
+		// only the read-only flag round-trips, so the modes we pass are
+		// unobservable. Access there comes from the ACL that %LocalAppData%
+		// (os.UserCacheDir) already restricts to the user.
+		t.Skip("file modes are not POSIX on Windows")
+	}
 	// Given
 	isolate(t)
 
