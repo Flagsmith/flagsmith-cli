@@ -78,7 +78,7 @@ var secretHeaders = []string{"Authorization", "X-Environment-Key"}
 // secrets in cleartext. Require the same host and no downgrade instead.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
-		return errors.New("stopped after 10 redirects")
+		return fmt.Errorf("stopped after %s redirects", maxRedirects)
 	}
 	if !sameOrigin(via[0].URL, req.URL) {
 		for _, h := range secretHeaders {
