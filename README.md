@@ -1,137 +1,67 @@
-<img width="100%" src="https://github.com/Flagsmith/flagsmith/raw/main/static-files/hero.png"/>
+# Flagsmith CLI
 
-@flagsmith/cli
-=================
+The next-generation Flagsmith command-line interface (work in progress).
 
-Retrieve Flagsmith state from an API and store it in a file.
+## Build
 
-This CLI can be used to bake default flags into your application as part of CI/CD, this provides support for offline applications and is also advised as part of our [Defensive Coding and Default Flags Documentation](https://docs.flagsmith.com/guides-and-examples/defensive-coding). An example of this can be seen [here](./example).
-
-
-# Populating defaultFlags in your Project
-
-The steps to using this to provide default flags are as follows. An example of this can be found [here](./example). The main steps to achieving this are as follows:
-
-
-1. Install the cli ``npm i @flagsmith/cli --save-dev``
-2. Call the cli as part of postinstall to create a ``flagsmith.json`` file:
-
-```export FLAGSMITH_ENVIRONMENT=API_KEY```
-
-```
-"postinstall": "flagsmith get"
-```
-An example of this can be seen [here](./example/src/index.tsx). 
-3. In your application, import the outputted JSON and initialise the client with the json ``flagsmith.init({state:json, environmentID: json.environmentID})``
-
-**Example:**
-
-```typescript
-import flagsmith from '@flagsmith/flagsmith'
-import state from './flagsmith.json'
-
-flagsmith.init({state, environmentID: state.environmentID})
+```sh
+go build -o flagsmith .
 ```
 
-**Example with React:**
+## Quickstart
 
-```jsx
-import state from './flagsmith.json'
-ReactDOM.render(
-  <FlagsmithProvider options={{environmentID: state.environmentID, state}} flagsmith={flagsmith}>
-    <App />
-  </FlagsmithProvider>,
-  document.getElementById('root')
-);
+```sh
+flagsmith init          # log in, pick a project + environment, write flagsmith.json
+flagsmith flag list    # list the flags in the current environment
 ```
 
-<!-- tocstop -->
-# Usage - Global
-<!-- usage -->
-```sh-session
-$ npm install -g @flagsmith/cli
-$ flagsmith COMMAND
-running command...
-$ flagsmith (--version)
-flagsmith-cli/0.1.2 darwin-arm64 node-v18.13.0
-$ flagsmith --help [COMMAND]
-USAGE
-  $ flagsmith COMMAND
-...
-```
-<!-- usagestop -->
-# Commands
-<!-- commands -->
-* [`flagsmith get [ENVIRONMENT]`](#flagsmith-get-environment)
-* [`flagsmith help [COMMANDS]`](#flagsmith-help-commands)
+## Commands
 
-## `flagsmith get [ENVIRONMENT]`
+- `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
+- `flagsmith flag list` — list feature flags in the current environment.
+- `flagsmith flag get <feature>` — show a single flag's state (`--segment <id>` or `--identifier <id>` for an override).
+- `flagsmith flag update <feature>` — toggle (`--enable`/`--disable`) or set the value (`--value`, `--type`); `--segment <id>` or `--identifier <id>` targets an override.
+- `flagsmith flag enable|disable <feature>` — shorthand for `flag update --enable`/`--disable` (same `--segment`/`--identifier` targeting).
+- `flagsmith flag delete <feature> --segment <id>|--identifier <id>` — delete a segment or identity override.
+- `flagsmith segment list` — list segments (`--include-feature-specific` to include feature-scoped ones).
+- `flagsmith segment get <segment>` — show a segment and its rule tree.
+- `flagsmith segment create <name> --rules @rule.json` — create a segment (`--description`, `--feature`).
+- `flagsmith segment update <segment>` — replace the rules (`--rules`), description, or feature.
+- `flagsmith segment delete <segment>` — delete a segment.
+- `flagsmith feature list` — list project features (`--include-archived`).
+- `flagsmith feature get <feature>` — show a feature and its variants.
+- `flagsmith feature create <name>` — create a feature (`--value`, `--enabled`, `--description`, `--variants`).
+- `flagsmith feature update <feature>` — update description or archive (`--description`, `--archive`/`--unarchive`).
+- `flagsmith feature delete <feature>` — delete a feature.
+- `flagsmith feature variant list|add|update|delete <feature>` — manage a multivariate feature's variants (by id or key).
+- `flagsmith organisation list|get|create|update|delete` (alias `org`) — manage organisations.
+- `flagsmith project list|get|create|update|delete` — manage projects (`create` uses `--organisation`).
+- `flagsmith environment list|get|create|update|delete|clone` (alias `env`) — manage environments (by name or API key).
+- `flagsmith environment key list|create|delete <environment>` — manage server-side SDK keys.
+- `flagsmith environment document [environment]` — output the environment document (local-evaluation JSON).
+- `flagsmith config` — show the resolved context and where each value comes from.
+- `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
+- `flagsmith auth status` — identity, organisations, credential source, token expiry.
+- `flagsmith auth token` — print the active Admin API credential for curl/scripts.
+- `flagsmith api <path>` — call any Flagsmith endpoint with the CLI's credentials applied (curl-like; `--sdk` for the SDK API, `-F`/`-f` fields).
 
-Retrieve flagsmith features from the Flagsmith API and output them to a file.
+## Conventions
 
-```
-USAGE
-  $ flagsmith get [ENVIRONMENT] [-o <value>] [-a <value>] [-t
-    <value> -i <value>] [-p] [-e flags|environment]
+- `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
+- Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK).
+- Self-hosted: `--api-url` or `FLAGSMITH_API_URL`.
 
-ARGUMENTS
-  ENVIRONMENT  The flagsmith environment key to use, defaults to the environment
-               variable FLAGSMITH_ENVIRONMENT
+## Design
 
-FLAGS
-  -a, --api=<value>      [default: https://edge.api.flagsmith.com/api/v1/] The
-                         API URL to fetch the feature flags from
-  -e, --entity=<option>  [default: flags] The entity to fetch, this will either
-                         be the flags or an environment document used for [local
-                         evaluation](https://docs.flagsmith.com/clients/server-s
-                         ide#local-evaluation-mode-network-behaviour).
-                         <options: flags|environment>
-  -o, --output=<value>   [default: ./flagsmith.json] The file path output
-  -p, --pretty           Prettify the output JSON
-
-IDENTITY FLAGS
-  -i, --identity=<value>                    The identity for which to fetch
-                                            feature flags
-  -t, --trait=<trait_key>=<trait_value>...  Trait key-value pair, separated by
-                                            an equals sign (=)
-
-DESCRIPTION
-  Retrieve flagsmith features from the Flagsmith API and output them to a file.
-
-EXAMPLES
-  $ flagsmith get <ENVIRONMENT_API_KEY>
-
-  $ FLAGSMITH_ENVIRONMENT=abc123... flagsmith get
-
-  $ FLAGSMITH_ENVIRONMENT=ser.abc123... flagsmith get -e environment
-
-  $ flagsmith get -o ./my-file.json
-
-  $ flagsmith get -a https://flagsmith.example.com/api/v1/
-
-  $ flagsmith get -i flagsmith_identity
-
-  $ flagsmith get -i flagsmith_identity -t my_trait_key=some_trait_value -t other_trait=other_value
-
-  $ flagsmith get -p
-```
-
-_See code: [dist/commands/get/index.ts](https://github.com/Flagsmith/flagsmith-cli/blob/v0.1.4/dist/commands/get/index.ts)_
-
-## `flagsmith help [COMMANDS]`
-
-Display help for flagsmith.
-
-```
-USAGE
-  $ flagsmith help [COMMANDS] [-n]
-
-ARGUMENTS
-  COMMANDS  Command to show help for.
-
-FLAGS
-  -n, --nested-commands  Include all nested commands in the output.
-
-DESCRIPTION
-  Display help for flagsmith.
-```
+[Installation](docs/design/01-installation.md) ·
+[Output & interactivity](docs/design/02-output-and-interactivity.md) ·
+[Authentication](docs/design/03-authentication.md) ·
+[Project config](docs/design/04-project-config.md) ·
+[CRUD conventions](docs/design/05-crud.md) ·
+[API](docs/design/06-api.md) ·
+[Flags](docs/design/07-flags.md) ·
+[Segments](docs/design/08-segments.md) ·
+[Features](docs/design/09-features.md) ·
+[Projects & organisations](docs/design/10-projects-organisations.md) ·
+[Environments](docs/design/11-environments.md) ·
+[Evaluate](docs/design/12-evaluate.md)

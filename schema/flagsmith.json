@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/schema/flagsmith.json",
+  "title": "Flagsmith CLI config",
+  "description": "Configuration for the Flagsmith CLI.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema reference enabling editor autocomplete and validation."
+    },
+    "project": {
+      "type": ["integer", "string"],
+      "minimum": 1,
+      "minLength": 1,
+      "title": "Project",
+      "description": "Flagsmith project, as its numeric ID or its name. Find the ID in the dashboard (its URL, or the JSON data view); a name is resolved via the Admin API. `flagsmith config` shows the resolved project name."
+    },
+    "organisation": {
+      "type": ["integer", "string"],
+      "minimum": 1,
+      "minLength": 1,
+      "title": "Organisation",
+      "description": "Optional. Organisation, as its numeric ID or its name. Used by organisation-scoped commands that have no project context (e.g. creating a project). If not set, a default organisation is used. For project-scoped commands the organisation is derived from the project."
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "^ser\\."
+      },
+      "title": "Default environment",
+      "description": "A client-side environment key (recommended), or an environment name. A key is safe to commit — client-side keys are public by design — and enables flag evaluation with no Admin API credentials; a name is resolved via the Admin API and needs credentials. Server-side keys (ser.*) are secrets and are rejected here — provide those via the FLAGSMITH_ENVIRONMENT_KEY environment variable instead."
+    },
+    "apiUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "title": "API base URL",
+      "description": "Optional. Base URL of a self-hosted Flagsmith instance (scheme + host, without /api/v1). Omit when using Flagsmith SaaS.",
+      "default": "https://api.flagsmith.com"
+    },
+    "sdkApiUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://",
+      "title": "SDK API base URL",
+      "description": "Optional. Base URL of the SDK API used for flag evaluation. Only needed when the SDK API lives on a different host than apiUrl (e.g. when using Edge Proxy). When omitted, falls back to explicitly set apiUrl, otherwise to Flagsmith Edge API (https://edge.api.flagsmith.com)."
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "project"
+      ]
+    },
+    {
+      "required": [
+        "environment"
+      ]
+    }
+  ],
+  "additionalProperties": false
+}
