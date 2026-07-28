@@ -6094,6 +6094,86 @@ func TestEvaluate(t *testing.T) {
 		}
 	})
 
+	t.Run("--test makes a disabled flag a failure", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		out, errOut, err := runSplit("", "evaluate", "max_items", "--test")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want the disabled flag to fail")
+		}
+		if !strings.Contains(err.Error(), "max_items is disabled") {
+			t.Errorf("err = %v, want it to say the flag is disabled", err)
+		}
+		// A failure like any other: exit 1, reason on stderr
+		if code := reportError(evaluateCmd, err); code != 1 {
+			t.Errorf("exit code = %d, want 1", code)
+		}
+		if h := hintFor(err); h != "" {
+			t.Errorf("hint = %q, want none", h)
+		}
+		// The environment is not named
+		if strings.Contains(errOut, "WqXhZk8sVY3dGgTqZ9pJmN") {
+			t.Errorf("stderr = %q, want no environment key", errOut)
+		}
+		// The flag itself still prints.
+		if !strings.Contains(out, "max_items") || !strings.Contains(out, "off") {
+			t.Errorf("stdout = %q, want the flag printed anyway", out)
+		}
+	})
+
+	t.Run("--test passes an enabled flag through", func(t *testing.T) {
+		// Given onboarding_banner is on.
+		evalEnv(t)
+
+		// When
+		out, err := run("", "evaluate", "onboarding_banner", "--test")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --test: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "onboarding_banner") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("--test composes with --json", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		out, _, err := runSplit("", "evaluate", "max_items", "--test", "--json")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want the disabled flag to fail")
+		}
+		if flag := evalDoc(t, out); flag["name"] != "max_items" || flag["enabled"] != false {
+			t.Errorf("flag = %+v, want the entry printed as well", flag)
+		}
+	})
+
+	t.Run("--test needs a named feature", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		_, err := run("", "evaluate", "--test")
+
+		// Then
+		var usage *usageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("err = %v, want a usage error", err)
+		}
+		if !strings.Contains(err.Error(), "--test") {
+			t.Errorf("err = %v, want it to name the flag", err)
+		}
+	})
+
 	t.Run("--js refuses a named feature", func(t *testing.T) {
 		// Given
 		evalEnv(t)

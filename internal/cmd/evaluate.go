@@ -89,6 +89,7 @@ var (
 	evalTraitFlags   []string
 	evalPersistFlag  bool
 	evalJSFlag       bool
+	evalTestFlag     bool
 )
 
 var evaluateCmd = &cobra.Command{
@@ -108,7 +109,10 @@ var evaluateCmd = &cobra.Command{
   flagsmith eval onboarding --identity user-123 --jq .value
 
   # bootstrap a frontend SDK (can be provided as state)
-  flagsmith eval --js > state.json`,
+  flagsmith eval --js > state.json
+
+  # gate a script on a flag: a disabled flag fails
+  flagsmith eval new-pipeline --test && ./deploy.sh`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runEvaluate,
 }
@@ -123,6 +127,9 @@ func runEvaluate(cmd *cobra.Command, args []string) error {
 	// --js takes the environment whole or not at all.
 	if evalJSFlag && len(args) == 1 {
 		return usageErrorf("--js describes a whole environment — drop %q, or drop --js", args[0])
+	}
+	if evalTestFlag && len(args) != 1 {
+		return usageErrorf("--test checks one flag — name the feature to check")
 	}
 	traits, err := parseTraits(evalTraitFlags)
 	if err != nil {
@@ -149,7 +156,15 @@ func runEvaluate(cmd *cobra.Command, args []string) error {
 		if flag == nil {
 			return withHint(fmt.Errorf("no flag named %q was resolved", args[0]), hintEvaluate)
 		}
-		return renderEvaluation(cmd, sdkURL, []evalView{newEvalView(*flag)}, true)
+		if err := renderEvaluation(cmd, sdkURL, []evalView{newEvalView(*flag)}, true); err != nil {
+			return err
+		}
+		// --test adds one failure mode: a disabled flag. It reports after the flag
+		// has printed, so the caller sees the state that failed the check.
+		if evalTestFlag && !flag.Enabled {
+			return fmt.Errorf("%s is disabled", flag.FeatureName)
+		}
+		return nil
 	}
 	views := make([]evalView, len(all))
 	for i, flag := range all {
@@ -303,5 +318,6 @@ func init() {
 	f.StringArrayVar(&evalTraitFlags, "trait", nil, "trait key=value to evaluate with (repeatable)")
 	f.BoolVar(&evalPersistFlag, "persist", false, "persist the identity and its traits instead of evaluating transiently")
 	f.BoolVar(&evalJSFlag, "js", false, "output the state a Flagsmith frontend SDK hydrates from")
+	f.BoolVar(&evalTestFlag, "test", false, "with a named feature: fail when the flag is disabled")
 	rootCmd.AddCommand(evaluateCmd)
 }
