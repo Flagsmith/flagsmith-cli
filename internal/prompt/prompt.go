@@ -32,6 +32,9 @@ func (u unbuffered) Read(p []byte) (int, error) {
 	return u.r.Read(p)
 }
 
+// ErrCancelled reports that the user aborted a prompt.
+var ErrCancelled = errors.New("cancelled")
+
 func run(streams IO, field huh.Field) error {
 	form := huh.NewForm(huh.NewGroup(field)).
 		WithAccessible(!streams.RawTTY)
@@ -40,7 +43,7 @@ func run(streams IO, field huh.Field) error {
 	}
 	err := form.Run()
 	if errors.Is(err, huh.ErrUserAborted) {
-		return errors.New("cancelled")
+		return ErrCancelled
 	}
 	return err
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/internal/bug"
 	"github.com/Flagsmith/flagsmith-cli/internal/config"
+	"github.com/Flagsmith/flagsmith-cli/internal/prompt"
 )
 
 // Every exported Err* sentinel must have an explicit hint decision: a hintFor
@@ -32,10 +33,14 @@ func TestEverySentinelHasAHintDecision(t *testing.T) {
 		"auth.ErrNotMasterKey":        auth.ErrNotMasterKey,
 		"bug.ErrUnexpected":           bug.ErrUnexpected,
 		"config.ErrServerSideKey":     config.ErrServerSideKey,
+		"prompt.ErrCancelled":         prompt.ErrCancelled,
 	}
 
 	// Sentinels reviewed and deliberately left without a hint.
-	consciouslyUnhinted := map[string]bool{}
+	consciouslyUnhinted := map[string]bool{
+		// The user chose to abort; there is nothing to recover from.
+		"prompt.ErrCancelled": true,
+	}
 
 	found := scanSentinelNames(t)
 	if len(found) == 0 {
