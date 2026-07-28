@@ -49,7 +49,7 @@ func TestRenderJSONMirrorsData(t *testing.T) {
 		return nil
 	})
 
-	// Then — a bare object matching the data shape
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,13 +83,13 @@ func TestRenderJQImpliesJSONAndFilters(t *testing.T) {
 		// Given
 		var b bytes.Buffer
 
-		// When — JQ set, JSON not explicitly on
+		// When
 		err := Render(&b, sample{7, "beta"}, Options{JQ: ".name"}, func(io.Writer) error {
 			t.Fatal("human renderer must not run when --jq is set")
 			return nil
 		})
 
-		// Then — raw string, not quoted JSON
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +121,7 @@ func TestRenderJQImpliesJSONAndFilters(t *testing.T) {
 		// When
 		err := Render(&b, []sample{{1, "a"}, {2, "b"}}, Options{JQ: ".[] | {n: .name}"}, nil)
 
-		// Then — two JSON objects, one per line
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -152,7 +152,7 @@ func TestTable(t *testing.T) {
 		{"other-flag", "false"},
 	})
 
-	// Then — headers and both rows present, columns aligned
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestTable(t *testing.T) {
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestTableBoldHeaderKeepsAlignment(t *testing.T) {
-	// Given the same table rendered with color off and on
+	// Given
 	headers := []string{"NAME", "ENABLED", "VALUE"}
 	rows := [][]string{{"example_mv_feature", "false", "control"}, {"x", "true", "-"}}
 
@@ -185,7 +185,7 @@ func TestTableBoldHeaderKeepsAlignment(t *testing.T) {
 	colored := render()
 	color.NoColor = true
 
-	// Then the header is bold when colour is on...
+	// Then
 	if !strings.Contains(colored, "\x1b[1m") {
 		t.Error("expected a bold header when colour is on")
 	}
@@ -226,7 +226,7 @@ func TestDetail(t *testing.T) {
 }
 
 func TestDetailWithSourceColumn(t *testing.T) {
-	// Given fields carrying a source, with values that contain spaces
+	// Given
 	fields := []Field{
 		{Label: "Config file", Value: "/work/flagsmith.json", Source: "default"},
 		{Label: "Project", Value: "my-app (12345)", Source: "config"},
@@ -246,7 +246,7 @@ func TestDetailWithSourceColumn(t *testing.T) {
 	colored := render()
 	color.NoColor = true
 
-	// Then all three columns are present and aligned in the plain view.
+	// Then
 	lines := strings.Split(strings.TrimRight(plain, "\n"), "\n")
 	if strings.Index(lines[0], "default") != strings.Index(lines[2], "default") {
 		t.Errorf("source column not aligned:\n%q\n%q", lines[0], lines[2])
@@ -272,7 +272,7 @@ func TestDetailWithSourceColumn(t *testing.T) {
 // padded line — so values containing runs of spaces colour correctly, and a
 // row without a source emits no stray escape bytes.
 func TestDetailColoursSurviveSpaceyValues(t *testing.T) {
-	// Given a double-space value, a trailing-space value, and a sourceless row
+	// Given
 	fields := []Field{
 		{Label: "Organisation", Value: "Acme  Inc", Source: "config"},
 		{Label: "Trailing", Value: "ends with  ", Source: "env"},
@@ -287,7 +287,7 @@ func TestDetailColoursSurviveSpaceyValues(t *testing.T) {
 	}
 	colored := b.String()
 
-	// Then the dim paint wraps exactly the sources, never value fragments
+	// Then
 	if strings.Contains(colored, "\x1b[2mInc") || strings.Contains(colored, "\x1b[2mspace") {
 		t.Errorf("value fragment dimmed as a source: %q", colored)
 	}
@@ -300,13 +300,8 @@ func TestDetailColoursSurviveSpaceyValues(t *testing.T) {
 	}
 }
 
-// Values come from the API unsanitised, so a description or flag value may
-// contain newlines or tabs. tabwriter treats both as structure — a newline
-// ends the row (breaking alignment for everything after it) and a tab starts
-// a new cell — so the renderer flattens them to spaces first, as the table
-// view already does for its cells.
 func TestDetailFlattensStructuralWhitespace(t *testing.T) {
-	// Given values carrying a newline and a tab
+	// Given
 	var b bytes.Buffer
 	fields := []Field{
 		{Label: "Feature", Value: "banner", Source: "config"},

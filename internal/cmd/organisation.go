@@ -25,8 +25,7 @@ var (
 )
 
 // credentialContext resolves the invocation context and credential without
-// demanding a project — for organisation commands and for project commands,
-// whose organisation scope is optional.
+// demanding a project.
 func credentialContext(cmd *cobra.Command) (*projectContext, *activeCredential, error) {
 	pc, err := applyContext(cmd)
 	if err != nil {

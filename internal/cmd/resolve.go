@@ -13,8 +13,7 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/cache"
 )
 
-// idNameMap builds the canonical→name map that ref resolution and the name
-// cache work on, from any fetched slice.
+// idNameMap builds a canonical→name map from a fetched slice.
 func idNameMap[T any](items []T, entry func(T) (canonical, name string)) map[string]string {
 	m := make(map[string]string, len(items))
 	for _, it := range items {
@@ -25,8 +24,7 @@ func idNameMap[T any](items []T, entry func(T) (canonical, name string)) map[str
 }
 
 // resolveIDRef resolves a name reference to a numeric id against a fetched
-// id→name map: no match errors with the hint, several disambiguate via
-// pickCandidate (05 §2).
+// id→name map: no match errors with the hint, several go to pickCandidate.
 func resolveIDRef(cmd *cobra.Command, entity, ref string, byID map[string]string, notFound error, hint string) (int, error) {
 	hits := matchByName(byID, ref)
 	if len(hits) == 0 {
@@ -52,11 +50,11 @@ func matchByName(canonicalToName map[string]string, ref string) []string {
 	return out
 }
 
-// pickCandidate resolves an ambiguous name to a single canonical value:
-// one match returns directly; several are disambiguated per 05 §2 (pick in a
-// TTY, usage error otherwise). idKind names the entity's canonical
-// identifier — "key" for environments, "id" for everything else — so the
-// error offers exactly the identifier that works.
+// pickCandidate resolves an ambiguous name to a single canonical value: one
+// match returns directly; several prompt in a TTY and are a usage error
+// otherwise. idKind names the entity's canonical identifier — "key" for
+// environments, "id" for everything else — so the error offers the identifier
+// that actually works.
 func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []string, names map[string]string) (string, error) {
 	if len(candidates) == 1 {
 		return candidates[0], nil
@@ -75,21 +73,18 @@ func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []
 	return candidates[idx], nil
 }
 
-// resolveEnvironment turns the environment context reference (a client-side
-// key or a name) into the full environment within a project, over the Admin
-// API. Flag commands need the numeric id (features query) and the key
-// (update-flag mutations), so both come from one lookup.
+// resolveEnvironment turns the environment context reference (a client-side key
+// or a name) into the full environment within a project, over the Admin API.
 func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCredential, projectID int) (api.Environment, error) {
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
-		// The SDK credential doubles as an environment reference; it is
-		// host-scoped to the SDK surface like everywhere else it is read.
+		// The SDK credential doubles as an environment reference, host-scoped
+		// to the SDK surface.
 		sdkURL, _ := pc.SDKAPIURL.Value.(string)
 		_, ref = envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL)
-		// That variable is exactly where server-side keys belong (they are
-		// secrets), but one can never resolve an environment over the Admin
-		// API — name the variable, never its value, which must stay out of
-		// stderr and CI logs.
+		// Server-side keys belong in that variable but can never resolve an
+		// environment over the Admin API. Name the variable, never its value:
+		// it is a secret and must stay out of stderr and CI logs.
 		if strings.HasPrefix(ref, "ser.") {
 			return api.Environment{}, withHint(
 				errors.New("FLAGSMITH_ENVIRONMENT_KEY holds a server-side key, which cannot identify an environment for Admin commands"),
@@ -125,7 +120,7 @@ func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID
 		return nil, err
 	}
 	byKey := idNameMap(envs, func(e api.Environment) (string, string) { return e.APIKey, e.Name })
-	_ = cache.Merge(apiURL, &cache.Names{Environments: byKey}) // opportunistic (04 §3)
+	_ = cache.Merge(apiURL, &cache.Names{Environments: byKey}) // opportunistic
 
 	find := func(key string) *api.Environment {
 		for i := range envs {
@@ -174,7 +169,7 @@ func resolveProjectID(cmd *cobra.Command, pc *projectContext, cred *activeCreden
 		return 0, err
 	}
 	byID := idNameMap(projects, func(p api.Project) (string, string) { return strconv.Itoa(p.ID), p.Name })
-	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic (04 §3)
+	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic
 	return resolveIDRef(cmd, "project", name, byID,
 		fmt.Errorf("project %q not found in organisation %d", name, orgID),
 		hintProjectList)

@@ -12,13 +12,12 @@ import (
 // renderList renders a list command's items: as JSON when requested, else the
 // empty message when there are none, or a table of row(i, item) under headers
 // with a "N noun" count footer. An empty `one` noun skips the footer. row
-// receives the index so tables can join against a sibling slice built in the
+// receives the index so a table can join against a sibling slice built in the
 // same order.
 func renderList[T any](cmd *cobra.Command, items []T, empty string, headers []string, row func(int, T) []string, one, many string) error {
 	if items == nil {
-		// A list is [] when empty (05 §2), never null — some callers build
-		// their slice with append, so guarantee it here rather than at each
-		// of the call sites.
+		// A list is [] when empty, never null: an append-built slice would
+		// otherwise render as null.
 		items = []T{}
 	}
 	return output.Render(cmd.OutOrStdout(), items, outputOpts(), func(w io.Writer) error {

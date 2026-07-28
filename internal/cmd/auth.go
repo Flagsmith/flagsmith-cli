@@ -25,10 +25,8 @@ const (
 
 // credMu guards a per-invocation memo of the resolved credential, keyed by
 // instance URL. It collapses concurrent resolutions into one: the first caller
-// does the load-refresh-save under the lock (so an expired OAuth token is
-// refreshed exactly once, with a single rotated refresh token saved), and
-// later callers get the cached result. resetCredentialCache clears it at the
-// start of each command run.
+// does the load-refresh-save under the lock, and later callers get the cached
+// result. resetCredentialCache clears it at the start of each command run.
 var (
 	credMu    sync.Mutex
 	credCache = map[string]*activeCredential{}
@@ -56,8 +54,8 @@ type activeCredential struct {
 }
 
 // client returns the Admin API client for this credential. It is built eagerly
-// in loadCredential (before the cred is memoised and shared across goroutines),
-// so reading it here needs no lock.
+// in loadCredential, before the cred is memoised and shared across goroutines,
+// so the read needs no lock.
 func (c *activeCredential) client() *api.Client {
 	return c.apiClient
 }

@@ -2,9 +2,8 @@ package cmd
 
 import "testing"
 
-// label is the one home for the "Name (identifier)" display form. It trusts
-// its callers to pass a real name (or none) — the id-or-name split lives at
-// the call sites, via nameRef.
+// label is the one home for the "Name (identifier)" display form. It assumes a
+// real name or none; splitting an id-or-name reference is nameRef's job.
 func TestLabel(t *testing.T) {
 	cases := []struct {
 		name string

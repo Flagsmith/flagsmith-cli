@@ -19,9 +19,6 @@ func TestValidateMasterKey(t *testing.T) {
 		}
 	})
 
-	// Recovery guidance (which env var to use instead) is attached as a hint
-	// at the command layer via these sentinels — see internal/cmd hintFor.
-
 	t.Run("dotless value is rejected as not a master key", func(t *testing.T) {
 		// Given
 		value := "IpuuPoNaSCXPoXi2uc4QkgDCEytYDu"

@@ -1,7 +1,5 @@
 // Package bug marks errors the user should consider reporting: protocol
-// violations, corrupt state, and infrastructure failures the CLI can neither
-// recover from nor blame on the user's input. The command layer turns the
-// mark into a report-an-issue hint (see internal/cmd hintFor).
+// violations, corrupt state, infrastructure failures — never bad user input.
 package bug
 
 import "errors"

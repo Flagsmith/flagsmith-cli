@@ -97,7 +97,7 @@ func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environment
 	for _, fs := range fss {
 		names[strconv.Itoa(fs.Segment)] = fs.SegmentName
 	}
-	_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic (04 §3)
+	_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic
 	for _, fs := range fss {
 		if fs.Segment == segmentID {
 			return segmentRef{ID: segmentID, Name: fs.SegmentName}, fs.Priority, nil
@@ -163,8 +163,8 @@ func truncateValue(s string) string {
 	return string(r[:valueDisplayMax-1]) + "…"
 }
 
-// flagContext resolves the credential, project, and environment every flag
-// command needs.
+// flagContext resolves the credential, project, and environment for a flag
+// command.
 func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, api.Environment, error) {
 	pc, err := applyContext(cmd)
 	if err != nil {
@@ -293,7 +293,7 @@ func listSegmentOverrides(cmd *cobra.Command, cred *activeCredential, env api.En
 		views[i] = newSegmentFlagView(feature, segment, priority)
 	}
 	if len(names) > 0 {
-		_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic (04 §3)
+		_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic
 	}
 	return renderList(cmd, views, "No segment overrides.",
 		[]string{"NAME", "TYPE", "STATE", "VALUE"},
@@ -399,7 +399,7 @@ func requireFeature(cmd *cobra.Command, cred *activeCredential, projectID int, e
 }
 
 // findFeatureByRef matches a feature by reference: all-digit → id, anything
-// else → name (04 §3).
+// else → name.
 func findFeatureByRef(features []api.Feature, ref string) *api.Feature {
 	id, err := strconv.Atoi(ref)
 	if err != nil {
@@ -506,7 +506,7 @@ func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
 }
 
 // buildSegmentFlagView resolves the override's segment name and priority and
-// assembles the curated view — the fetch happens here, not in the renderer.
+// assembles the curated view; the renderers stay free of fetching.
 func buildSegmentFlagView(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) (segmentFlagView, error) {
 	segment, priority, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
 	if err != nil {

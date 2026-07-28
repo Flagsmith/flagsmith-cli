@@ -17,9 +17,7 @@ import (
 const FileName = "flagsmith.json"
 
 // ErrServerSideKey means the file's `environment` field holds a server-side
-// (ser.) key, which is a secret and must not be committed. The recovery
-// (use FLAGSMITH_ENVIRONMENT_KEY) is attached as a hint at the command layer
-// (see internal/cmd hintFor), not baked into the message.
+// (ser.) key, which is a secret and must not be committed.
 var ErrServerSideKey = errors.New("`environment` holds a server-side key, which is a secret")
 
 // File is the parsed flagsmith.json. Zero values mean "not set".
@@ -31,15 +29,15 @@ type File struct {
 	APIURL       string `json:"apiUrl,omitempty"`
 	SDKAPIURL    string `json:"sdkApiUrl,omitempty"`
 
-	// Extra holds fields the CLI does not recognise, captured verbatim by
-	// Load so they survive a Save round trip instead of being silently
-	// dropped (a newer file edited by an older CLI, say). Never marshalled
-	// via the struct tags — MarshalJSON re-emits it after the known fields.
+	// Extra holds unrecognised fields verbatim so they survive a Load/Save
+	// round trip instead of being silently dropped — a newer file edited by an
+	// older CLI, say. Not covered by the struct tags: MarshalJSON re-emits it
+	// after the known fields.
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
 // MarshalJSON emits the known fields in their declared order, then appends any
-// Extra (unknown) fields so a Load/Save round trip preserves them.
+// Extra fields so a Load/Save round trip preserves them.
 func (f File) MarshalJSON() ([]byte, error) {
 	type alias File // no MarshalJSON — plain struct-tag encoding
 	known, err := json.Marshal(alias(f))
@@ -113,8 +111,7 @@ type Ref struct {
 	Name string
 }
 
-// Value returns the reference as the context layer wants it: an int ID, a
-// string name, or nil when unset.
+// Value returns the reference as an int ID, a string name, or nil when unset.
 func (r *Ref) Value() any {
 	switch {
 	case r == nil:

@@ -7,11 +7,10 @@ import (
 )
 
 // Credential env vars name no host, so on their own they cannot say which
-// instance they belong to — and flagsmith.json is discovered by walking up
-// from the working directory, so any checkout can name an apiUrl the user
-// never chose. Every secret-bearing variable therefore has a host-scoped
-// form, and the unscoped form is trusted only for the surface's default host
-// (see docs/design/03-authentication.md §6).
+// instance they belong to — and flagsmith.json is discovered by walking up from
+// the working directory, so any checkout can name an apiUrl the user never
+// chose. Every secret-bearing variable therefore has a host-scoped form, and the
+// unscoped form is trusted only for the surface's default host.
 
 // envBool reads a boolean switch from the environment. Presence alone is not
 // truth: `FLAGSMITH_NO_INPUT=false` must leave prompting on, and
@@ -48,12 +47,10 @@ func urlHost(rawURL string) string {
 }
 
 // envCredential resolves a credential variable for the instance at rawURL,
-// returning the exact variable it came from (so output can name it) and its
-// value. The host-scoped form wins wherever it applies; the unscoped form is
-// used only when rawURL is the surface's default host, so a redirected host
-// never receives a credential that was not scoped to it. No credential
-// reports an empty name, leaving resolution to fall through to the next
-// source (e.g. the keychain, which is already keyed per instance).
+// returning the exact variable it came from and its value. The host-scoped form
+// wins wherever it applies; the unscoped form is used only when rawURL is the
+// surface's default host, so a redirected host never receives a credential that
+// was not scoped to it. No credential reports an empty name.
 func envCredential(base, rawURL, defaultURL string) (name, value string) {
 	if k, v := lookupEnvFold(scopedEnvName(base, rawURL)); v != "" {
 		return k, v

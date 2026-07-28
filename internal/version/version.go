@@ -1,5 +1,4 @@
-// Package version exposes the CLI version and identifiers derived from it, so
-// every layer (Admin API client, OAuth, raw api command) reports the same build.
+// Package version exposes the CLI version and the identifiers derived from it.
 package version
 
 import (
@@ -11,8 +10,7 @@ import (
 
 // Version is the CLI version: the release tag stamped by the release build
 // (-ldflags "-X github.com/Flagsmith/flagsmith-cli/internal/version.Version=v1.2.3"),
-// else resolved from build info — so every build identifies itself honestly
-// without relying on pipeline discipline (see resolve).
+// else resolved from build info.
 var Version = "dev"
 
 func init() {
@@ -20,9 +18,8 @@ func init() {
 }
 
 // resolve upgrades an unstamped version from the build info the toolchain
-// embeds: a `go install module@tag` build carries the module version, and a
-// source build carries the VCS revision, which turns "which build are you
-// on?" into copy-paste.
+// embeds: a `go install module@tag` build carries the module version, a source
+// build carries the VCS revision.
 func resolve(v string) string {
 	if v != "dev" {
 		return v // stamped by the release build
@@ -46,14 +43,12 @@ func resolve(v string) string {
 // go-install pseudo-version, whose refs may not exist as tags.
 var releaseTag = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 
-// IsRelease reports whether v may pin URLs (e.g. the $schema init writes) to
-// a tag of the same name.
+// IsRelease reports whether v may pin URLs to a tag of the same name.
 func IsRelease(v string) bool {
 	return releaseTag.MatchString(v)
 }
 
-// UserAgent identifies the CLI (version + platform) on outbound HTTP requests,
-// so the API can attribute traffic and correlate issues to a release.
+// UserAgent identifies the CLI on outbound HTTP requests.
 func UserAgent() string {
 	return fmt.Sprintf("flagsmith-cli/%s (%s/%s)", Version, runtime.GOOS, runtime.GOARCH)
 }

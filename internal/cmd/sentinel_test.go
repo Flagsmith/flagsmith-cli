@@ -17,8 +17,8 @@ import (
 
 // Every exported Err* sentinel must have an explicit hint decision: a hintFor
 // mapping, or an entry in consciouslyUnhinted recording that it stays plain.
-// The source scan keeps the table honest — declaring a new sentinel anywhere
-// under internal/ fails this test until the decision is made here.
+// The source scan keeps the table honest: declaring a new sentinel anywhere
+// under internal/ fails this test until the decision is recorded.
 func TestEverySentinelHasAHintDecision(t *testing.T) {
 	sentinels := map[string]error{
 		"api.ErrPlanGated":            api.ErrPlanGated,

@@ -43,20 +43,18 @@ func commandTimeout() time.Duration {
 	return defaultTimeout
 }
 
-// cancelTimeout releases the deadline installed by PersistentPreRunE; Execute
-// calls it once the command has run. timeoutParent is the context the
-// deadline derives from, kept so the deadline can be reinstalled fresh after
-// interactive input.
+// cancelTimeout releases the deadline installed by PersistentPreRunE.
+// timeoutParent is the context that deadline derives from, kept so it can be
+// reinstalled fresh after interactive input.
 var (
 	cancelTimeout context.CancelFunc
 	timeoutParent context.Context
 )
 
-// refreshCommandTimeout restarts the invocation deadline. The prompt helpers
-// call it when interactive input returns: the deadline exists to catch stuck
-// network calls, so time a human spends thinking at a prompt must not count
-// against the requests that follow. A command without a deadline (long-
-// running, or FLAGSMITH_TIMEOUT=0) is a no-op.
+// refreshCommandTimeout restarts the invocation deadline after interactive
+// input: the deadline exists to catch stuck network calls, so time a human
+// spends thinking at a prompt must not count against the requests that follow.
+// A command without a deadline (long-running, or FLAGSMITH_TIMEOUT=0) is a no-op.
 func refreshCommandTimeout(cmd *cobra.Command) {
 	if cancelTimeout == nil || timeoutParent == nil {
 		return
@@ -70,17 +68,15 @@ func refreshCommandTimeout(cmd *cobra.Command) {
 // singleLineUsage rewrites cobra's default two-line Usage block (one line for
 // running the command bare, another for a subcommand) into a single
 // context-appropriate line: "<path> [command] [flags]" for groups, or the
-// command's own use line for leaves. Applied as a string replace on cobra's
-// own template so it survives version bumps (a no-op if the block ever changes,
-// caught by TestUsageIsSingleLine).
+// command's own use line for leaves. Applied as a string replace on cobra's own
+// template so it survives version bumps; a no-op if the block ever changes.
 func singleLineUsage(template string) string {
 	const defaultBlock = "Usage:{{if .Runnable}}\n  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}\n  {{.CommandPath}} [command]{{end}}"
 	const oneLine = "Usage:{{if .HasAvailableSubCommands}}\n  {{.CommandPath}} [command] [flags]{{else}}\n  {{.UseLine}}{{end}}"
 	return strings.Replace(template, defaultBlock, oneLine, 1)
 }
 
-// apiURL is the resolved instance URL for the current invocation, set by
-// applyContext. Flag values live in the *Flag variables below.
+// apiURL is the resolved instance URL for the current invocation.
 var apiURL string
 
 var (
@@ -107,7 +103,7 @@ func outputOpts() output.Options {
 }
 
 // usageError is a missing/invalid input a prompt would have collected
-// interactively; it exits with code 2 (see 02-output-and-interactivity).
+// interactively; it exits with code 2.
 type usageError struct{ msg string }
 
 func (e *usageError) Error() string { return e.msg }
@@ -121,18 +117,17 @@ var rootCmd = &cobra.Command{
 	Short:        "The Flagsmith command-line interface",
 	SilenceUsage: true,
 	// Drop any memoised credential from a prior run before each invocation
-	// (matters in-process, e.g. tests reusing rootCmd across Execute calls).
+	// (matters in-process, where rootCmd is reused across Execute calls).
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		resetCredentialCache()
 		initPrompts(cmd)
 		// Give the command a sane overall deadline so a stuck network call
 		// fails instead of hanging. Long-running commands (browser login) opt
-		// out; cancellation via the parent context still propagates. The
-		// parent is the root's context: cobra inherits it only while the
-		// leaf's is nil, so deriving from the leaf would chain onto a
-		// previous in-process invocation's (possibly expired) deadline. It
-		// is kept so time spent at a prompt can be handed back
-		// (refreshCommandTimeout).
+		// out; cancellation via the parent context still propagates. The parent
+		// is the root's context: cobra inherits it only while the leaf's is nil,
+		// so deriving from the leaf would chain onto a previous in-process
+		// invocation's (possibly expired) deadline. It is retained so time spent
+		// at a prompt can be handed back.
 		cancelTimeout, timeoutParent = nil, nil
 		cmd.SetContext(cmd.Root().Context())
 		if cmd.Annotations[annotationLongRunning] != "true" {
@@ -191,9 +186,8 @@ func Execute() {
 }
 
 // reportError renders an error's hint and, for incorrect-input (exit 2) errors,
-// the nearest command's usage. cobra has already printed "Error: <message>";
-// this appends the hint then the usage block, and returns the process exit
-// code. Split from Execute so tests can exercise the rendering without os.Exit.
+// the nearest command's usage. cobra has already printed "Error: <message>", so
+// this appends the hint then the usage block and returns the process exit code.
 func reportError(cmd *cobra.Command, err error) int {
 	errOut := cmd.ErrOrStderr()
 	if hint := hintFor(err); hint != "" {
@@ -214,8 +208,8 @@ func reportError(cmd *cobra.Command, err error) int {
 
 // prepare wires up one-time behaviour that must see every registered command:
 // incorrect positional-argument counts become usageErrors, so cobra's own
-// arg-validation failures print usage and exit 2 like our other usage errors.
-// Idempotent — safe to call before each invocation (Execute and tests).
+// arg-validation failures behave like every other usage error.
+// Idempotent — safe to call before each invocation.
 var prepareOnce sync.Once
 
 func prepare() {
@@ -263,9 +257,8 @@ func init() {
 
 	rootCmd.SetUsageTemplate(singleLineUsage(rootCmd.UsageTemplate()))
 
-	// Flag-parse failures (unknown flag, missing value, bad value) are incorrect
-	// usage: exit 2 and print the command's usage. Set on the root; cobra walks
-	// up to it for every subcommand.
+	// Flag-parse failures (unknown flag, missing value, bad value) are usage
+	// errors. Set on the root; cobra walks up to it for every subcommand.
 	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &usageError{msg: err.Error()}
 	})

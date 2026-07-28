@@ -53,7 +53,7 @@ func browserLogin(cmd *cobra.Command) error {
 	}
 	open := browser.OpenURL
 	if noBrowser || !stdinIsTTY() {
-		open = nil // without a TTY the CLI never opens a browser (02)
+		open = nil // without a TTY the CLI never opens a browser
 	}
 	creds, err := auth.Login(cmd.Context(), sharedHTTPClient(), apiURL, open, cmd.OutOrStdout())
 	if err != nil {

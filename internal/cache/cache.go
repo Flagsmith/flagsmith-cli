@@ -1,7 +1,5 @@
-// Package cache is the local name cache: display names for organisations,
-// projects, segments (stored as IDs) and environments (stored as client-side
-// keys). Strictly cosmetic — never consulted for authorisation or resolution;
-// a miss degrades to showing the bare ID/key.
+// Package cache stores display names per instance. Strictly cosmetic — never
+// consulted for authorisation or resolution; a miss degrades to the bare ID/key.
 package cache
 
 import (
@@ -21,7 +19,6 @@ type Names struct {
 	Segments      map[string]string `json:"segments,omitempty"`
 }
 
-// Path is the cache file, keyed by instance API URL.
 func Path() (string, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {
@@ -88,8 +85,7 @@ func Merge(apiURL string, update *Names) error {
 	if err != nil {
 		return err
 	}
-	// Owner-only: nothing else on the machine needs these names, and
-	// this file is the only thing the CLI writes to disk.
+	// Owner-only: nothing else on the machine needs these names.
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

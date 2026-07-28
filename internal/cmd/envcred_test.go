@@ -101,7 +101,7 @@ func TestEnvCredential(t *testing.T) {
 	})
 
 	t.Run("scoped outranks unscoped on the default host", func(t *testing.T) {
-		// Given both forms set
+		// Given
 		t.Setenv(envAPIKey, "unscoped-value")
 		t.Setenv("FLAGSMITH_API_KEY_api_flagsmith_com", key)
 
@@ -113,7 +113,7 @@ func TestEnvCredential(t *testing.T) {
 	})
 
 	t.Run("the variable name matches case-insensitively", func(t *testing.T) {
-		// Given an uppercase scoped variable
+		// Given
 		t.Setenv("FLAGSMITH_API_KEY_FLAGSMITH_EXAMPLE", key)
 
 		// When / Then
@@ -123,10 +123,10 @@ func TestEnvCredential(t *testing.T) {
 	})
 
 	t.Run("scheme is not part of the scope", func(t *testing.T) {
-		// Given a scope set from an https URL
+		// Given
 		t.Setenv("FLAGSMITH_API_KEY_flagsmith_example", key)
 
-		// When / Then — the same scope covers the http one
+		// When / Then
 		if _, got := envCredential(envAPIKey, "http://flagsmith.example", defaultAPIURL); got != key {
 			t.Errorf("value = %q, want one scope to cover either scheme", got)
 		}

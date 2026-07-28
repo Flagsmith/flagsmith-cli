@@ -20,9 +20,7 @@ const (
 
 var legacyAuthtokenPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 
-// ValidateMasterKey's rejections. The recovery (which variable or command to
-// use instead) is attached as a hint at the command layer (see internal/cmd
-// hintFor), not baked into the message.
+// ValidateMasterKey's rejections.
 var (
 	ErrServerSideKey   = errors.New("FLAGSMITH_API_KEY contains a server-side environment key")
 	ErrLegacyAuthtoken = errors.New("FLAGSMITH_API_KEY contains a legacy user authtoken, which is not supported")
@@ -30,9 +28,9 @@ var (
 )
 
 // ValidateMasterKey checks that a FLAGSMITH_API_KEY value is a Master API key.
-// Each Admin API env var maps to exactly one credential kind, so the CLI never
-// guesses a scheme from token shape; this validation only turns the common
-// paste-mistakes into actionable errors instead of a silently rejected request.
+// Each Admin API env var maps to exactly one credential kind, so the scheme is
+// never guessed from token shape; this only turns common paste-mistakes into
+// actionable errors instead of a silently rejected request.
 func ValidateMasterKey(value string) error {
 	switch {
 	case strings.HasPrefix(value, "ser."):

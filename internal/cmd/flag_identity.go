@@ -40,8 +40,8 @@ type identityHandle struct {
 }
 
 // lookupIdentityOverride resolves an identifier and reads its override for a
-// feature in one pass, so callers never resolve the same identifier twice.
-// A missing identity reports found=false with a nil override.
+// feature in one pass. A missing identity reports found=false with a nil
+// override.
 func lookupIdentityOverride(cmd *cobra.Command, cred *activeCredential, envKey string, featureID int, identifier string, edge bool) (identityHandle, *api.IdentityFeatureState, error) {
 	if edge {
 		uuid, found, err := cred.client().EdgeIdentityUUID(cmd.Context(), envKey, identifier)
@@ -107,9 +107,9 @@ func renderIdentityDetail(cmd *cobra.Command, feature *api.Feature, identifier s
 	})
 }
 
-// runIdentityUpdate sets an identity override, reading the current state to
-// fill the half the user did not change (a new override inherits the
-// environment default value). It branches core vs edge on use_edge_identities.
+// runIdentityUpdate sets an identity override, reading the current state to fill
+// the half the user did not change. It branches core vs edge on
+// use_edge_identities.
 func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Environment, projectID int, feature *api.Feature, identifier string, enable, disable, setValue bool) error {
 	edge, err := useEdgeIdentities(cmd, cred, projectID)
 	if err != nil {
@@ -120,8 +120,8 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 		return err
 	}
 
-	// A new override inherits the environment default — enabled state and
-	// value alike (see below); an existing one keeps its current state.
+	// A new override inherits the environment default — enabled state and value
+	// alike; an existing one keeps its current state.
 	enabled := flagEnabled(feature.EnvironmentState)
 	if current != nil {
 		enabled = current.Enabled
@@ -184,8 +184,8 @@ func runIdentityUpdate(cmd *cobra.Command, cred *activeCredential, env api.Envir
 		output.Success(errOut, "Disabled %s for %s", feature.Name, scope)
 	}
 
-	// The written override is fully known — this command chose enabled and
-	// value — so the detail renders without re-resolving and re-reading it.
+	// The written override is fully known — both enabled and value were chosen
+	// locally — so the detail renders without re-reading it.
 	return renderIdentityDetail(cmd, feature, identifier, &api.IdentityFeatureState{Enabled: enabled, Value: value})
 }
 
@@ -195,7 +195,7 @@ func runIdentityDelete(cmd *cobra.Command, cred *activeCredential, env api.Envir
 	if err != nil {
 		return err
 	}
-	name = feature.Name // canonical from here on
+	name = feature.Name // canonical for messages
 	edge, err := useEdgeIdentities(cmd, cred, projectID)
 	if err != nil {
 		return err

@@ -1,6 +1,4 @@
-// Package output centralises how commands render results: JSON (optionally
-// filtered with a jq expression) for scripts, human tables/detail views
-// otherwise. The same data value feeds both, so the two never drift.
+// Package output centralises how commands render results.
 package output
 
 import (
@@ -25,7 +23,7 @@ func (o Options) jsonMode() bool { return o.JSON || o.JQ != "" }
 
 var tickColor = color.New(color.FgGreen, color.Bold)
 
-// SGR codes applied after tabwriter alignment (see paint).
+// SGR codes, applied after tabwriter alignment.
 const (
 	sgrBold  = "1"
 	sgrFaint = "2"
@@ -43,17 +41,17 @@ func paint(code, s string) string {
 }
 
 // splitLines splits tabwriter output into its lines, dropping the trailing
-// newline so callers can restyle and rejoin without adding a blank line.
+// newline so they can be restyled and rejoined without gaining a blank one.
 func splitLines(s string) []string {
 	return strings.Split(strings.TrimRight(s, "\n"), "\n")
 }
 
-// flattenCell makes a value safe to hand to tabwriter, which reads all four
-// of \t \v \n \f as structure: a newline ends the row — breaking the alignment of
-// every row after it, and desynchronising output lines from input rows — and
-// a tab starts a new cell. Values reach us unsanitised from the API, so they
-// are flattened to spaces here rather than at each call site. Runs of plain
-// spaces are left alone: they are content, not structure.
+// flattenCell makes a value safe to hand to tabwriter, which reads all four of
+// \t \v \n \f as structure: a newline ends the row — breaking the alignment of
+// every row after it, and desynchronising output lines from input rows — and a
+// tab starts a new cell. API values arrive unsanitised, so every cell is
+// flattened to spaces. Runs of plain spaces are left alone: they are content,
+// not structure.
 var flattenCell = strings.NewReplacer(
 	"\r\n", " ", "\n", " ", "\r", " ", "\t", " ", "\v", " ", "\f", " ",
 ).Replace
@@ -116,9 +114,7 @@ func renderJQ(w io.Writer, data any, expr string) error {
 	return nil
 }
 
-// Table writes a borderless, aligned table with a bold header. tabwriter
-// aligns on the plain text first; the header is bolded afterwards so its
-// escape bytes never count toward column width.
+// Table writes a borderless, aligned table, bolding the header after alignment.
 func Table(w io.Writer, headers []string, rows [][]string) error {
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
@@ -154,9 +150,7 @@ type Field struct {
 }
 
 // Detail writes an aligned key/value view of a single resource. Labels are
-// coloured and, when present, sources dimmed. As with Table, alignment
-// happens on the plain text first and colour is applied afterwards, so the
-// escape bytes never affect column widths.
+// coloured and, when present, sources dimmed — both after alignment.
 func Detail(w io.Writer, fields []Field) error {
 	hasSource := false
 	for _, f := range fields {
@@ -165,7 +159,7 @@ func Detail(w io.Writer, fields []Field) error {
 		}
 	}
 	// Flatten into a copy: the colourer matches against what was written, and
-	// the caller's slice is not ours to modify.
+	// the caller's slice must not be modified.
 	flat := make([]Field, len(fields))
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 2, 0, 3, ' ', 0)
@@ -180,7 +174,7 @@ func Detail(w io.Writer, fields []Field) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
-	// One row in, one line out — guaranteed by the flattening above.
+	// One row in, one line out — guaranteed by flattening.
 	for i, line := range splitLines(buf.String()) {
 		fmt.Fprintln(w, colorDetailLine(line, flat[i]))
 	}
@@ -203,7 +197,7 @@ func colorDetailLine(line string, f Field) string {
 	return line
 }
 
-// Success writes a ✓-prefixed confirmation line (callers pass stderr).
+// Success writes a ✓-prefixed confirmation line.
 func Success(w io.Writer, format string, a ...any) {
 	fmt.Fprintf(w, "%s %s\n", tickColor.Sprint("✓"), fmt.Sprintf(format, a...))
 }

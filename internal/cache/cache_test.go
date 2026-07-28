@@ -92,9 +92,7 @@ func TestLoadMissIsEmptyNotNil(t *testing.T) {
 	}
 }
 
-// The cache holds organisation, project and segment names for one instance —
-// not secrets, but nothing else on this machine needs them either, and the
-// CLI writes nothing else to disk.
+// The cached names are not secrets, but nothing else on the machine needs them.
 func TestMergeWritesPrivately(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// Windows has no POSIX mode bits: os.Stat synthesises 0666/0777 and
@@ -111,7 +109,7 @@ func TestMergeWritesPrivately(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Then the file is owner-only, and so is the directory holding it
+	// Then
 	path, err := Path()
 	if err != nil {
 		t.Fatal(err)

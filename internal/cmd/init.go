@@ -63,7 +63,7 @@ func explicitValue(r resolved) (any, bool) {
 // name cache. The bool is true when more than one organisation was
 // available — the choice is then worth recording in flagsmith.json. An
 // explicit --organisation wins; a lone org is used silently; otherwise the
-// picker runs (self-guarding to exit 2 naming --organisation without a TTY).
+// picker runs, self-guarding to a usage error naming --organisation without a TTY.
 func resolveOrganisation(cmd *cobra.Command, pc *projectContext, cred *activeCredential, names *cache.Names) (api.Organisation, bool, error) {
 	orgs, err := cred.client().Organisations(cmd.Context())
 	if err != nil {

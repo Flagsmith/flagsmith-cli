@@ -21,7 +21,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 func TestRetriesIdempotentReads(t *testing.T) {
 	t.Run("GET retries 5xx then succeeds", func(t *testing.T) {
-		// Given a server that fails twice with 503 then returns 200
+		// Given
 		var hits int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if atomic.AddInt32(&hits, 1) <= 2 {
@@ -49,7 +49,7 @@ func TestRetriesIdempotentReads(t *testing.T) {
 	})
 
 	t.Run("writes are never retried", func(t *testing.T) {
-		// Given a server that always fails with 503
+		// Given
 		var hits int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			atomic.AddInt32(&hits, 1)
@@ -57,10 +57,10 @@ func TestRetriesIdempotentReads(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		// When a POST hits it
+		// When
 		resp, err := New("ua").Post(srv.URL, "text/plain", nil)
 
-		// Then it is not retried
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func TestRetriesIdempotentReads(t *testing.T) {
 	})
 
 	t.Run("gives up after maxRetries", func(t *testing.T) {
-		// Given a base transport that always errors
+		// Given
 		var calls int32
 		tr := &transport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			atomic.AddInt32(&calls, 1)
@@ -82,7 +82,7 @@ func TestRetriesIdempotentReads(t *testing.T) {
 		// When
 		_, err := tr.RoundTrip(req)
 
-		// Then it retried the capped number of times and surfaced the error
+		// Then
 		if err == nil {
 			t.Fatal("want an error after exhausting retries")
 		}
@@ -131,7 +131,7 @@ func TestSetsUserAgentWhenAbsent(t *testing.T) {
 }
 
 func TestContextCancellationStopsBackoff(t *testing.T) {
-	// Given a base that always signals a retryable failure
+	// Given
 	tr := &transport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("temporary failure")
 	})}
@@ -143,7 +143,7 @@ func TestContextCancellationStopsBackoff(t *testing.T) {
 	start := time.Now()
 	_, err := tr.RoundTrip(req)
 
-	// Then it returns the context error without waiting out the backoff
+	// Then
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -163,7 +163,7 @@ func TestDebugTracing(t *testing.T) {
 	})
 
 	t.Run("logs method, url and status for each call", func(t *testing.T) {
-		// Given a tracer writing to a buffer
+		// Given
 		var buf bytes.Buffer
 		tr := &tracer{base: stubOK, out: &buf}
 		req, _ := http.NewRequest(http.MethodGet, "https://api.flagsmith.com/api/v1/environments/", nil)
@@ -171,7 +171,7 @@ func TestDebugTracing(t *testing.T) {
 		// When
 		resp, err := tr.RoundTrip(req)
 
-		// Then the response passes through unchanged and the call is traced
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,8 +185,7 @@ func TestDebugTracing(t *testing.T) {
 	})
 
 	t.Run("traces every retry attempt", func(t *testing.T) {
-		// Given tracing composed under the retrying transport, over a base that
-		// fails twice with 503 then succeeds
+		// Given
 		var buf bytes.Buffer
 		var hits int32
 		base := roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -206,7 +205,7 @@ func TestDebugTracing(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		// Then all three attempts are traced (two 503s, one 200)
+		// Then
 		if got := strings.Count(buf.String(), "GET https://api.flagsmith.com/x"); got != 3 {
 			t.Errorf("traced attempts = %d, want 3\n%s", got, buf.String())
 		}
@@ -283,8 +282,7 @@ func TestShouldRetry(t *testing.T) {
 // custom headers verbatim — and X-Environment-Key can carry a server-side
 // (ser.) secret via `flagsmith api --sdk`. It must get the same treatment.
 func TestRedirectStripsEnvironmentKeyAcrossHosts(t *testing.T) {
-	// Given a target on another host (port counts) and a redirector that can
-	// bounce either there or to itself
+	// Given
 	var got http.Header
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Clone()
@@ -317,23 +315,19 @@ func TestRedirectStripsEnvironmentKeyAcrossHosts(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	// When the redirect crosses hosts — Then the secret must not follow
+	// When
 	fetch(origin.URL)
 	if v := got.Get("X-Environment-Key"); v != "" {
 		t.Errorf("X-Environment-Key = %q at the cross-host target, want it stripped", v)
 	}
 
-	// When the redirect stays on the origin — Then the key still flows
+	// When
 	fetch(origin.URL + "/self")
 	if v := got.Get("X-Environment-Key"); v != "ser.secret" {
 		t.Errorf("X-Environment-Key = %q after a same-host redirect, want it kept", v)
 	}
 }
 
-// Credentials follow a redirect only back to the exact origin the request
-// started at. Go's own rule is laxer — it forwards Authorization to any
-// subdomain and ignores the scheme — and it never protects custom headers,
-// so X-Environment-Key needs this too.
 func TestCheckRedirectStripsSecrets(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -351,7 +345,7 @@ func TestCheckRedirectStripsSecrets(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			// Given a redirect from → to, carrying both secret headers
+			// Given
 			from, err := http.NewRequest(http.MethodGet, c.from, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -371,7 +365,7 @@ func TestCheckRedirectStripsSecrets(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// Then both headers survive together, or neither does
+			// Then
 			for _, h := range []string{"Authorization", "X-Environment-Key"} {
 				if kept := to.Header.Get(h) != ""; kept != c.wantKept {
 					t.Errorf("%s kept = %v, want %v", h, kept, c.wantKept)

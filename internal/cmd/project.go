@@ -44,14 +44,13 @@ func resolveProjectRefID(cmd *cobra.Command, pc *projectContext, cred *activeCre
 		return 0, err
 	}
 	byID := idNameMap(projects, func(p api.Project) (string, string) { return strconv.Itoa(p.ID), p.Name })
-	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic (04 §3)
+	_ = cache.Merge(apiURL, &cache.Names{Projects: byID}) // opportunistic
 	return resolveIDRef(cmd, "project", ref, byID, notFound, hintProjectList)
 }
 
-// orgLabels maps the given organisation ids to names for display, from the
-// local name cache when it covers them all. Only a miss pays one
-// Organisations fetch, which reseeds the cache (04 §3); labels stay
-// best-effort either way.
+// orgLabels maps the given organisation ids to names for display, from the local
+// name cache when it covers them all. Only a miss pays one Organisations fetch,
+// which reseeds the cache; labels stay best-effort either way.
 func orgLabels(cmd *cobra.Command, cred *activeCredential, ids []int) map[int]string {
 	cached := cache.Load(apiURL).Organisations
 	m := make(map[int]string, len(ids))

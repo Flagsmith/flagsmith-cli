@@ -142,7 +142,7 @@ func TestKnownFieldsMatchSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// When / Then — the parser's field list and the published schema must not drift
+	// When / Then
 	for field := range schema.Properties {
 		if !knownFields[field] {
 			t.Errorf("schema field %q is unknown to the parser", field)
@@ -194,8 +194,7 @@ func TestLoad(t *testing.T) {
 		// When
 		_, _, err := Load(path)
 
-		// Then — recovery guidance is hinted at the command layer, so the
-		// error only needs to be recognisable, and name the offending file
+		// Then
 		if !errors.Is(err, ErrServerSideKey) {
 			t.Errorf("err = %v, want ErrServerSideKey", err)
 		}
@@ -237,7 +236,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestSavePreservesUnknownFields(t *testing.T) {
-	// Given — a file with fields this CLI doesn't recognise
+	// Given
 	path := filepath.Join(t.TempDir(), "flagsmith.json")
 	write(t, path, `{
 		"$schema": "https://example.com/schema.json",
@@ -250,13 +249,13 @@ func TestSavePreservesUnknownFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// When — a known field changes and the file is saved back
+	// When
 	f.Environment = "WqXhZk8sVY3dGgTqZ9pJmN"
 	if err := f.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// Then — the unknown fields survived the round trip verbatim
+	// Then
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -294,8 +293,7 @@ func TestSaveIsAtomic(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// Then — the file parses back to what we wrote, ends in a newline, and no
-	// temp file was left behind alongside it
+	// Then
 	reread, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("reloading saved file: %v", err)
@@ -320,8 +318,7 @@ func TestSaveIsAtomic(t *testing.T) {
 }
 
 func TestRefParsing(t *testing.T) {
-	// Given / When / Then — a JSON number, a numeric string, and a name all
-	// classify per the reference rule (all-digit → ID, else name).
+	// Given / When / Then
 	cases := []struct {
 		name    string
 		json    string
@@ -349,8 +346,8 @@ func TestRefParsing(t *testing.T) {
 }
 
 func TestRefRoundTrip(t *testing.T) {
-	// Given an ID reference and a name reference
-	// When / Then — each marshals back to its authored shape
+	// Given
+	// When / Then
 	id := &Ref{ID: 101}
 	if b, _ := json.Marshal(id); string(b) != "101" {
 		t.Errorf("ID marshalled to %s, want 101", b)

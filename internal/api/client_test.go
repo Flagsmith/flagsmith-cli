@@ -31,7 +31,7 @@ func TestUsersMe(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		// When — base URL carries a trailing slash to prove NewClient trims it.
+		// When
 		user, err := testClient(srv.URL+"/", Bearer("access-1"), srv).UsersMe(context.Background())
 
 		// Then
@@ -62,8 +62,7 @@ func TestUsersMe(t *testing.T) {
 
 func TestProjects(t *testing.T) {
 	t.Run("follows pagination across pages", func(t *testing.T) {
-		// Given two pages: page 1's "next" points at a bogus host to prove
-		// getList reuses the base URL and only carries over next's path + query.
+		// Given
 		var hits int
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits++
@@ -101,9 +100,7 @@ func TestProjects(t *testing.T) {
 	})
 
 	t.Run("lists ask for the largest page", func(t *testing.T) {
-		// The backend's CustomPagination caps page_size at 999 and clamps
-		// larger asks, so requesting it makes a list one round-trip instead
-		// of a sequential walk at the server's default page size.
+		// Given
 		var gotPageSize string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotPageSize = r.URL.Query().Get("page_size")
@@ -126,7 +123,7 @@ func TestProjects(t *testing.T) {
 	})
 
 	t.Run("an empty paginated list is an empty slice, not nil", func(t *testing.T) {
-		// Given — the Admin API paginates, so this is the live empty shape
+		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, `{"count":0,"next":null,"results":[]}`)
 		}))
@@ -135,8 +132,7 @@ func TestProjects(t *testing.T) {
 		// When
 		projects, err := testClient(srv.URL, Bearer("t"), srv).Projects(context.Background(), 3)
 
-		// Then — the documented JSON contract is [] for an empty list, so the
-		// slice must be non-nil (a nil slice renders null)
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -223,8 +219,8 @@ func TestApiMessage(t *testing.T) {
 	}
 }
 
-// capServer serves a project POST that 403s, plus the subscription-metadata and
-// project-list lookups CreateProject uses to disambiguate a project cap.
+// capServer serves a 403 project POST plus the subscription-metadata and
+// project-list lookups behind the project-cap check.
 func capServer(t *testing.T, maxProjects, existingProjects int) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -274,9 +270,8 @@ func TestCreateProjectProjectCap(t *testing.T) {
 }
 
 func TestClassifyLimit(t *testing.T) {
-	// The exact backend detail strings, and which recovery each routes to (see
-	// errors.go): quota caps are enterprise-negotiable (→ support), upgrade
-	// limits are self-serve (→ pricing). If these stop matching, hints vanish.
+	// Verbatim backend detail strings: if they stop matching, the recovery
+	// hints are silently lost.
 	tests := []struct {
 		msg  string
 		want error // ErrQuotaExceeded, ErrPlanGated, or nil
@@ -303,7 +298,6 @@ func TestClassifyLimit(t *testing.T) {
 }
 
 func TestResponseErrorQuota(t *testing.T) {
-	// A quota-cap 400 surfaces as ErrQuotaExceeded carrying the API's own reason.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, `{"project":["The project has reached the maximum allowed segments limit."]}`)
@@ -323,7 +317,6 @@ func TestResponseErrorQuota(t *testing.T) {
 }
 
 func TestResponseErrorPlanGated(t *testing.T) {
-	// A self-serve upgrade limit surfaces as ErrPlanGated.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, `{"detail":"Please upgrade your plan to add additional seats/users"}`)
@@ -340,7 +333,6 @@ func TestResponseErrorPlanGated(t *testing.T) {
 }
 
 func TestResponseErrorSurfacesDetail(t *testing.T) {
-	// A non-plan error still surfaces the API's message rather than a bare status.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, `{"detail":"Invalid organisation."}`)
@@ -721,9 +713,7 @@ func TestUpdateMVOption(t *testing.T) {
 func TestEdgeIdentityUUID(t *testing.T) {
 	// Edge (DynamoDB) identities paginate differently from page-number
 	// endpoints: no "count", and "next" carries a base64 last_evaluated_key
-	// cursor rather than a page number. getList must follow it the same way.
-	// The wanted identity sits on page two — the exact case that used to
-	// report "not found".
+	// cursor rather than a page number.
 	t.Run("follows last_evaluated_key pagination to a match on page two", func(t *testing.T) {
 		// Given
 		var hits int
@@ -737,8 +727,7 @@ func TestEdgeIdentityUUID(t *testing.T) {
 			}
 			switch r.URL.Query().Get("last_evaluated_key") {
 			case "":
-				// First page: no count, cursor points at a bogus host to
-				// prove getList reuses the base URL and only carries path + query.
+				// The cursor's host is bogus: only path + query may be reused.
 				fmt.Fprint(w, `{"next":"http://edge.invalid/api/v1/environments/env.key/edge-identities/?q=%22user%40acme.io%22&last_evaluated_key=eyJpZCI6MX0=","previous":null,"results":[{"identity_uuid":"uuid-1","identifier":"someone-else"}]}`)
 			case "eyJpZCI6MX0=":
 				fmt.Fprint(w, `{"next":null,"previous":null,"results":[{"identity_uuid":"uuid-2","identifier":"user@acme.io"}]}`)

@@ -1,7 +1,4 @@
-// Package prompt implements the interactive prompts on charmbracelet/huh:
-// a full-terminal select with arrow keys and type-to-filter on real TTYs,
-// and huh's accessible mode (numbered, line-based, screen-reader friendly)
-// everywhere else. Colors respect NO_COLOR via termenv.
+// Package prompt implements the interactive prompts on charmbracelet/huh.
 package prompt
 
 import (
@@ -12,17 +9,11 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-// IO carries a prompt's streams. A prompt is a diagnostic, not a result, so
-// its UI goes to ErrOut (stderr) — never the data stream. stdout is reserved
-// for the parseable result (02: stdout is data; stderr is prompts, progress
-// and warnings), so routing a prompt to stdout would corrupt a redirected
-// result such as `flagsmith ... --json > out.json`. The type deliberately has
-// no data writer: a prompt structurally cannot reach stdout.
+// IO carries a prompt's streams. All prompts go to ErrOut (stderr).
 //
-// RawTTY selects the full-terminal UI and must only be true when stdin is a
-// real terminal; otherwise huh runs in accessible mode reading In and writing
-// ErrOut. On EOF, accessible prompts terminate with their default value —
-// they never hang (02).
+// RawTTY selects the full-terminal UI and must only be true when stdin is a real
+// terminal; otherwise huh runs in accessible mode reading In and writing ErrOut.
+// On EOF, accessible prompts terminate with their default value rather than hang.
 type IO struct {
 	In     *bufio.Reader
 	ErrOut io.Writer

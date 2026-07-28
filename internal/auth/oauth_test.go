@@ -404,8 +404,7 @@ func TestDiscover(t *testing.T) {
 	})
 
 	t.Run("a forged issuer is refused end to end", func(t *testing.T) {
-		// Given metadata claiming to speak for another instance — the shape a
-		// compromised /.well-known/* path would serve
+		// Given
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, `{"issuer":"https://evil.example",
 				"authorization_endpoint":"https://evil.example/oauth/authorize/",
@@ -421,7 +420,7 @@ func TestDiscover(t *testing.T) {
 	})
 
 	t.Run("a cross-origin token endpoint is refused end to end", func(t *testing.T) {
-		// Given a consistent issuer but the credential endpoint pointed away
+		// Given
 		var srv *httptest.Server
 		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, `{"issuer":%q,
@@ -439,12 +438,6 @@ func TestDiscover(t *testing.T) {
 	})
 }
 
-// TestMetadataValidate pins the RFC 8414 anchoring rules: the issuer must be
-// the URL the CLI asked about, credential-bearing endpoints (token,
-// revocation) must live on it over https, and the browser-visited
-// authorization endpoint may be cross-origin (Flagsmith serves it from the
-// dashboard host) but must be https. Loopback is exempt from https so local
-// instances keep working.
 func TestMetadataValidate(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -609,8 +602,7 @@ func TestEnsureFresh(t *testing.T) {
 		// When
 		_, _, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
-		// Then — the re-login hint is attached at the command layer, so the
-		// error only needs to be recognisable as a refresh failure
+		// Then
 		if !errors.Is(err, ErrRefreshFailed) {
 			t.Errorf("err = %v, want ErrRefreshFailed", err)
 		}

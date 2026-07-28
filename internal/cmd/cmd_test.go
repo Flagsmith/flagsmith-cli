@@ -89,7 +89,7 @@ func resetFlags() {
 
 // setEnvCred exports a credential variable host-scoped to url, as a
 // self-hosted user must: the unscoped variable is trusted only for the
-// default SaaS host (03-authentication.md §6).
+// default SaaS host.
 func setEnvCred(t *testing.T, base, url, value string) {
 	t.Helper()
 	t.Setenv(scopedEnvName(base, url), value)
@@ -870,7 +870,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
-	// Organisation CRUD (the list route above handles GET /organisations/).
+	// Organisation CRUD (the list route handles GET /organisations/).
 	mux.HandleFunc("GET /api/v1/organisations/{id}/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -938,7 +938,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
-	// Feature retrieve (feature CRUD; the list route above is shared with flags).
+	// Feature retrieve (feature CRUD; the list route is shared with flags).
 	mux.HandleFunc("GET /api/v1/projects/{project}/features/{id}/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -1499,7 +1499,7 @@ func (f *fakeInstance) refreshCount() int {
 // and its value must never be echoed into an error: that lands it in CI logs.
 func TestServerSideKeyNeverEchoed(t *testing.T) {
 	t.Run("the FLAGSMITH_ENVIRONMENT_KEY fallback names the variable, not the value", func(t *testing.T) {
-		// Given no environment context except a ser. key in the SDK variable
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -1531,7 +1531,7 @@ func TestServerSideKeyNeverEchoed(t *testing.T) {
 		// When
 		_, err := run("", "environment", "get", "ser.SuperSecret123")
 
-		// Then — refused up front, value withheld, recovery in the hint
+		// Then
 		if err == nil {
 			t.Fatal("err = nil, want an error")
 		}
@@ -1546,7 +1546,7 @@ func TestServerSideKeyNeverEchoed(t *testing.T) {
 
 func TestFlagListResolvesEnvironmentName(t *testing.T) {
 	t.Run("name resolved to its id for the features query", func(t *testing.T) {
-		// Given a config naming the environment, with admin credentials
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -1556,7 +1556,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list")
 
-		// Then — "Development" (id 1) drives the features environment filter
+		// Then
 		if err != nil {
 			t.Fatalf("flag list: %v\noutput: %s", err, out)
 		}
@@ -1566,7 +1566,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 	})
 
 	t.Run("without credentials the command errors", func(t *testing.T) {
-		// Given a name but no admin credentials — flag list is Admin-only now
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -1579,7 +1579,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 	})
 
 	t.Run("ambiguous name exits 2 without a TTY", func(t *testing.T) {
-		// Given two environments sharing a name
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		f.envs["101"] = []map[string]any{
@@ -1590,8 +1590,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 		writeConfig(t, root, `{"project": 101, "environment": "Staging", "apiUrl": "`+f.srv.URL+`"}`)
 		setMasterKey(t, f.srv.URL)
 
-		// When / Then — environments are addressed by key, so that's the
-		// identifier the error offers
+		// When / Then
 		_, err := run("", "flag", "list")
 		var ue *usageError
 		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "use its key instead") {
@@ -1600,7 +1599,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 	})
 
 	t.Run("unknown environment name hints at environment list", func(t *testing.T) {
-		// Given a name matching nothing in the project
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -1615,7 +1614,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 	})
 
 	t.Run("a key reference resolves to its environment", func(t *testing.T) {
-		// Given the reference is a client-side key present in the project
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -1627,7 +1626,7 @@ func TestFlagListResolvesEnvironmentName(t *testing.T) {
 			t.Fatalf("flag list: %v", err)
 		}
 
-		// Then — the key mapped to Production (id 2) for the features query
+		// Then
 		if got := f.featuresEnv(); got != "2" {
 			t.Errorf("features environment = %q, want the Production id (2)", got)
 		}
@@ -1766,7 +1765,7 @@ func TestAPIFlagWorksInAnyPosition(t *testing.T) {
 	// When / Then
 	var outputs []string
 	for _, args := range [][]string{
-		{"auth", "status", "--api", f.srv.URL}, // after the subcommand (02 §8 shape)
+		{"auth", "status", "--api", f.srv.URL}, // after the subcommand
 		{"--api", f.srv.URL, "auth", "status"}, // before the subcommand
 		{"auth", "--api", f.srv.URL, "status"}, // between nested subcommands
 	} {
@@ -1812,7 +1811,7 @@ func TestAPIURLFlagWithHiddenAlias(t *testing.T) {
 		t.Errorf("alias output differs from canonical:\n%q\n%q", alias, canonical)
 	}
 
-	// When / Then — the alias stays out of help
+	// When / Then
 	helpOut, err := run("", "--help")
 	if err != nil {
 		t.Fatalf("--help: %v", err)
@@ -2000,15 +1999,15 @@ func TestConfigCommand(t *testing.T) {
 	})
 
 	t.Run("non-numeric FLAGSMITH_PROJECT is taken as a name", func(t *testing.T) {
-		// Given a non-digit value — a project name, not an error
+		// Given
 		isolateStorage(t)
 		tempRepo(t)
 		t.Setenv("FLAGSMITH_PROJECT", "my-app")
 
-		// When — config is offline and resolves nothing
+		// When
 		got := configJSON(t)
 
-		// Then — recorded verbatim as the project reference, sourced from env
+		// Then
 		if v := got["project"]; v["value"] != "my-app" || v["source"] != "env" {
 			t.Errorf("project = %v, want the name carried through from the env var", v)
 		}
@@ -2019,7 +2018,7 @@ func TestConfigCommand(t *testing.T) {
 		isolateStorage(t)
 		tempRepo(t)
 
-		// When / Then — the recovery lives in the hint, not the message
+		// When / Then
 		if _, err := run("", "config", "-e", "ser.AbCd"); err == nil ||
 			!strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
 			t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
@@ -2129,7 +2128,7 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 	})
 
 	t.Run("--organisation empty falls back to the lone organisation", func(t *testing.T) {
-		// Given one accessible organisation
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		tempRepo(t)
@@ -2148,8 +2147,7 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 	})
 }
 
-// --version reports the resolved build version — the first question of
-// every bug report.
+// --version reports the resolved build version.
 func TestVersionFlag(t *testing.T) {
 	// When
 	out, err := run("", "--version")
@@ -2163,20 +2161,17 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
-// A release build pins the written $schema to its own tag; every other build
-// (dev, pseudo-version) references main, which always exists — a branch URL
-// 404s once the branch is deleted.
 func TestSchemaURL(t *testing.T) {
 	orig := version.Version
 	t.Cleanup(func() { version.Version = orig })
 
-	// Given a release build — Then $schema pins to that tag
+	// Given
 	version.Version = "v1.2.3"
 	if got := schemaURL(); !strings.Contains(got, "/v1.2.3/schema/flagsmith.json") {
 		t.Errorf("schemaURL() = %q, want pinned to the release tag", got)
 	}
 
-	// Given any other build — Then it references main, which always exists
+	// Given
 	version.Version = "dev (2f71d6f)"
 	if got := schemaURL(); !strings.Contains(got, "/main/schema/flagsmith.json") {
 		t.Errorf("schemaURL() = %q, want main for a non-release build", got)
@@ -2192,7 +2187,7 @@ func TestInitNoCredentials(t *testing.T) {
 	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
 
-	// Then — the ways to supply credentials are hinted, not baked in
+	// Then
 	if err == nil {
 		t.Fatal("expected an error with no credentials")
 	}
@@ -2214,7 +2209,7 @@ func TestInitRefusesOverwriteWithoutYes(t *testing.T) {
 	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345")
 
-	// Then — a promptable confirmation missing its flag is exit 2, naming it
+	// Then
 	var ue *usageError
 	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--yes") {
 		t.Errorf("err = %v, want a usage error (exit 2) naming --yes", err)
@@ -2222,13 +2217,13 @@ func TestInitRefusesOverwriteWithoutYes(t *testing.T) {
 }
 
 func TestInitCreateProjectFlag(t *testing.T) {
-	// Given — single org, non-interactive
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	setMasterKey(t, f.srv.URL)
 
-	// When — create both a project and its environment purely via flags
+	// When
 	out, err := run("", "init", "--api-url", f.srv.URL,
 		"--create-project", "acme-new", "--create-environment", "Development", "--yes")
 
@@ -2258,10 +2253,10 @@ func TestInitCreateProjectRequiresOrgWhenMultiOrg(t *testing.T) {
 	tempRepo(t)
 	setMasterKey(t, f.srv.URL)
 
-	// When — no --organisation, no TTY
+	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--create-project", "x", "--yes")
 
-	// Then — exit 2, naming the flag that resolves it
+	// Then
 	var ue *usageError
 	if !errors.As(err, &ue) || !strings.Contains(err.Error(), "organisation") {
 		t.Errorf("err = %v, want a usage error naming --organisation", err)
@@ -2326,14 +2321,14 @@ func TestInitCreateEnvironmentConflictsWithEnvironment(t *testing.T) {
 }
 
 func TestPromptSelfGuardsWithoutTTY(t *testing.T) {
-	// Given — prompting disallowed (no TTY)
+	// Given
 	orig := stdinIsTTY
 	stdinIsTTY = func() bool { return false }
 	t.Cleanup(func() { stdinIsTTY = orig })
 	yesFlag = false
 	initPrompts(rootCmd)
 
-	// When / Then — a prompt refuses and names its flag, exit 2
+	// When / Then
 	if _, err := selectPrompt(rootCmd, "project", "Project", []string{"a"}, 0); err == nil {
 		t.Error("selectPrompt should refuse without a TTY")
 	} else {
@@ -2345,8 +2340,7 @@ func TestPromptSelfGuardsWithoutTTY(t *testing.T) {
 }
 
 func TestInteractivePromptsGoToStderr(t *testing.T) {
-	// Given — an interactive init that must prompt for org, project and
-	// environment (multi-org forces every prompt to fire).
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
@@ -2358,14 +2352,10 @@ func TestInteractivePromptsGoToStderr(t *testing.T) {
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — answer the prompts (org 2, project 1, environment 1)
+	// When
 	stdout, stderr, err := runSplit("2\n1\n1\n", "init", "--api-url", f.srv.URL)
 
-	// Then — a prompt is a diagnostic, not a result: its UI must land on
-	// stderr, never stdout, so `flagsmith ... --json > out.json` can't be
-	// corrupted by the prompt written before the JSON (02: stdout is data,
-	// stderr is prompts/progress/warnings). A fresh init writes no data
-	// result, so stdout must be empty.
+	// Then
 	if err != nil {
 		t.Fatalf("init: %v\nstderr: %s", err, stderr)
 	}
@@ -2392,7 +2382,7 @@ func TestInitInteractiveMultiOrg(t *testing.T) {
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — pick org 2 (Beta), project 1 (beta-app), environment 1 (Development)
+	// When
 	out, err := run("2\n1\n1\n", "init", "--api-url", f.srv.URL)
 
 	// Then
@@ -2414,15 +2404,14 @@ func TestInitInteractiveMultiOrg(t *testing.T) {
 }
 
 func TestInitInteractiveCreateProject(t *testing.T) {
-	// Given — single org, one existing project; option 2 is "create new"
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — choose create (option 2), accept default project name, then
-	// accept the default environment name (Development) for the empty project
+	// When
 	out, err := run("2\n\n\n", "init", "--api-url", f.srv.URL)
 
 	// Then
@@ -2448,7 +2437,7 @@ func TestInitInteractiveCreateProject(t *testing.T) {
 }
 
 func TestInitEmptyProjectPromptsEnvironmentCreation(t *testing.T) {
-	// Given — an existing accessible project with no environments
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	f.envs["101"] = []map[string]any{}
@@ -2456,7 +2445,7 @@ func TestInitEmptyProjectPromptsEnvironmentCreation(t *testing.T) {
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — pick the existing (empty) project, accept the env-name default
+	// When
 	out, err := run("1\n\n", "init", "--api-url", f.srv.URL)
 
 	// Then
@@ -2478,14 +2467,14 @@ func TestInitEmptyProjectPromptsEnvironmentCreation(t *testing.T) {
 }
 
 func TestInitEmptyProjectNonInteractiveSkipsEnvironment(t *testing.T) {
-	// Given — non-interactive init of an empty project
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	f.envs["101"] = []map[string]any{}
 	root := tempRepo(t)
 	setMasterKey(t, f.srv.URL)
 
-	// When — no TTY, no environment given: don't create anything silently
+	// When
 	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "101", "--yes")
 
 	// Then
@@ -2504,17 +2493,17 @@ func TestInitEmptyProjectNonInteractiveSkipsEnvironment(t *testing.T) {
 }
 
 func TestInitPreservesExistingOrganisation(t *testing.T) {
-	// Given — a single-org user re-initialising a file that records its org
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 12345, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}`)
 	setMasterKey(t, f.srv.URL)
 
-	// When — non-interactive re-init that doesn't touch the organisation
+	// When
 	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
 
-	// Then — the organisation must survive, not be dropped
+	// Then
 	if err != nil {
 		t.Fatalf("init: %v\noutput: %s", err, out)
 	}
@@ -2524,17 +2513,17 @@ func TestInitPreservesExistingOrganisation(t *testing.T) {
 }
 
 func TestInitPreservesSDKAPIURL(t *testing.T) {
-	// Given — a file pinning a custom SDK endpoint
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "sdkApiUrl": "https://sdk.acme.internal"}`)
 	setMasterKey(t, f.srv.URL)
 
-	// When — non-interactive re-init that never mentions the SDK endpoint
+	// When
 	out, err := run("", "init", "--api-url", f.srv.URL, "--project", "12345", "--yes")
 
-	// Then — the custom SDK endpoint must survive the rewrite, not be dropped
+	// Then
 	if err != nil {
 		t.Fatalf("init: %v\noutput: %s", err, out)
 	}
@@ -2544,9 +2533,7 @@ func TestInitPreservesSDKAPIURL(t *testing.T) {
 }
 
 func TestInitRefusesToOverwriteMalformedFile(t *testing.T) {
-	// Given — an unparseable flagsmith.json at the write target, while context
-	// is resolved from a valid file elsewhere (so init reaches the point where
-	// it would otherwise substitute an empty config and clobber the target).
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
@@ -2558,10 +2545,10 @@ func TestInitRefusesToOverwriteMalformedFile(t *testing.T) {
 	}
 	setMasterKey(t, f.srv.URL)
 
-	// When — a non-interactive init that would otherwise overwrite the target
+	// When
 	_, err := run("", "init", "--api-url", f.srv.URL, "--config-path", valid, "--project", "12345", "--yes")
 
-	// Then — init fails hard and leaves the malformed file byte-for-byte intact
+	// Then
 	if err == nil {
 		t.Fatal("expected init to refuse to overwrite a malformed file")
 	}
@@ -2575,7 +2562,7 @@ func TestInitRefusesToOverwriteMalformedFile(t *testing.T) {
 }
 
 func TestInitReinitReoffersOrgPicker(t *testing.T) {
-	// Given — a multi-org user re-initialising; current org is NOT first
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	f.orgs = []map[string]any{{"id": 7, "name": "Beta"}, {"id": 3, "name": "Acme"}}
@@ -2586,10 +2573,10 @@ func TestInitReinitReoffersOrgPicker(t *testing.T) {
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — accept the org picker default, then project 1, environment 1
+	// When
 	out, err := run("\n1\n1\n", "init", "--api-url", f.srv.URL)
 
-	// Then — the picker was offered, and its default (the current org) held
+	// Then
 	if err != nil {
 		t.Fatalf("init: %v\noutput: %s", err, out)
 	}
@@ -2602,14 +2589,14 @@ func TestInitReinitReoffersOrgPicker(t *testing.T) {
 }
 
 func TestInitInvalidChoiceReprompts(t *testing.T) {
-	// Given — single org; project prompt has 2 options (acme-api, create new)
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — an invalid choice, then project 1, then environment 1
+	// When
 	out, err := run("99\n1\n1\n", "init", "--api-url", f.srv.URL)
 
 	// Then
@@ -2633,7 +2620,7 @@ func TestInitReinitShowsDiffAndConfirms(t *testing.T) {
 	setMasterKey(t, f.srv.URL)
 	fakeTTY(t)
 
-	// When — pick project 1 (acme-api, 101), env 2 (Production), confirm
+	// When
 	out, err := run("1\n2\ny\n", "init", "--api-url", f.srv.URL)
 
 	// Then
@@ -2716,8 +2703,7 @@ func TestJSONIsGlobal(t *testing.T) {
 	})
 
 	t.Run("auth token --json", func(t *testing.T) {
-		// Given — no --api-url, so this is the default SaaS host, where the
-		// unscoped variable applies
+		// Given
 		isolateStorage(t)
 		newFakeInstance(t)
 		t.Setenv(envAPIKey, masterKey)
@@ -2781,7 +2767,7 @@ func TestWarningsGoToStderr(t *testing.T) {
 }
 
 func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
-	// Given — a stored OAuth session whose instance is unreachable
+	// Given
 	isolateStorage(t)
 	if err := auth.Save(&auth.Credentials{
 		Kind: auth.KindOAuth, APIURL: "http://127.0.0.1:1",
@@ -2794,8 +2780,7 @@ func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
 	// When
 	stdout, stderr, err := runSplit("", "logout", "--api-url", "http://127.0.0.1:1")
 
-	// Then — logout is a mutation: confirmation and warning on stderr,
-	// stdout empty (no data result).
+	// Then
 	if err != nil {
 		t.Fatalf("logout: %v", err)
 	}
@@ -2811,8 +2796,7 @@ func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
 }
 
 func TestBrowserLoginWithoutTTYNeverOpensBrowser(t *testing.T) {
-	// Given — no TTY and no --no-browser flag; opening a real browser here
-	// would violate 02 (and hijack the test machine)
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 
@@ -2863,10 +2847,10 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 
-	// When — --no-input promises zero interaction; waiting on a browser is interaction
+	// When
 	_, err := run("", "login", "--api-url", f.srv.URL, "--no-input")
 
-	// Then — the refusal names --no-input; the FLAGSMITH_API_KEY recovery is hinted
+	// Then
 	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_API_KEY") {
 		t.Errorf("err = %v (hint %q), want a refusal hinting at FLAGSMITH_API_KEY", err, hintFor(err))
 	}
@@ -2880,7 +2864,7 @@ func TestBrowserLoginNotBlockedByYes(t *testing.T) {
 	isolateStorage(t)
 	f := newFakeInstance(t)
 
-	// When — login with --yes (no TTY in the test); it must reach the browser flow
+	// When
 	resetFlags()
 	out := &syncBuffer{}
 	rootCmd.SetOut(out)
@@ -2911,7 +2895,7 @@ func TestBrowserLoginNotBlockedByYes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Then — the flow completes without error
+	// Then
 	select {
 	case err := <-done:
 		if err != nil {
@@ -2923,7 +2907,7 @@ func TestBrowserLoginNotBlockedByYes(t *testing.T) {
 }
 
 func TestResolveCredentialRefreshesOnceUnderConcurrency(t *testing.T) {
-	// Given an expired OAuth session and many concurrent callers
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	if err := auth.Save(&auth.Credentials{
@@ -2937,7 +2921,7 @@ func TestResolveCredentialRefreshesOnceUnderConcurrency(t *testing.T) {
 	apiURL = f.srv.URL
 	resetCredentialCache()
 
-	// When — N goroutines resolve the credential simultaneously
+	// When
 	const n = 20
 	var wg sync.WaitGroup
 	results := make([]*activeCredential, n)
@@ -2954,7 +2938,7 @@ func TestResolveCredentialRefreshesOnceUnderConcurrency(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	// Then — the session refreshed exactly once, shared by every caller
+	// Then
 	if got := f.refreshCount(); got != 1 {
 		t.Errorf("refresh POSTs = %d, want exactly 1 (herd collapsed)", got)
 	}
@@ -2969,17 +2953,17 @@ func TestResolveCredentialRefreshesOnceUnderConcurrency(t *testing.T) {
 }
 
 func TestProjectNameResolvesForEnvironmentLookup(t *testing.T) {
-	// Given a config naming both the project and the environment
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": "acme-api", "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
 	setMasterKey(t, f.srv.URL)
 
-	// When — flag list needs the project ID to list environments by name
+	// When
 	out, err := run("", "flag", "list")
 
-	// Then — "acme-api" resolved to project 101, "Development" to env id 1
+	// Then
 	if err != nil {
 		t.Fatalf("flag list: %v\noutput: %s", err, out)
 	}
@@ -2989,14 +2973,14 @@ func TestProjectNameResolvesForEnvironmentLookup(t *testing.T) {
 }
 
 func TestUnknownProjectNameErrors(t *testing.T) {
-	// Given a project name that matches nothing in the organisation
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
 	writeConfig(t, root, `{"project": "ghost", "environment": "Development", "apiUrl": "`+f.srv.URL+`"}`)
 	setMasterKey(t, f.srv.URL)
 
-	// When / Then — the miss surfaces when a command needs the project
+	// When / Then
 	_, err := run("", "flag", "list")
 	if err == nil || !strings.Contains(err.Error(), "ghost") {
 		t.Errorf("err = %v, want a not-found error naming the project", err)
@@ -3005,7 +2989,7 @@ func TestUnknownProjectNameErrors(t *testing.T) {
 
 func TestFlagsList(t *testing.T) {
 	t.Run("human table with count", func(t *testing.T) {
-		// Given — admin credentials, project and environment in config
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -3015,7 +2999,7 @@ func TestFlagsList(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list")
 
-		// Then — the richer Admin columns, values, and count
+		// Then
 		if err != nil {
 			t.Fatalf("flags list: %v\noutput: %s", err, out)
 		}
@@ -3041,7 +3025,7 @@ func TestFlagsList(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list", "--json")
 
-		// Then — a bare array of the curated shape, no dashboard noise
+		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3085,7 +3069,7 @@ func TestFlagsList(t *testing.T) {
 	})
 
 	t.Run("environment from FLAGSMITH_ENVIRONMENT_KEY fallback", func(t *testing.T) {
-		// Given — no config environment; a client-side key via the env var
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		root := tempRepo(t)
@@ -3116,7 +3100,7 @@ func TestFlagsList(t *testing.T) {
 		// When
 		_, err := run("", "flag", "list")
 
-		// Then — with the ways to supply one hinted, not baked into the message
+		// Then
 		if err == nil || !strings.Contains(err.Error(), "environment") {
 			t.Errorf("err = %v, want a missing-environment error", err)
 		}
@@ -3126,7 +3110,7 @@ func TestFlagsList(t *testing.T) {
 	})
 
 	t.Run("off state and a truncated long value", func(t *testing.T) {
-		// Given a disabled flag with a very long value
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		long := strings.Repeat("x", 200)
@@ -3141,7 +3125,7 @@ func TestFlagsList(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list")
 
-		// Then — off, lower-case type, and no full 200-char value
+		// Then
 		if err != nil {
 			t.Fatalf("flags list: %v", err)
 		}
@@ -3154,7 +3138,7 @@ func TestFlagsList(t *testing.T) {
 	})
 
 	t.Run("multi-line JSON value stays on one row", func(t *testing.T) {
-		// Given a value containing newlines (a JSON blob)
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		f.features["101"] = []map[string]any{{
@@ -3170,8 +3154,7 @@ func TestFlagsList(t *testing.T) {
 		// When
 		out, err := run("", "flag", "list")
 
-		// Then — the value row holds no embedded newline; only the table's own
-		// line breaks remain (header, one data row, blank line, count).
+		// Then
 		if err != nil {
 			t.Fatalf("flags list: %v", err)
 		}
@@ -3192,7 +3175,7 @@ func TestFlagsList(t *testing.T) {
 // concurrently: the endpoint requires a feature filter, so one read per
 // overridden feature is unavoidable, but the wall clock should pay for one.
 func TestFlagListSegmentFansOut(t *testing.T) {
-	// Given three features overriding segment 12, with a slow metadata endpoint
+	// Given
 	f := flagUpdateEnv(t)
 	override := map[string]any{"enabled": true, "feature_state_value": "x"}
 	f.features["101"] = []map[string]any{
@@ -3213,7 +3196,7 @@ func TestFlagListSegmentFansOut(t *testing.T) {
 	// When
 	out, err := run("", "flag", "list", "--segment", "12")
 
-	// Then — all three rows render in list order, and the reads overlapped
+	// Then
 	if err != nil {
 		t.Fatalf("flag list --segment: %v\noutput: %s", err, out)
 	}
@@ -3304,7 +3287,7 @@ func TestFlagGet(t *testing.T) {
 		// When
 		out, err := run("", "flag", "get", "max_items")
 
-		// Then — the detail fields for that one feature
+		// Then
 		if err != nil {
 			t.Fatalf("flag get: %v\noutput: %s", err, out)
 		}
@@ -3326,7 +3309,7 @@ func TestFlagGet(t *testing.T) {
 		// When
 		out, err := run("", "flag", "get", "max_items", "--json")
 
-		// Then — flat, scriptable, matching the human detail fields
+		// Then
 		if err != nil {
 			t.Fatalf("flag get --json: %v", err)
 		}
@@ -3346,7 +3329,7 @@ func TestFlagGet(t *testing.T) {
 	})
 
 	t.Run("case-insensitive exact match, not a contains match", func(t *testing.T) {
-		// Given features whose names share a prefix
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		f.features["101"] = []map[string]any{
@@ -3362,7 +3345,7 @@ func TestFlagGet(t *testing.T) {
 		// When
 		out, err := run("", "flag", "get", "CheckOut")
 
-		// Then — resolves to "checkout" (value "a"), never "checkout-v2"
+		// Then
 		if err != nil {
 			t.Fatalf("flag get: %v", err)
 		}
@@ -3390,7 +3373,7 @@ func TestFlagGet(t *testing.T) {
 	})
 
 	t.Run("a null identity-override count shows 0", func(t *testing.T) {
-		// Given num_identity_overrides is null (Edge/Dynamo projects)
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		f.features["101"] = []map[string]any{{
@@ -3405,7 +3388,7 @@ func TestFlagGet(t *testing.T) {
 		// When
 		out, err := run("", "flag", "get", "edgeflag")
 
-		// Then — shown as 0, not "-"
+		// Then
 		if err != nil {
 			t.Fatalf("flag get: %v", err)
 		}
@@ -3429,13 +3412,13 @@ func flagUpdateEnv(t *testing.T) *fakeInstance {
 
 func TestFlagUpdate(t *testing.T) {
 	t.Run("--enable preserves the current value and reprints", func(t *testing.T) {
-		// Given max_items is off with integer value 25
+		// Given
 		f := flagUpdateEnv(t)
 
 		// When
 		out, err := run("", "flag", "update", "max_items", "--enable", "--yes")
 
-		// Then — the full environment default carries enabled=true and value 25
+		// Then
 		if err != nil {
 			t.Fatalf("flag update: %v\noutput: %s", err, out)
 		}
@@ -3587,7 +3570,7 @@ func TestFlagGetSegment(t *testing.T) {
 		// When
 		out, err := run("", "flag", "get", "max_items", "--segment", "12")
 
-		// Then — the features query carried the segment, output shows its state
+		// Then
 		if err != nil {
 			t.Fatalf("flag get --segment: %v\noutput: %s", err, out)
 		}
@@ -3602,7 +3585,7 @@ func TestFlagGetSegment(t *testing.T) {
 	})
 
 	t.Run("no override errors", func(t *testing.T) {
-		// Given a feature with no segment override
+		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, false)
 
@@ -3615,8 +3598,8 @@ func TestFlagGetSegment(t *testing.T) {
 }
 
 func TestSegmentOverridePriorityView(t *testing.T) {
-	// Per 07 §1, a segment override view carries the override's priority and
-	// the segment as {id, name}, read from the feature-segments endpoint.
+	// The priority and the segment's {id, name} come from the feature-segments
+	// endpoint.
 	overrideMeta := func(f *fakeInstance) {
 		withFeatureSegments(f, 2, map[string]any{
 			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1,
@@ -3744,11 +3727,11 @@ func TestFlagEnableDisable(t *testing.T) {
 
 func TestFlagUpdateSegment(t *testing.T) {
 	t.Run("updates the override and carries the env default unchanged", func(t *testing.T) {
-		// Given an existing segment override (enabled true, value "special")
+		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
 
-		// When — change only the segment value
+		// When
 		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--value", "new", "--yes")
 
 		// Then
@@ -3773,15 +3756,13 @@ func TestFlagUpdateSegment(t *testing.T) {
 	})
 
 	t.Run("a new override inherits the env default state", func(t *testing.T) {
-		// Given onboarding_banner is ON in the environment and segment 7 has
-		// no override yet
+		// Given
 		f := flagUpdateEnv(t)
 
-		// When — a value-only edit creates the override
+		// When
 		out, err := run("", "flag", "update", "onboarding_banner", "--segment", "7", "--value", "yo", "--yes")
 
-		// Then — the new override inherits enabled=true like it inherits the
-		// value; a value edit must not silently switch the segment off
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
 		}
@@ -3792,14 +3773,14 @@ func TestFlagUpdateSegment(t *testing.T) {
 	})
 
 	t.Run("a new override inherits the env default value", func(t *testing.T) {
-		// Given no existing override; env default value is integer 25
+		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, false)
 
-		// When — enable a fresh override with no explicit value
+		// When
 		_, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
 
-		// Then — the override inherits the env default value (integer 25)
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --segment: %v", err)
 		}
@@ -3817,13 +3798,13 @@ func TestFlagUpdateSegment(t *testing.T) {
 // fetched exactly once per invocation.
 func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 	t.Run("enable renders the new state from one features fetch", func(t *testing.T) {
-		// Given max_items is off with integer value 25
+		// Given
 		f := flagUpdateEnv(t)
 
 		// When
 		out, err := run("", "flag", "enable", "max_items", "--yes")
 
-		// Then — the detail shows the enabled state without a second fetch
+		// Then
 		if err != nil {
 			t.Fatalf("flag enable: %v\noutput: %s", err, out)
 		}
@@ -3836,7 +3817,7 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 	})
 
 	t.Run("segment update reads override metadata once", func(t *testing.T) {
-		// Given an existing override for powerusers (12) at priority 1
+		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
 		withFeatureSegments(f, 2, map[string]any{
@@ -3846,8 +3827,7 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 		// When
 		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--value", "new", "--yes")
 
-		// Then — one features fetch, one feature-segments fetch, and the
-		// detail carries the (unmoved) priority and the new value
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
 		}
@@ -3865,7 +3845,7 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 	})
 
 	t.Run("a priority move reprints the target priority", func(t *testing.T) {
-		// Given two overrides, ours at priority 1
+		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
 		f.features["101"][0]["num_segment_overrides"] = 2
@@ -3874,7 +3854,7 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 			map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1},
 		)
 
-		// When — move it to the top
+		// When
 		out, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "0", "--yes")
 
 		// Then
@@ -3887,14 +3867,14 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 	})
 
 	t.Run("a new override reports the appended priority", func(t *testing.T) {
-		// Given one existing override (for another segment) and none for 7
+		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, false) // num_segment_overrides: 1
 
-		// When — create a fresh override with no explicit priority
+		// When
 		out, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
 
-		// Then — it joins at the end of the dense 0-based order: priority 1
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
 		}
@@ -3905,9 +3885,7 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 }
 
 func TestFlagSegmentByName(t *testing.T) {
-	// Per 04 §3, every entity input is a reference: all-digit → id, anything
-	// else → name. The fake project has segments 42 "us-adults" and 57
-	// "beta-optin".
+	// The fake project has segments 42 "us-adults" and 57 "beta-optin".
 	t.Run("flag list --segment resolves a name", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
@@ -4293,7 +4271,6 @@ func TestFlagUpdatePriority(t *testing.T) {
 }
 
 func TestFlagFeatureByID(t *testing.T) {
-	// Per 04 §3, the feature positional is a reference: all-digit → id.
 	// Default features: onboarding_banner (1), max_items (2).
 	t.Run("get accepts a feature id", func(t *testing.T) {
 		_ = flagUpdateEnv(t)
@@ -4403,16 +4380,14 @@ func TestFlagReorder(t *testing.T) {
 	})
 
 	t.Run("resolves refs and renders from data already in hand", func(t *testing.T) {
-		// Given — the feature-segments rows carry every name a valid ref can
-		// use, and the pre-write reads carry every override's state
+		// Given
 		f := flagUpdateEnv(t)
 		withFeatureOverridesFixture(f)
 
-		// When — both segments referenced by name
+		// When
 		out, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
 
-		// Then — no segments-list fetch, and no post-write re-reads: the
-		// printed order is derived from the write itself
+		// Then
 		if err != nil {
 			t.Fatalf("flag reorder: %v\noutput: %s", err, out)
 		}
@@ -4435,10 +4410,10 @@ func TestFlagReorder(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withFeatureOverridesFixture(f)
 
-		// When — "nope" matches no override row and no project segment
+		// When
 		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "nope", "--yes")
 
-		// Then — the fallback resolution names the segment, not the override
+		// Then
 		if err == nil || !strings.Contains(err.Error(), `segment "nope" not found`) {
 			t.Errorf("err = %v, want the segment-not-found error", err)
 		}
@@ -4512,7 +4487,7 @@ func TestFlagDelete(t *testing.T) {
 		// When
 		out, err := run("", "flag", "delete", "max_items", "--segment", "12", "--yes")
 
-		// Then — the override is deleted; a delete prints no resource
+		// Then
 		if err != nil {
 			t.Fatalf("flag delete: %v\noutput: %s", err, out)
 		}
@@ -4548,13 +4523,13 @@ func TestFlagDelete(t *testing.T) {
 }
 
 func TestUsageIsSingleLine(t *testing.T) {
-	// Given / When — root help
+	// Given / When
 	out, err := run("", "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Then — one context-appropriate line, not cobra's default two-line form
+	// Then
 	if !strings.Contains(out, "flagsmith [command] [flags]") {
 		t.Errorf("root usage = %q, want the single-line form", out)
 	}
@@ -4562,7 +4537,6 @@ func TestUsageIsSingleLine(t *testing.T) {
 		t.Errorf("root usage still shows the two-line form:\n%s", out)
 	}
 
-	// Leaf commands render their own use line
 	leaf, err := run("", "flag", "list", "--help")
 	if err != nil {
 		t.Fatal(err)
@@ -4683,15 +4657,14 @@ func TestFlagIdentity(t *testing.T) {
 	})
 
 	t.Run("core: update resolves the identifier once", func(t *testing.T) {
-		// Given an existing override (off, value "x")
+		// Given
 		f := flagUpdateEnv(t)
 		f.coreOverrides[501] = map[int]*fakeFS{2: {id: 9001, enabled: false, value: "x"}}
 
 		// When
 		out, err := run("", "flag", "update", "max_items", "--identifier", "user-1", "--enable", "--yes")
 
-		// Then — one identifier→id lookup serves the read, the write, and the
-		// reprint (which renders the state the command itself wrote)
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
 		}
@@ -4704,14 +4677,13 @@ func TestFlagIdentity(t *testing.T) {
 	})
 
 	t.Run("core: a new override inherits the env default state", func(t *testing.T) {
-		// Given onboarding_banner is ON in the environment and user-1 has no
-		// override for it
+		// Given
 		f := flagUpdateEnv(t)
 
-		// When — a value-only edit creates the override
+		// When
 		out, err := run("", "flag", "update", "onboarding_banner", "--identifier", "user-1", "--value", "yo", "--yes")
 
-		// Then — enabled inherits the environment default, like the value does
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
 		}
@@ -4724,13 +4696,13 @@ func TestFlagIdentity(t *testing.T) {
 	})
 
 	t.Run("core: a missing identity is created after one lookup", func(t *testing.T) {
-		// Given no identity "new-user"
+		// Given
 		f := flagUpdateEnv(t)
 
 		// When
 		out, err := run("", "flag", "update", "max_items", "--identifier", "new-user", "--enable", "--yes")
 
-		// Then — one (miss) lookup, a create, and the override write
+		// Then
 		if err != nil {
 			t.Fatalf("flag update --identifier: %v\noutput: %s", err, out)
 		}
@@ -4750,7 +4722,7 @@ func TestFlagIdentity(t *testing.T) {
 	})
 
 	t.Run("edge: update resolves the uuid once", func(t *testing.T) {
-		// Given an existing edge override
+		// Given
 		f := flagUpdateEnv(t)
 		f.useEdge = true
 		f.edgeOverrides["edge-user"] = map[int]*fakeFS{2: {enabled: false, value: "e"}}
@@ -5094,7 +5066,7 @@ func TestFeatureGet(t *testing.T) {
 // unfiltered.
 func TestFeatureSearchNarrowsFetch(t *testing.T) {
 	t.Run("flag get by name sends search and matches exactly", func(t *testing.T) {
-		// Given two features sharing a prefix — a contains match returns both
+		// Given
 		f := flagUpdateEnv(t)
 		f.features["101"] = []map[string]any{
 			{"id": 7, "name": "checkout", "type": "STANDARD",
@@ -5110,7 +5082,7 @@ func TestFeatureSearchNarrowsFetch(t *testing.T) {
 		// When
 		out, err := run("", "flag", "get", "checkout")
 
-		// Then — the fetch was narrowed server-side and the exact name won
+		// Then
 		if err != nil {
 			t.Fatalf("flag get: %v\noutput: %s", err, out)
 		}
@@ -5123,13 +5095,13 @@ func TestFeatureSearchNarrowsFetch(t *testing.T) {
 	})
 
 	t.Run("an id ref sends no search", func(t *testing.T) {
-		// Given the stock features, where max_items has id 2
+		// Given
 		f := flagUpdateEnv(t)
 
 		// When
 		out, err := run("", "flag", "get", "2")
 
-		// Then — a name search can't match an id, so the fetch is unfiltered
+		// Then
 		if err != nil {
 			t.Fatalf("flag get: %v\noutput: %s", err, out)
 		}
@@ -5183,7 +5155,7 @@ func TestFalseyEnvSwitches(t *testing.T) {
 		// When
 		out, err := run("", "organisation", "list")
 
-		// Then — the human table, not JSON
+		// Then
 		if err != nil {
 			t.Fatalf("organisation list: %v\noutput: %s", err, out)
 		}
@@ -5193,16 +5165,16 @@ func TestFalseyEnvSwitches(t *testing.T) {
 	})
 
 	t.Run("FLAGSMITH_NO_INPUT=false still prompts", func(t *testing.T) {
-		// Given a TTY and the liveness switch explicitly off
+		// Given
 		f := flagUpdateEnv(t)
 		_ = f
 		fakeTTY(t)
 		t.Setenv("FLAGSMITH_NO_INPUT", "false")
 
-		// When a confirmation is needed and the answer is no
+		// When
 		out, err := run("n\n", "project", "delete", "101")
 
-		// Then it prompted rather than refusing for want of a TTY
+		// Then
 		if err != nil {
 			t.Fatalf("project delete: %v\noutput: %s", err, out)
 		}
@@ -5212,10 +5184,10 @@ func TestFalseyEnvSwitches(t *testing.T) {
 	})
 }
 
-// A standard feature has no variants, and an empty list renders [] — the
-// slice is built here, so it never passes through getList's normalisation.
+// A standard feature has no variants, and an empty list renders []. The slice is
+// built in the command, so it never passes through getList's normalisation.
 func TestFeatureVariantListEmptyIsArray(t *testing.T) {
-	// Given a standard feature, which has no multivariate options
+	// Given
 	f := flagUpdateEnv(t)
 	withFeatures(f) // checkout-v2 is STANDARD
 
@@ -5230,7 +5202,6 @@ func TestFeatureVariantListEmptyIsArray(t *testing.T) {
 		t.Errorf("output = %q, want []", out)
 	}
 
-	// And --jq '.[]' iterates zero items instead of erroring on null
 	out, err = run("", "feature", "variant", "list", "checkout-v2", "--jq", ".[]")
 	if err != nil {
 		t.Fatalf("feature variant list --jq: %v\noutput: %s", err, out)
@@ -5492,8 +5463,7 @@ func TestEnvironment(t *testing.T) {
 	})
 
 	t.Run("get by name renders from the list row, project label from the cache", func(t *testing.T) {
-		// Given the project referenced by name, so resolving it seeds the
-		// project-name cache in the same invocation
+		// Given
 		isolateStorage(t)
 		f := newFakeInstance(t)
 		withEnvironments(f)
@@ -5504,8 +5474,7 @@ func TestEnvironment(t *testing.T) {
 		// When
 		out, err := run("", "environment", "get", "Production")
 
-		// Then — no retrieve calls: the list row carries the human detail,
-		// and the project label comes from the name cache
+		// Then
 		if err != nil {
 			t.Fatalf("environment get: %v\noutput: %s", err, out)
 		}
@@ -5523,7 +5492,7 @@ func TestEnvironment(t *testing.T) {
 	})
 
 	t.Run("get with a cold name cache degrades to the bare project id", func(t *testing.T) {
-		// Given a numeric project ref — nothing seeds the cache
+		// Given
 		f := flagUpdateEnv(t)
 		withEnvironments(f)
 
@@ -5560,8 +5529,8 @@ func TestEnvironment(t *testing.T) {
 	})
 
 	t.Run("--json mirrors the API fields via the retrieve payload", func(t *testing.T) {
-		// The retrieve serializer is richer than the list row (metadata), so
-		// machine output re-fetches for fidelity.
+		// The retrieve serializer is richer than the list row, so machine
+		// output re-fetches for fidelity.
 		f := flagUpdateEnv(t)
 		withEnvironments(f)
 		out, err := run("", "environment", "get", "Production", "--json")
@@ -5769,10 +5738,10 @@ func TestProject(t *testing.T) {
 			{"id": 101, "name": "acme-api", "organisation": 3},
 		}
 
-		// When — the org is resolved by name, which fetches the org list once
+		// When
 		out, err := run("", "project", "list", "--organisation", "Acme")
 
-		// Then — that same fetch (via the cache it seeds) labels the table
+		// Then
 		if err != nil {
 			t.Fatalf("project list --organisation: %v\noutput: %s", err, out)
 		}
@@ -5785,8 +5754,7 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("several projects in one organisation still label from the cache", func(t *testing.T) {
-		// Given a warm cache and two projects sharing the organisation —
-		// duplicate ids must not read as a cache miss
+		// Given
 		f := flagUpdateEnv(t)
 		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
 		f.projects["3"] = []map[string]any{
@@ -5797,7 +5765,7 @@ func TestProject(t *testing.T) {
 		// When
 		out, err := run("", "project", "list", "--organisation", "Acme")
 
-		// Then — the resolution fetch is the only organisations call
+		// Then
 		if err != nil {
 			t.Fatalf("project list: %v\noutput: %s", err, out)
 		}
@@ -5810,19 +5778,17 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("--organisation scopes name resolution", func(t *testing.T) {
-		// Given "site" exists only in Beta (7), and the user scopes to Acme (3)
+		// Given
 		f := flagUpdateEnv(t)
 		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
 		f.projects["7"] = []map[string]any{{"id": 701, "name": "site", "organisation": 7}}
 
-		// When / Then — the name must not resolve in an organisation the user
-		// excluded; a single match in the wrong organisation is the trap
+		// When / Then
 		_, err := run("", "project", "get", "site", "--organisation", "Acme")
 		if err == nil || !strings.Contains(err.Error(), `"site" not found in organisation 3`) {
 			t.Errorf("err = %v, want not-found scoped to organisation 3", err)
 		}
 
-		// And the same ref resolves when the scope actually holds it
 		out, err := run("", "project", "get", "site", "--organisation", "Beta")
 		if err != nil {
 			t.Fatalf("project get --organisation Beta: %v\noutput: %s", err, out)
@@ -5833,7 +5799,7 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("a name still resolves across organisations without a scope", func(t *testing.T) {
-		// Given no organisation in context (flagUpdateEnv's config sets none)
+		// Given
 		f := flagUpdateEnv(t)
 		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}, {"id": 7, "name": "Beta"}}
 		f.projects["7"] = []map[string]any{{"id": 701, "name": "site", "organisation": 7}}
@@ -5851,8 +5817,7 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("time at a confirmation does not count against the deadline", func(t *testing.T) {
-		// Given a 1s invocation deadline and a human who takes longer than
-		// that to answer the confirmation
+		// Given
 		f := flagUpdateEnv(t)
 		_ = f
 		fakeTTY(t)
@@ -5862,8 +5827,7 @@ func TestProject(t *testing.T) {
 		// When
 		out, err := runWithStdin(stdin, "project", "delete", "101")
 
-		// Then — saying yes after a pause must not doom the delete to a
-		// context-deadline-exceeded; the clock restarts after the prompt
+		// Then
 		if err != nil {
 			t.Fatalf("project delete after a slow confirm: %v\noutput: %s", err, out)
 		}
@@ -5873,13 +5837,13 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("delete by id prints the id once, not duplicated", func(t *testing.T) {
-		// Given a cold name cache and a numeric ref
+		// Given
 		f := flagUpdateEnv(t)
 
 		// When
 		out, err := run("", "project", "delete", "101", "--yes")
 
-		// Then — the typed ref is an id, not a name: no "101 (101)"
+		// Then
 		if err != nil {
 			t.Fatalf("project delete: %v\noutput: %s", err, out)
 		}
@@ -5890,7 +5854,7 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("delete by name labels with the name and id", func(t *testing.T) {
-		// Given — resolving the name seeds the cache in the same invocation
+		// Given
 		f := flagUpdateEnv(t)
 
 		// When
@@ -5907,7 +5871,7 @@ func TestProject(t *testing.T) {
 	})
 
 	t.Run("get labels the organisation from a warm cache without a fetch", func(t *testing.T) {
-		// Given a warm org-name cache (seeded by an earlier org resolution)
+		// Given
 		f := flagUpdateEnv(t)
 		f.orgs = []map[string]any{{"id": 3, "name": "Acme"}}
 		if _, err := run("", "project", "list", "--organisation", "Acme"); err != nil {
@@ -5918,7 +5882,7 @@ func TestProject(t *testing.T) {
 		// When
 		out, err := run("", "project", "get", "acme-api")
 
-		// Then — the label renders with no further org fetch
+		// Then
 		if err != nil {
 			t.Fatalf("project get: %v\noutput: %s", err, out)
 		}
@@ -6012,11 +5976,11 @@ func TestOrganisation(t *testing.T) {
 	})
 
 	t.Run("an empty list renders [] not null, and --jq can iterate it", func(t *testing.T) {
-		// Given no organisations (05 §2: "Empty list: [] as JSON")
+		// Given
 		f := flagUpdateEnv(t)
 		f.orgs = nil
 
-		// When / Then — --json is the array literal
+		// When / Then
 		out, err := run("", "organisation", "list", "--json")
 		if err != nil {
 			t.Fatalf("organisation list --json: %v\noutput: %s", err, out)
@@ -6025,7 +5989,6 @@ func TestOrganisation(t *testing.T) {
 			t.Errorf("output = %q, want []", out)
 		}
 
-		// And --jq '.[]' iterates zero items instead of erroring on null
 		out, err = run("", "organisation", "list", "--jq", ".[]")
 		if err != nil {
 			t.Fatalf("organisation list --jq: %v\noutput: %s", err, out)
@@ -6157,8 +6120,7 @@ func TestAPI(t *testing.T) {
 	})
 
 	t.Run("fields join a path that already has a query string", func(t *testing.T) {
-		// Given a path carrying ?organisation=3 — the field must join with &,
-		// not start a second ? that fuses both into one bogus value
+		// Given
 		flagUpdateEnv(t)
 		out, err := run("", "api", "api/v1/echo/?organisation=3", "-X", "GET", "-F", "page=2")
 		if err != nil {
@@ -6232,7 +6194,7 @@ func TestFlagCreateIsNudge(t *testing.T) {
 	f := flagUpdateEnv(t)
 	out, err := run("", "flag", "create", "brand-new")
 
-	// Then — a usage error whose hint points at feature create
+	// Then
 	var ue *usageError
 	if !errors.As(err, &ue) || !strings.Contains(hintFor(err), "feature create brand-new") {
 		t.Errorf("err = %v (hint %q), want a hint nudging toward `feature create`", err, hintFor(err))
@@ -6252,7 +6214,7 @@ func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
 	writeConfig(t, root, `{"project": 1, "apiUrl": "`+f.srv.URL+`"}`)
 	setMasterKey(t, f.srv.URL)
 
-	// When — no --api-url flag anywhere
+	// When
 	out, err := run("", "auth", "status")
 
 	// Then
@@ -6326,15 +6288,14 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 	}
 
 	t.Run("withheld from a host the config named", func(t *testing.T) {
-		// Given a key set as for SaaS, and a config pointing elsewhere
+		// Given
 		f := setup(t)
 		t.Setenv(envAPIKey, masterKey)
 
 		// When
 		_, err := run("", "flag", "list")
 
-		// Then — nothing is sent: resolution falls through to the keychain,
-		// which holds no session for that host
+		// Then
 		if !errors.Is(err, auth.ErrNotLoggedIn) {
 			t.Errorf("err = %v, want ErrNotLoggedIn (credential withheld)", err)
 		}
@@ -6344,7 +6305,7 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 	})
 
 	t.Run("sent when scoped to that host", func(t *testing.T) {
-		// Given the same config, with the key scoped to the instance
+		// Given
 		f := setup(t)
 		setMasterKey(t, f.srv.URL)
 
@@ -6363,7 +6324,7 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 
 // The bearer variable is withheld from a redirected host like the master key.
 func TestUnscopedAccessTokenNotSentToRedirectedHost(t *testing.T) {
-	// Given an unscoped bearer (as for SaaS) and a config naming another host
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	root := tempRepo(t)
@@ -6410,7 +6371,7 @@ func TestSDKKeyScopesToSDKSurface(t *testing.T) {
 	}
 
 	t.Run("a key scoped to the SDK host is used", func(t *testing.T) {
-		// Given a secret scoped to the SDK host
+		// Given
 		_, sdk := setup(t)
 		setEnvCred(t, envEnvironmentKey, sdk.srv.URL, "ser.sdkSurfaceSecret")
 
@@ -6421,7 +6382,7 @@ func TestSDKKeyScopesToSDKSurface(t *testing.T) {
 	})
 
 	t.Run("a key scoped to the admin host is not used here", func(t *testing.T) {
-		// Given a secret scoped to the Admin host instead
+		// Given
 		admin, _ := setup(t)
 		setEnvCred(t, envEnvironmentKey, admin.srv.URL, "ser.wrongSurfaceSecret")
 
@@ -6432,7 +6393,7 @@ func TestSDKKeyScopesToSDKSurface(t *testing.T) {
 	})
 
 	t.Run("an unscoped key is withheld from a non-default SDK host", func(t *testing.T) {
-		// Given an unscoped secret and a non-default SDK host
+		// Given
 		setup(t)
 		t.Setenv(envEnvironmentKey, "ser.unscopedSecret")
 
@@ -6464,7 +6425,7 @@ func TestEnvAccessToken(t *testing.T) {
 }
 
 func TestEnvMasterKeyRejectsAccessToken(t *testing.T) {
-	// Given — a bearer/dotless token in the master-key variable
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	setEnvCred(t, envAPIKey, f.srv.URL, bearerToken)
@@ -6472,14 +6433,14 @@ func TestEnvMasterKeyRejectsAccessToken(t *testing.T) {
 	// When
 	_, err := run("", "auth", "status", "--api", f.srv.URL)
 
-	// Then — rejected, with a hint pointing at the variable that fits
+	// Then
 	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ACCESS_TOKEN") {
 		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ACCESS_TOKEN", err, hintFor(err))
 	}
 }
 
 func TestEnvMasterKeyBeatsAccessToken(t *testing.T) {
-	// Given — both set; the master key takes precedence
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	setMasterKey(t, f.srv.URL)
@@ -6506,7 +6467,7 @@ func TestEnvServerKeyRejected(t *testing.T) {
 	// When
 	_, err := run("", "auth", "status", "--api", f.srv.URL)
 
-	// Then — the recovery lives in the hint, not the message
+	// Then
 	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
 		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 	}
@@ -6538,15 +6499,15 @@ func TestEnvBeatsKeychain(t *testing.T) {
 }
 
 func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
-	// Given — no keychain
+	// Given
 	isolateStorage(t)
 	keyring.MockInitWithError(errors.New("keychain locked"))
 	f := newFakeInstance(t)
 
-	// When — login probes the keychain before starting the flow
+	// When
 	out, err := run("", "login", "--api-url", f.srv.URL, "--no-browser")
 
-	// Then — it fails closed toward FLAGSMITH_API_KEY, starting no OAuth flow
+	// Then
 	if err == nil {
 		t.Fatalf("expected fail-closed error, got success: %q", out)
 	}
@@ -6559,7 +6520,7 @@ func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 }
 
 func TestRefreshPersistsToKeychain(t *testing.T) {
-	// Given a stale OAuth session in the keychain
+	// Given
 	isolateStorage(t)
 	f := newFakeInstance(t)
 	if err := auth.Save(&auth.Credentials{
@@ -6575,7 +6536,7 @@ func TestRefreshPersistsToKeychain(t *testing.T) {
 		t.Fatalf("auth status: %v", err)
 	}
 
-	// Then — the rotated token is written back to the keychain
+	// Then
 	creds, err := auth.Load(f.srv.URL)
 	if err != nil {
 		t.Fatal(err)

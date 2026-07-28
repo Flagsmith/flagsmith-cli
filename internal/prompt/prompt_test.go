@@ -69,7 +69,7 @@ func TestSelectEOFFallsBackToDefaultWithoutHanging(t *testing.T) {
 	// Given
 	io, _ := testIO("")
 
-	// When — EOF must terminate, never spin (02: never a hang)
+	// When
 	idx, err := Select(io, "Project", []string{"a", "b"}, 1)
 
 	// Then
@@ -121,7 +121,7 @@ func TestTextDefault(t *testing.T) {
 }
 
 func TestSequentialPromptsShareInput(t *testing.T) {
-	// Given — one input stream feeding two consecutive prompts
+	// Given
 	io, _ := testIO("2\ny\n")
 
 	// When
@@ -131,7 +131,7 @@ func TestSequentialPromptsShareInput(t *testing.T) {
 	}
 	ok, err := Confirm(io, "Write changes?")
 
-	// Then — the select must not swallow the confirm's input
+	// Then
 	if err != nil {
 		t.Fatal(err)
 	}

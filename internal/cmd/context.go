@@ -79,8 +79,8 @@ func contextValue(cmd *cobra.Command, flagName, flagVal, envVar string,
 	return resolved{Value: def, Source: sourceDefault}
 }
 
-// asString and trimSlash are the transforms context values use: environments
-// pass through verbatim, URLs lose their trailing slash once here.
+// asString and trimSlash are the context-value transforms: environments pass
+// through verbatim, URLs lose their trailing slash.
 func asString(raw string) any  { return raw }
 func trimSlash(raw string) any { return strings.TrimRight(raw, "/") }
 
@@ -152,7 +152,6 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 			hintServerSideKey)
 	}
 
-	// apiUrl
 	pc.APIURL = contextValue(cmd, "api-url", apiURLFlag, "FLAGSMITH_API_URL", trimSlash,
 		func() (any, bool) { return strings.TrimRight(file.APIURL, "/"), file.APIURL != "" }, defaultAPIURL)
 

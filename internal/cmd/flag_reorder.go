@@ -34,7 +34,7 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	name = feature.Name // canonical from here on: the wire ref and messages
+	name = feature.Name // canonical for the wire ref and messages
 
 	fss, err := cred.client().FeatureSegments(cmd.Context(), env.ID, feature.ID)
 	if err != nil {

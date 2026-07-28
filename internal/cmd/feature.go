@@ -281,7 +281,7 @@ var featureDeleteCmd = &cobra.Command{
 			return err
 		}
 		errOut := cmd.ErrOrStderr()
-		// Features have no name cache; the ref's name half (or nothing).
+		// Features have no name cache; the ref's name half is all there is.
 		name := nameRef(args[0])
 		if ok, err := confirmed(cmd, fmt.Sprintf("delete feature %s", label(name, id)), "deleted"); !ok || err != nil {
 			return err

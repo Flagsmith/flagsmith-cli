@@ -12,16 +12,8 @@ import (
 
 // A hint is an optional line rendered after an error message (before the usage
 // block, when one is printed) to help the user recover — either a recovery
-// command or a context link. See docs/design/02-output-and-interactivity.md §4.
-//
-// Hints reach the surface two ways:
-//   - explicitly, by wrapping any error with withHint / hintf at the call site;
-//   - automatically, when the error is (or wraps) a known condition that hintFor
-//     recognises — e.g. api.ErrPlanGated always suggests the pricing page, with
-//     no work at the call site.
-//
-// Wrapping preserves the underlying error, so errors.Is/errors.As still see
-// usageError, sentinels, etc. through a hintedError.
+// command or a context link. Wrapping preserves the underlying error, so
+// errors.Is/errors.As still see usageError and sentinels through a hintedError.
 
 // Common hints reused across the CLI.
 const (
@@ -75,9 +67,8 @@ func hintf(err error, format string, a ...any) error {
 }
 
 // hintFor returns the hint to display for err: an explicitly attached hint if
-// present, otherwise one derived from a recognised condition, otherwise "".
-// This is the single place that maps error conditions to recovery guidance, so
-// any command surfacing such an error gets the hint for free.
+// present, otherwise one derived from a recognised condition, otherwise "". It
+// is the single place mapping error conditions to recovery guidance.
 func hintFor(err error) string {
 	var h *hintedError
 	if errors.As(err, &h) && h.hint != "" {

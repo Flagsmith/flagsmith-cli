@@ -56,9 +56,8 @@ func versioningLabel(v2 bool) string {
 
 func renderEnvironment(cmd *cobra.Command, e *api.Environment) error {
 	return output.Render(cmd.OutOrStdout(), e, outputOpts(), func(w io.Writer) error {
-		// The project name comes from the local name cache — strictly
-		// cosmetic, so a miss degrades to the bare id rather than paying a
-		// round-trip for a label (04 §3).
+		// The project name comes from the local name cache — strictly cosmetic,
+		// so a miss degrades to the bare id rather than paying for a label.
 		projLabel := label(cache.Load(apiURL).Projects[strconv.Itoa(e.Project)], e.Project)
 		return output.Detail(w, []output.Field{
 			{Label: "Environment", Value: label(e.Name, e.APIKey)},
@@ -105,8 +104,7 @@ var environmentGetCmd = &cobra.Command{
 			return err
 		}
 		// The human detail's fields are all in the resolved list row. The
-		// retrieve payload is richer (metadata), so machine output re-fetches
-		// for fidelity.
+		// retrieve payload is richer, so machine output re-fetches for fidelity.
 		env := ref
 		if jsonOutput() {
 			if env, err = cred.client().GetEnvironment(cmd.Context(), ref.APIKey); err != nil {

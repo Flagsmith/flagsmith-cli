@@ -24,7 +24,7 @@ var rawTerminal = func() bool {
 
 // noInput reports the non-interactive switch: --no-input or FLAGSMITH_NO_INPUT.
 // It is a liveness guarantee (never block on a human), orthogonal to --yes
-// (authorization). See docs/design/02-output-and-interactivity.md.
+// (authorization).
 func noInput() bool {
 	return noInputFlag || envBool("FLAGSMITH_NO_INPUT")
 }
@@ -47,10 +47,9 @@ func promptIO(cmd *cobra.Command) prompt.IO {
 	return prompt.IO{In: promptIn, ErrOut: cmd.ErrOrStderr(), RawTTY: rawTerminal()}
 }
 
-// The prompt helpers take the flag that supplies the same value without a
-// TTY, and self-guard: called non-interactively they return a usage error
-// (exit 2) naming that flag rather than hanging. This structurally links
-// every prompt to a flag — a prompt cannot be added without naming one.
+// The prompt helpers take the flag that supplies the same value without a TTY,
+// and self-guard: called non-interactively they return a usage error naming
+// that flag rather than hanging.
 
 func selectPrompt(cmd *cobra.Command, flag, label string, options []string, def int) (int, error) {
 	if !interactive() {
@@ -72,7 +71,7 @@ func textPrompt(cmd *cobra.Command, flag, label, def string) (string, error) {
 
 // confirmOrYes resolves a yes/no confirmation. --yes authorizes it; otherwise
 // an interactive TTY prompts; otherwise (--no-input, FLAGSMITH_NO_INPUT, or no
-// TTY) it is a usage error (exit 2) naming --yes. Non-interactive execution
+// TTY) it is a usage error naming --yes. Non-interactive execution
 // never authorizes on its own: --no-input is a liveness switch, not consent.
 func confirmOrYes(cmd *cobra.Command, label string) (bool, error) {
 	if yesFlag {
@@ -86,10 +85,9 @@ func confirmOrYes(cmd *cobra.Command, label string) (bool, error) {
 	return ok, err
 }
 
-// confirmed resolves a confirmation and, on decline, prints the standard
-// abort line: "Aborted; nothing <outcome>." — outcome names what was left
-// untouched (deleted / changed / written). A decline reports ok=false with a
-// nil error, so callers can `if !ok || err != nil { return err }`.
+// confirmed resolves a confirmation and, on decline, prints the standard abort
+// line: "Aborted; nothing <outcome>." — outcome names what was left untouched
+// (deleted / changed / written). A decline is ok=false with a nil error.
 func confirmed(cmd *cobra.Command, prompt, outcome string) (bool, error) {
 	ok, err := confirmOrYes(cmd, prompt)
 	if err != nil {

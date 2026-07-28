@@ -23,13 +23,12 @@ const (
 	// Flagsmith instance.
 	ClientID = "flagsmith-cli"
 
-	// Always request scope explicitly.
 	Scope = "admin-api"
 
 	loginTimeout = 5 * time.Minute
 )
 
-// Metadata is the subset of RFC 8414 authorization server metadata we use.
+// Metadata is a subset of RFC 8414 authorization server metadata.
 type Metadata struct {
 	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
@@ -41,11 +40,11 @@ type Metadata struct {
 // 8414 §3.3: metadata is served by one unauthenticated path, so without the
 // issuer anchor a compromised /.well-known/* route could redirect the refresh
 // token — the long-lived credential — to any host at the next quiet renewal.
-// The endpoints that receive credentials (token, revocation) must live on the
-// issuer over https; the authorization endpoint is browser-visited and
-// carries no CLI secret (Flagsmith serves it from the dashboard host), so it
-// may be cross-origin but must be https. Loopback hosts are exempt from
-// https so local instances keep working.
+// Endpoints that receive credentials (token, revocation) must live on the issuer
+// over https. The authorization endpoint is browser-visited and carries no CLI
+// secret (Flagsmith serves it from the dashboard host), so it may be
+// cross-origin but must still be https. Loopback hosts are exempt from https so
+// local instances keep working.
 func (md *Metadata) validate(apiURL string) error {
 	if md.Issuer == "" {
 		return fmt.Errorf("authorization server metadata carries no issuer — cannot verify it speaks for %s", apiURL)
@@ -295,9 +294,8 @@ func credentialsFromToken(apiURL string, tok *tokenResponse) *Credentials {
 	}
 }
 
-// ErrRefreshFailed means an expired session's refresh-token exchange failed,
-// so the stored session is unusable. The recovery (re-run `flagsmith login`)
-// is attached as a hint at the command layer (see internal/cmd hintFor).
+// ErrRefreshFailed means an expired session's refresh-token exchange failed, so
+// the stored session is unusable.
 var ErrRefreshFailed = errors.New("refreshing session failed")
 
 // EnsureFresh refreshes the access token if it is expired or about to expire.

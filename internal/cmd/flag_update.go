@@ -95,7 +95,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if err != nil {
 		return err
 	}
-	name = feature.Name // canonical from here on: the wire ref and messages
+	name = feature.Name // canonical for the wire ref and messages
 
 	if m.identifier != "" {
 		return runIdentityUpdate(cmd, cred, env, projectID, feature, m.identifier, m.enable, m.disable, m.setValue)
@@ -128,9 +128,9 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		scope = fmt.Sprintf("for segment %s in environment %s", segment.display(), environmentLabel(env))
 	}
 
-	// Priorities are a dense 0-based order; a new override joins it, growing
-	// the valid range by one. The server treats the write as a move, so only
-	// the bounds need checking here.
+	// Priorities are a dense 0-based order; a new override joins it, growing the
+	// valid range by one. The server treats the write as a move, so only the
+	// bounds need checking.
 	if m.setPriority {
 		limit := feature.NumSegmentOverrides
 		if target == nil {
@@ -197,9 +197,9 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		output.Success(errOut, "Set %s priority to %d %s", name, m.priority, scope)
 	}
 
-	// Result model: an update also prints the resulting resource to stdout.
-	// The written state is fully known here — the request carried it — so the
-	// detail renders from it rather than re-fetching the features list.
+	// Result model: an update also prints the resulting resource to stdout. The
+	// request carried the written state in full, so the detail renders from it
+	// rather than re-fetching the features list.
 	scalar, err := nativeScalar(value)
 	if err != nil {
 		return err
@@ -247,9 +247,9 @@ var flagDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// This path fetches nothing that carries the segment's name, so the
-		// display comes from the name cache (the resolution above just seeded
-		// it when a name was given) and degrades to the bare id.
+		// Nothing on this path carries the segment's name, so the display comes
+		// from the name cache (seeded by resolving a name ref) and degrades to
+		// the bare id.
 		segmentLabel := label(cache.Load(apiURL).Segments[strconv.Itoa(segmentID)], segmentID)
 		errOut := cmd.ErrOrStderr()
 		prompt := fmt.Sprintf("delete %s override for segment %s in %s", name, segmentLabel, environmentLabel(env))
@@ -324,8 +324,7 @@ var flagCreateCmd = &cobra.Command{
 }
 
 // featureRefFor parses a feature reference into the update-flag wire form:
-// all-digit → id, anything else → name (04 §3). Used where no features fetch
-// happens, so the reference cannot be resolved client-side.
+// all-digit → id, anything else → name, resolved server-side.
 func featureRefFor(ref string) api.FeatureRef {
 	if id, err := strconv.Atoi(ref); err == nil {
 		return api.FeatureRef{ID: id}

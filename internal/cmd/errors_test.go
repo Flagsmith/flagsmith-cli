@@ -97,7 +97,7 @@ func TestReportError(t *testing.T) {
 	})
 }
 
-// Every runnable command carries an examples block (02 §4). Container commands
+// Every runnable command carries an examples block. Container commands
 // (no RunE) and cobra's built-ins are exempt.
 func TestEveryCommandHasExamples(t *testing.T) {
 	var missing []string
@@ -121,7 +121,7 @@ func TestEveryCommandHasExamples(t *testing.T) {
 }
 
 // Incorrect usage (bad arg count, unknown flag) exits 2 and prints usage, even
-// for cobra's own parse/validation failures — see 02 §4.
+// for cobra's own parse/validation failures.
 func TestUsageErrorsPrintUsage(t *testing.T) {
 	assertUsage := func(t *testing.T, out string, err error) {
 		t.Helper()

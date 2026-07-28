@@ -38,9 +38,7 @@ func (k APIKey) Apply(req *http.Request) {
 	req.Header.Set("Authorization", "Api-Key "+string(k))
 }
 
-// Client is the Flagsmith Admin API client. It owns the HTTP client, base URL,
-// auth scheme, and User-Agent, so callers issue requests without repeating any
-// of them on every call.
+// Client is the Flagsmith Admin API client.
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
@@ -51,8 +49,8 @@ type Client struct {
 // Option configures a Client.
 type Option func(*Client)
 
-// WithHTTPClient injects the underlying *http.Client (transport, timeouts,
-// retries). Defaults to httpx.New with the client's User-Agent.
+// WithHTTPClient injects the underlying *http.Client. Defaults to httpx.New
+// with the client's User-Agent.
 func WithHTTPClient(h *http.Client) Option {
 	return func(c *Client) { c.httpClient = h }
 }
@@ -63,7 +61,7 @@ func WithUserAgent(ua string) Option {
 }
 
 // NewClient builds a Client for one instance base URL and auth scheme. The base
-// URL's trailing slash is trimmed once here so paths join cleanly.
+// URL's trailing slash is trimmed so paths join cleanly.
 func NewClient(baseURL string, auth Auth, opts ...Option) *Client {
 	c := &Client{
 		baseURL:   strings.TrimRight(baseURL, "/"),
@@ -91,10 +89,9 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	return req, nil
 }
 
-// The typed CRUD helpers live at package level because Go methods cannot
-// take type parameters. Every resource method is one of these three shapes.
+// The typed CRUD helpers live at package level because Go methods cannot take
+// type parameters.
 
-// getOne fetches a single resource.
 func getOne[T any](ctx context.Context, c *Client, path string) (*T, error) {
 	out := new(T)
 	if err := c.get(ctx, path, out); err != nil {
@@ -137,7 +134,7 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// User is the subset of GET /api/v1/auth/users/me/ the CLI shows.
+// User is a subset of GET /api/v1/auth/users/me/.
 type User struct {
 	Email     string `json:"email"`
 	FirstName string `json:"first_name"`
@@ -150,17 +147,15 @@ func (c *Client) UsersMe(ctx context.Context) (*User, error) {
 }
 
 // rawItem holds the raw API JSON for a resource so JSON output can mirror the
-// server's full field set rather than a curated subset. Embedding can't
-// supply the marshal methods (they need the outer type), so each embedder
-// defines two one-liners over marshalOr / unmarshalRaw with a local alias
-// that sheds its own methods.
+// server's full field set rather than a curated subset. Embedding can't supply
+// the marshal methods (they need the outer type), so each embedder defines two
+// one-liners over marshalOr / unmarshalRaw with a method-less local alias.
 type rawItem struct {
 	raw json.RawMessage
 }
 
-// marshalOr returns the captured raw item, or marshals v (the outer value as
-// its method-less alias) when nothing was captured — e.g. a value built in
-// code rather than decoded from the API.
+// marshalOr returns the captured raw item, or marshals v when nothing was
+// captured — e.g. a value built in code rather than decoded from the API.
 func (r rawItem) marshalOr(v any) ([]byte, error) {
 	if len(r.raw) > 0 {
 		return r.raw, nil
@@ -168,8 +163,7 @@ func (r rawItem) marshalOr(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-// unmarshalRaw decodes b into out (the outer value as its method-less alias)
-// and captures a copy of b as the raw item.
+// unmarshalRaw decodes b into out and captures a copy of b as the raw item.
 func unmarshalRaw[T any](b []byte, out *T, raw *rawItem) error {
 	if err := json.Unmarshal(b, out); err != nil {
 		return err
@@ -178,8 +172,8 @@ func unmarshalRaw[T any](b []byte, out *T, raw *rawItem) error {
 	return nil
 }
 
-// Organisation carries the id/name the CLI needs plus the raw API item, so
-// JSON output mirrors the server's full field set.
+// Organisation carries the id/name plus the raw API item, so JSON output
+// mirrors the server's full field set.
 type Organisation struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
@@ -200,7 +194,6 @@ func (c *Client) Organisations(ctx context.Context) ([]Organisation, error) {
 	return getMany[Organisation](ctx, c, "/api/v1/organisations/")
 }
 
-// GetOrganisation fetches one organisation.
 func (c *Client) GetOrganisation(ctx context.Context, orgID int) (*Organisation, error) {
 	return getOne[Organisation](ctx, c, fmt.Sprintf("/api/v1/organisations/%d/", orgID))
 }
@@ -210,21 +203,18 @@ func (c *Client) CreateOrganisation(ctx context.Context, body map[string]any) (*
 	return send[Organisation](ctx, c, http.MethodPost, "/api/v1/organisations/", body)
 }
 
-// UpdateOrganisation patches an organisation's fields.
 func (c *Client) UpdateOrganisation(ctx context.Context, orgID int, body map[string]any) (*Organisation, error) {
 	return send[Organisation](ctx, c, http.MethodPatch, fmt.Sprintf("/api/v1/organisations/%d/", orgID), body)
 }
 
-// DeleteOrganisation removes an organisation.
 func (c *Client) DeleteOrganisation(ctx context.Context, orgID int) error {
 	return c.sendJSON(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/organisations/%d/", orgID), nil, nil)
 }
 
 // getList decodes a list endpoint that may respond paginated
-// ({count, next, results}) or as a bare array. Paginated responses are
-// followed across every page via the DRF "next" link, so callers always see
-// the full result set regardless of page size. The "next" URL's scheme and
-// host are discarded and only its path + query are reused against the base URL,
+// ({count, next, results}) or as a bare array. Paginated responses are followed
+// across every page via the DRF "next" link. The "next" URL's scheme and host
+// are discarded and only its path + query are reused against the base URL,
 // which keeps pagination working behind proxies that rewrite the host.
 func (c *Client) getList(ctx context.Context, path string, out any) error {
 	path = withPageSize(path)
@@ -260,8 +250,8 @@ func (c *Client) getList(ctx context.Context, path string, out any) error {
 			path += "?" + next.RawQuery
 		}
 	}
-	// The list contract is [] when empty (05 §2); a nil slice would marshal
-	// to null and leave the caller's slice nil, rendering null downstream.
+	// The list contract is [] when empty; a nil slice would marshal to null
+	// and leave the caller's slice nil, rendering null downstream.
 	if items == nil {
 		items = []json.RawMessage{}
 	}
@@ -274,9 +264,8 @@ func (c *Client) getList(ctx context.Context, path string, out any) error {
 
 // withPageSize asks a list endpoint for its largest page: the backend's
 // CustomPagination caps page_size at 999 and clamps larger asks (the edge
-// endpoints clamp at 100), so one round-trip replaces a sequential walk at
-// the server's default page size. Endpoints that don't paginate ignore the
-// parameter. getList's next-link loop stays as the safety net either way.
+// endpoints clamp at 100), so one round-trip replaces a sequential walk at the
+// server's default page size. Endpoints that don't paginate ignore the parameter.
 func withPageSize(path string) string {
 	if strings.Contains(path, "page_size=") {
 		return path
@@ -290,11 +279,10 @@ func withPageSize(path string) string {
 
 // responseError builds an error from a non-2xx response. It surfaces the API's
 // own message (DRF returns {"detail": "..."} or {"field": ["..."]}) and
-// classifies plan limits as ErrPlanGated (upgrade) or ErrQuotaExceeded (raise on
-// request). Flagsmith ships no machine-readable error code, so limits can only be
-// told apart from RBAC denials by their message text — see classifyLimit. As a
-// result, 403 caps (project count, experiment tier) are wire-identical to
-// permission denials and intentionally not classified here.
+// classifies plan limits as ErrPlanGated or ErrQuotaExceeded. Flagsmith ships no
+// machine-readable error code, so limits can only be told apart from RBAC denials
+// by their message text — see classifyLimit. 403 caps are wire-identical to
+// permission denials and so stay unclassified.
 func responseError(method, u string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
 	msg := apiMessage(body)
@@ -304,9 +292,9 @@ func responseError(method, u string, resp *http.Response) error {
 	return bug.Mark(&statusError{code: resp.StatusCode, status: resp.Status, message: msg, method: method, url: u})
 }
 
-// statusError is a non-2xx response the CLI didn't classify as a plan limit. It
-// carries the HTTP status so callers can special-case it (e.g. a 403 that is
-// really a project cap). bug.Mark wraps it, so it still reads as unexpected.
+// statusError is a non-2xx response that wasn't classified as a plan limit. It
+// carries the HTTP status so it can be special-cased. bug.Mark wraps it, so it
+// still reads as unexpected.
 type statusError struct {
 	code    int
 	status  string // e.g. "403 Forbidden"
@@ -364,17 +352,14 @@ func apiMessage(body []byte) string {
 	return strings.Join(msgs, "; ")
 }
 
-// quotaPhrases mark a resource cap that can be raised on request → ErrQuotaExceeded.
-// upgradePhrases mark a self-serve plan limit → ErrPlanGated. Matched case-
-// insensitively against the API's detail message — the only signal on the wire.
-// Both derive from the backend's exception detail strings.
+// Verbatim backend exception detail strings, matched case-insensitively against
+// the API's detail message — the only signal on the wire.
 var (
 	quotaPhrases   = []string{"maximum allowed"}                                           // feature / segment / segment-override caps
 	upgradePhrases = []string{"upgrade your plan", "payment issue", "has no subscription"} // seats / payment / no subscription
 )
 
 // classifyLimit returns a plan-limit error for a recognised message, or nil.
-// Quota caps are checked first; they are the enterprise-negotiable ones.
 func classifyLimit(msg string) error {
 	m := strings.ToLower(msg)
 	for _, p := range quotaPhrases {
@@ -390,9 +375,9 @@ func classifyLimit(msg string) error {
 	return nil
 }
 
-// planLimited carries the API's own reason and matches (via errors.Is) exactly
-// one sentinel — ErrQuotaExceeded or ErrPlanGated — so the CLI can pick the right
-// recovery hint while still showing the specific limit.
+// planLimited carries the API's own reason and matches exactly one sentinel —
+// ErrQuotaExceeded or ErrPlanGated — so the right recovery hint can be picked
+// while still showing the specific limit.
 type planLimited struct {
 	msg    string
 	target error
@@ -433,8 +418,9 @@ func (c *Client) sendJSON(ctx context.Context, method, path string, body, out an
 	return nil
 }
 
-// Project carries the fields the CLI needs plus the raw API item, so JSON
-// output mirrors the server's full field set.
+// Project carries the curated fields plus the raw API item, so JSON output
+// mirrors the server's full field set. UseEdgeIdentities decides whether
+// identity overrides live on the core or the edge endpoints.
 type Project struct {
 	ID                int    `json:"id"`
 	Name              string `json:"name"`
@@ -453,8 +439,6 @@ func (p Project) MarshalJSON() ([]byte, error) {
 	return p.marshalOr(alias(p))
 }
 
-// GetProject fetches a single project — notably its use_edge_identities flag,
-// which decides whether identity overrides use the core or edge endpoints.
 func (c *Client) GetProject(ctx context.Context, projectID int) (*Project, error) {
 	return getOne[Project](ctx, c, fmt.Sprintf("/api/v1/projects/%d/", projectID))
 }
@@ -477,7 +461,6 @@ type SubscriptionMetadata struct {
 	MaxProjects *int `json:"max_projects"`
 }
 
-// GetSubscriptionMetadata returns the organisation's plan limits.
 func (c *Client) GetSubscriptionMetadata(ctx context.Context, orgID int) (*SubscriptionMetadata, error) {
 	return getOne[SubscriptionMetadata](ctx, c, fmt.Sprintf("/api/v1/organisations/%d/get-subscription-metadata/", orgID))
 }
@@ -485,9 +468,9 @@ func (c *Client) GetSubscriptionMetadata(ctx context.Context, orgID int) (*Subsc
 // CreateProject creates a project from a flat field body (name + organisation
 // required).
 //
-// A project-cap denial arrives as a bare 403, identical to an RBAC "you
-// lack CREATE_PROJECT" denial. So on a 403 we check whether the org is actually
-// at its plan's project limit and, only then, surface it as ErrPlanGated.
+// A project-cap denial arrives as a bare 403, identical to an RBAC "you lack
+// CREATE_PROJECT" denial, so a 403 is only reported as ErrPlanGated once the
+// org is confirmed to be at its plan's project limit.
 func (c *Client) CreateProject(ctx context.Context, body map[string]any) (*Project, error) {
 	p, err := send[Project](ctx, c, http.MethodPost, "/api/v1/projects/", body)
 	if err == nil {
@@ -507,8 +490,7 @@ func (c *Client) CreateProject(ctx context.Context, body map[string]any) (*Proje
 }
 
 // projectCapReached reports whether orgID is at its plan's project limit. It
-// fails safe: if the limit or the count can't be read, it returns reached=false,
-// so CreateProject keeps the original error rather than guess a plan limit.
+// fails safe: if the limit or the count can't be read, reached is false.
 func (c *Client) projectCapReached(ctx context.Context, orgID int) (limit, count int, reached bool) {
 	meta, err := c.GetSubscriptionMetadata(ctx, orgID)
 	if err != nil || meta.MaxProjects == nil {
@@ -527,13 +509,12 @@ func (c *Client) UpdateProject(ctx context.Context, projectID int, body map[stri
 	return send[Project](ctx, c, http.MethodPatch, fmt.Sprintf("/api/v1/projects/%d/", projectID), body)
 }
 
-// DeleteProject removes a project.
 func (c *Client) DeleteProject(ctx context.Context, projectID int) error {
 	return c.sendJSON(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/projects/%d/", projectID), nil, nil)
 }
 
-// FeatureState is a feature's state in one environment: its on/off and typed
-// value. In the project features list, feature_state_value is a bare scalar.
+// FeatureState is a feature's state in one environment. In the project features
+// list, feature_state_value is a bare scalar.
 type FeatureState struct {
 	Enabled bool `json:"enabled"`
 	Value   any  `json:"feature_state_value"`
@@ -545,8 +526,6 @@ type CodeReferenceCount struct {
 }
 
 // Feature is a project feature with its state in the requested environment.
-// The CLI projects it into a curated shape for output; the fields here are the
-// subset those views need.
 type Feature struct {
 	ID                   int                  `json:"id"`
 	Name                 string               `json:"name"`
@@ -559,7 +538,7 @@ type Feature struct {
 	EnvironmentState     *FeatureState        `json:"environment_feature_state"`
 	SegmentState         *FeatureState        `json:"segment_feature_state"`
 
-	// Project-level definition fields (feature CRUD).
+	// Project-level definition fields.
 	InitialValue        *string              `json:"initial_value"`
 	DefaultEnabled      bool                 `json:"default_enabled"`
 	IsArchived          bool                 `json:"is_archived"`
@@ -580,8 +559,8 @@ type MultivariateOption struct {
 	Feature                     int      `json:"feature,omitempty"`
 }
 
-// ProjectFeatures lists a project's features (no environment context).
-// includeArchived controls whether archived features are returned.
+// ProjectFeatures lists a project's features. includeArchived controls whether
+// archived features are returned.
 func (c *Client) ProjectFeatures(ctx context.Context, projectID int, includeArchived bool) ([]Feature, error) {
 	path := fmt.Sprintf("/api/v1/projects/%d/features/", projectID)
 	if !includeArchived {
@@ -617,7 +596,6 @@ func (c *Client) UpdateFeature(ctx context.Context, projectID, featureID int, in
 	return send[Feature](ctx, c, http.MethodPatch, fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID), in)
 }
 
-// DeleteFeature removes a feature.
 func (c *Client) DeleteFeature(ctx context.Context, projectID, featureID int) error {
 	path := fmt.Sprintf("/api/v1/projects/%d/features/%d/", projectID, featureID)
 	return c.sendJSON(ctx, http.MethodDelete, path, nil, nil)
@@ -640,7 +618,6 @@ func (c *Client) UpdateMVOption(ctx context.Context, projectID, featureID, optio
 	return send[MultivariateOption](ctx, c, http.MethodPatch, path, in)
 }
 
-// DeleteMVOption removes a multivariate option.
 func (c *Client) DeleteMVOption(ctx context.Context, projectID, featureID, optionID int) error {
 	path := fmt.Sprintf("%s%d/", mvOptionsPath(projectID, featureID), optionID)
 	return c.sendJSON(ctx, http.MethodDelete, path, nil, nil)
@@ -655,12 +632,10 @@ func (f Feature) CodeReferences() int {
 	return total
 }
 
-// Features lists a project's features with their state in one environment, via
-// the Admin API. The environment is identified by its numeric ID. When
-// segmentID is non-zero, each feature also carries its segment_feature_state
-// for that segment. A non-empty search narrows the list server-side — a
-// contains match on the name, so callers still pick their exact match — which
-// keeps single-feature commands off the full (expensive) project list.
+// Features lists a project's features with their state in one environment,
+// identified by its numeric ID. When segmentID is non-zero, each feature also
+// carries its segment_feature_state for that segment. A non-empty search
+// narrows the list server-side: a contains match on the name, not an exact one.
 func (c *Client) Features(ctx context.Context, projectID, environmentID, segmentID int, search string) ([]Feature, error) {
 	q := url.Values{}
 	if environmentID != 0 {
@@ -705,7 +680,7 @@ type TypedValue struct {
 	BooleanValue *bool   `json:"boolean_value"`
 }
 
-// Scalar converts the typed wire form to the bare scalar the curated views show.
+// Scalar converts the typed wire form to a bare scalar.
 func (v TypedValue) Scalar() any {
 	switch v.Type {
 	case "int":
@@ -735,8 +710,7 @@ type EnvironmentFeatureState struct {
 	Value          TypedValue `json:"feature_state_value"`
 }
 
-// FeatureStates lists a feature's live states in one environment. Callers join
-// segment overrides onto FeatureSegments rows via FeatureSegment.
+// FeatureStates lists a feature's live states in one environment.
 func (c *Client) FeatureStates(ctx context.Context, environmentID, featureID int) ([]EnvironmentFeatureState, error) {
 	return getMany[EnvironmentFeatureState](ctx, c, fmt.Sprintf("/api/v1/features/featurestates/?environment=%d&feature=%d", environmentID, featureID))
 }
@@ -834,9 +808,9 @@ type UpdateFlagRequest struct {
 }
 
 // postUpdateFlags posts a body to one of the experimental flags-update
-// endpoints (update-flag-v2, delete-segment-override), which share their
-// status protocol: 403 means the environment is workflow-gated, 404 maps to
-// notFound when the caller supplies one, and 204/200 are success.
+// endpoints (update-flag-v2, delete-segment-override), which share their status
+// protocol: 403 means the environment is workflow-gated, 404 maps to notFound
+// when it is non-nil, and 204/200 are success.
 func (c *Client) postUpdateFlags(ctx context.Context, path string, payload any, notFound error) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -880,15 +854,14 @@ func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey strin
 // environment has change-request workflows enabled.
 var ErrWorkflowGated = fmt.Errorf("this environment uses change-request workflows; direct updates are disabled")
 
-// ErrPlanGated matches (via errors.Is) a self-serve plan limit a user lifts by
-// upgrading — seats, a payment problem, or no subscription. The CLI hints at
-// pricing. The error's own message is the API's specific reason.
+// ErrPlanGated marks a self-serve plan limit a user lifts by upgrading — seats,
+// a payment problem, or no subscription. The error's own message is the API's
+// specific reason.
 var ErrPlanGated = errors.New("not available on your organisation's current plan")
 
-// ErrQuotaExceeded matches (via errors.Is) a resource cap that is raised on
-// request rather than by self-serve upgrade — the feature, segment, and
-// segment-override limits, which enterprise plans can relax. The CLI hints at
-// support, not pricing. Distinguishing the two is by message text only (see
+// ErrQuotaExceeded marks a resource cap that is raised on request rather than by
+// self-serve upgrade — the feature, segment, and segment-override limits, which
+// enterprise plans can relax. Telling the two apart is by message text only (see
 // classifyLimit); Flagsmith ships no machine-readable error code.
 var ErrQuotaExceeded = errors.New("resource limit reached on your organisation's current plan")
 
@@ -901,8 +874,8 @@ func (c *Client) UpdateFlag(ctx context.Context, environmentKey string, in Updat
 		in, nil)
 }
 
-// Environment carries the fields the CLI needs plus the raw API item, so JSON
-// output mirrors the server's full field set. Identified by APIKey, not id.
+// Environment carries the curated fields plus the raw API item, so JSON output
+// mirrors the server's full field set. Identified by APIKey, not id.
 type Environment struct {
 	ID                     int    `json:"id"`
 	Name                   string `json:"name"`
@@ -974,7 +947,6 @@ type EnvironmentAPIKey struct {
 	ExpiresAt *string `json:"expires_at"`
 }
 
-// EnvironmentAPIKeys lists an environment's server-side keys.
 func (c *Client) EnvironmentAPIKeys(ctx context.Context, envKey string) ([]EnvironmentAPIKey, error) {
 	return getMany[EnvironmentAPIKey](ctx, c, "/api/v1/environments/"+envKey+"/api-keys/")
 }
@@ -985,14 +957,13 @@ func (c *Client) CreateEnvironmentAPIKey(ctx context.Context, envKey string, bod
 	return send[EnvironmentAPIKey](ctx, c, http.MethodPost, "/api/v1/environments/"+envKey+"/api-keys/", body)
 }
 
-// DeleteEnvironmentAPIKey removes a server-side key by id.
 func (c *Client) DeleteEnvironmentAPIKey(ctx context.Context, envKey string, keyID int) error {
 	path := fmt.Sprintf("/api/v1/environments/%s/api-keys/%d/", envKey, keyID)
 	return c.sendJSON(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // IdentityFeatureState is a feature's override for one identity. ID is the
-// (core) feature-state id used to update/delete it; it is unset for edge reads.
+// feature-state id used to update/delete it; it is unset for edge reads.
 type IdentityFeatureState struct {
 	ID      int  `json:"id"`
 	Enabled bool `json:"enabled"`
@@ -1027,7 +998,6 @@ func (c *Client) IdentityByIdentifier(ctx context.Context, envKey, identifier st
 	return 0, false, nil
 }
 
-// CreateIdentity creates a core identity and returns its id.
 func (c *Client) CreateIdentity(ctx context.Context, envKey, identifier string) (int, error) {
 	path := fmt.Sprintf("/api/v1/environments/%s/identities/", envKey)
 	out, err := send[identity](ctx, c, http.MethodPost, path, map[string]any{"identifier": identifier})
@@ -1107,7 +1077,7 @@ func (c *Client) EdgeIdentityOverride(ctx context.Context, envKey, identityUUID 
 
 // edgeIdentityFeatureStatesPath is the identifier-based edge endpoint. The
 // backend nests it under a second literal "environments/" segment and omits
-// the trailing slash — replicated verbatim here.
+// the trailing slash — replicated verbatim.
 func edgeIdentityFeatureStatesPath(envKey string) string {
 	return "/api/v1/environments/environments/" + envKey + "/edge-identities-featurestates"
 }
@@ -1119,14 +1089,13 @@ func (c *Client) SetEdgeIdentityOverride(ctx context.Context, envKey, identifier
 	return c.sendJSON(ctx, http.MethodPut, edgeIdentityFeatureStatesPath(envKey), body, nil)
 }
 
-// DeleteEdgeIdentityOverride removes an edge identity override.
 func (c *Client) DeleteEdgeIdentityOverride(ctx context.Context, envKey, identifier string, featureID int) error {
 	body := map[string]any{"identifier": identifier, "feature": featureID}
 	return c.sendJSON(ctx, http.MethodDelete, edgeIdentityFeatureStatesPath(envKey), body, nil)
 }
 
-// SegmentCondition is one condition in a segment rule. On the wire `value` is
-// a plain string (or null); the CLI maps IN arrays to/from a JSON-array string.
+// SegmentCondition is one condition in a segment rule. On the wire `value` is a
+// plain string (or null); IN arrays are carried as a JSON-array string.
 type SegmentCondition struct {
 	Property string `json:"property,omitempty"`
 	Operator string `json:"operator"`
@@ -1162,19 +1131,18 @@ func (c *Client) GetSegment(ctx context.Context, projectID, segmentID int) (*Seg
 	return getOne[Segment](ctx, c, fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID))
 }
 
-// CreateSegment creates a segment (project taken from the URL).
+// CreateSegment creates a segment.
 func (c *Client) CreateSegment(ctx context.Context, projectID int, in Segment) (*Segment, error) {
 	in.Project = projectID // the serializer requires project in the body, not just the URL
 	return send[Segment](ctx, c, http.MethodPost, fmt.Sprintf("/api/v1/projects/%d/segments/", projectID), in)
 }
 
-// UpdateSegment replaces a segment's rule tree and fields (PUT).
+// UpdateSegment replaces a segment's rule tree and fields.
 func (c *Client) UpdateSegment(ctx context.Context, projectID, segmentID int, in Segment) (*Segment, error) {
 	in.Project = projectID // the serializer requires project in the body, not just the URL
 	return send[Segment](ctx, c, http.MethodPut, fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID), in)
 }
 
-// DeleteSegment removes a segment.
 func (c *Client) DeleteSegment(ctx context.Context, projectID, segmentID int) error {
 	path := fmt.Sprintf("/api/v1/projects/%d/segments/%d/", projectID, segmentID)
 	return c.sendJSON(ctx, http.MethodDelete, path, nil, nil)

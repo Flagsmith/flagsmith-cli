@@ -262,7 +262,7 @@ func resolveSegmentID(cmd *cobra.Command, cred *activeCredential, projectID int,
 		return 0, err
 	}
 	byID := idNameMap(segs, func(s api.Segment) (string, string) { return strconv.Itoa(s.ID), s.Name })
-	_ = cache.Merge(apiURL, &cache.Names{Segments: byID}) // opportunistic (04 §3)
+	_ = cache.Merge(apiURL, &cache.Names{Segments: byID}) // opportunistic
 	return resolveIDRef(cmd, "segment", ref, byID,
 		fmt.Errorf("segment %q not found in project %d", ref, projectID),
 		hintSegmentList)

@@ -87,7 +87,7 @@ func TestStoreKeysByInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// When / Then — each instance is stored independently
+	// When / Then
 	gotSaas, err := Load(saasURL)
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestStoreNormalizesInstanceURL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// When — a trailing slash resolves to the same entry
+	// When
 	got, err := Load(saasURL + "/")
 
 	// Then
@@ -128,7 +128,7 @@ func TestSaveFailsWithoutKeychain(t *testing.T) {
 	isolateStorage(t)
 	keyring.MockInitWithError(errors.New("keychain locked"))
 
-	// When / Then — no silent fallback; login must fail closed
+	// When / Then
 	if err := Save(oauthCredentials(saasURL)); !errors.Is(err, ErrKeychainUnavailable) {
 		t.Errorf("err = %v, want ErrKeychainUnavailable", err)
 	}

@@ -9,15 +9,14 @@ import (
 	"github.com/Flagsmith/flagsmith-cli/internal/version"
 )
 
-// userAgent identifies the CLI (version + platform) on every outbound request.
+// userAgent identifies the CLI on every outbound request.
 func userAgent() string {
 	return version.UserAgent()
 }
 
-// sharedHTTPClient is the process-wide HTTP client: one shared transport with
-// sane per-connection timeouts, a versioned User-Agent, and read-only retries.
-// It is stateless with respect to the target instance, so a single client
-// serves every request and its connection pool is reused across calls.
+// sharedHTTPClient is the process-wide HTTP client. It is stateless with respect
+// to the target instance, so one client serves every request and its connection
+// pool is reused across calls.
 var (
 	httpClientOnce sync.Once
 	httpClientMemo *http.Client

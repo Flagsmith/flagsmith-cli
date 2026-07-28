@@ -31,7 +31,6 @@ func (c *Credentials) EffectiveKind() Kind {
 	return c.Kind
 }
 
-// Token returns the secret used to authenticate requests.
 func (c *Credentials) Token() string {
 	if c.EffectiveKind() == KindMaster {
 		return c.MasterKey
@@ -47,9 +46,7 @@ const (
 )
 
 var (
-	// ErrNotLoggedIn means no credential is available for the instance. The
-	// recovery ("run flagsmith login") is attached as a hint at the command
-	// layer (see internal/cmd hintFor), not baked into the message.
+	// ErrNotLoggedIn means no credential is available for the instance.
 	ErrNotLoggedIn = errors.New("not logged in")
 
 	// ErrKeychainUnavailable means the OS keychain could not be used. Login
