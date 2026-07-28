@@ -85,6 +85,7 @@ func resetFlags() {
 	apiHeaderFlags = nil
 	apiFieldFlags = nil
 	apiRawFields = nil
+	evalTraitFlags = nil
 }
 
 // setEnvCred exports a credential variable host-scoped to url, as a
@@ -162,6 +163,7 @@ type fakeInstance struct {
 	idLookupCalls  int                         // count of GET /identities/ (identifier lookups)
 	edgeLookups    int                         // count of GET /edge-identities/ (uuid lookups)
 	envGetCalls    int                         // count of GET /environments/{key}/ (retrieve)
+	envListCalls   int                         // count of GET /environments/ list calls
 	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
 	orgListCalls   int                         // count of GET /organisations/ list calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
@@ -186,6 +188,19 @@ type fakeInstance struct {
 
 	featureSegments map[string][]map[string]any // feature id -> feature-segment rows (priority order)
 	featureStates   map[string][]map[string]any // feature id -> admin featurestates rows
+
+	// The SDK API surface `flagsmith evaluate` reads. sdkEnvFlags is keyed by
+	// environment key — an unrecognised key gets a 401, as the real SDK API
+	// does; sdkIdentityFlags overrides it per identifier ("" is the anonymous
+	// identity), so an identity evaluation can be told apart from the
+	// environment defaults.
+	sdkEnvFlags      map[string][]map[string]any
+	sdkIdentityFlags map[string][]map[string]any
+	lastIdentify     map[string]any // last POST /api/v1/identities/ body
+	sdkUserAgents    []string       // User-Agent of every SDK API request
+	sdkKeys          []string       // X-Environment-Key of every SDK API request
+	sdkStatus        int            // when non-zero, the SDK endpoints answer with it
+	sdkDelay         time.Duration  // artificial latency for the SDK endpoints
 
 	nextFeatureID   int
 	lastFeatureBody map[string]any // last feature create/update body
@@ -295,12 +310,16 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 				}}},
 			},
 		},
-		nextSegmentID:   100,
-		nextFeatureID:   900,
-		nextMVID:        300,
-		nextOrgID:       20,
-		serverKeys:      map[string][]map[string]any{},
-		nextServerKeyID: 500,
+		sdkEnvFlags: map[string][]map[string]any{
+			"WqXhZk8sVY3dGgTqZ9pJmN": sdkFlagsFrom(defaultFeatures()),
+		},
+		sdkIdentityFlags: map[string][]map[string]any{},
+		nextSegmentID:    100,
+		nextFeatureID:    900,
+		nextMVID:         300,
+		nextOrgID:        20,
+		serverKeys:       map[string][]map[string]any{},
+		nextServerKeyID:  500,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
@@ -393,6 +412,9 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		json.NewEncoder(w).Encode(proj)
 	})
 	mux.HandleFunc("GET /api/v1/environments/", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.envListCalls++
+		f.mu.Unlock()
 		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -1283,6 +1305,49 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{"results": results})
 	})
+	// The SDK API: the two endpoints the Flagsmith SDK evaluates flags over.
+	mux.HandleFunc("GET /api/v1/flags/", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.sdkUserAgents = append(f.sdkUserAgents, r.Header.Get("User-Agent"))
+		f.sdkKeys = append(f.sdkKeys, r.Header.Get("X-Environment-Key"))
+		status, flags, delay := f.sdkStatus, f.sdkEnvFlags[r.Header.Get("X-Environment-Key")], f.sdkDelay
+		f.mu.Unlock()
+		time.Sleep(delay)
+		if status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		if flags == nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		json.NewEncoder(w).Encode(flags)
+	})
+	mux.HandleFunc("POST /api/v1/identities/", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		identifier, _ := body["identifier"].(string)
+		f.mu.Lock()
+		f.sdkUserAgents = append(f.sdkUserAgents, r.Header.Get("User-Agent"))
+		f.sdkKeys = append(f.sdkKeys, r.Header.Get("X-Environment-Key"))
+		f.lastIdentify = body
+		status, flags := f.sdkStatus, f.sdkEnvFlags[r.Header.Get("X-Environment-Key")]
+		if override, ok := f.sdkIdentityFlags[identifier]; ok {
+			flags = override
+		}
+		f.mu.Unlock()
+		if status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		if flags == nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"identifier": identifier, "traits": body["traits"], "flags": flags,
+		})
+	})
 	// echo reflects the request back, for exercising `flagsmith api`.
 	mux.HandleFunc("/api/v1/echo/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) && r.Header.Get("X-Environment-Key") == "" {
@@ -1493,6 +1558,45 @@ func defaultFeatures() []map[string]any {
 	}
 }
 
+// sdkFlagsFrom renders admin feature fixtures as the SDK API's flags payload —
+// the shape `flagsmith evaluate` reads.
+func sdkFlagsFrom(features []map[string]any) []map[string]any {
+	flags := make([]map[string]any, 0, len(features))
+	for _, item := range features {
+		state, _ := item["environment_feature_state"].(map[string]any)
+		flags = append(flags, map[string]any{
+			"enabled":             state["enabled"],
+			"feature_state_value": state["feature_state_value"],
+			"feature":             map[string]any{"id": item["id"], "name": item["name"]},
+		})
+	}
+	return flags
+}
+
+func (f *fakeInstance) identifyBody() map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastIdentify
+}
+
+func (f *fakeInstance) sdkAgents() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.sdkUserAgents...)
+}
+
+func (f *fakeInstance) sdkSentKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.sdkKeys...)
+}
+
+func (f *fakeInstance) environmentLists() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.envListCalls
+}
+
 func (f *fakeInstance) refreshCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1527,6 +1631,26 @@ func TestServerSideKeyNeverEchoed(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
 			t.Errorf("err = %v, want it to name the variable", err)
+		}
+	})
+
+	t.Run("a key the SDK API rejects is not echoed", func(t *testing.T) {
+		// Given a key the SDK surface does not know, so evaluation gets a 401.
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"apiUrl": "`+f.srv.URL+`"}`)
+		setEnvCred(t, envEnvironmentKey, f.srv.URL, "ser.SuperSecret123")
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want an error")
+		}
+		if strings.Contains(out, "SuperSecret123") || strings.Contains(hintFor(err), "SuperSecret123") {
+			t.Errorf("output = %q — the server-side key leaked", out)
 		}
 	})
 
@@ -5777,6 +5901,554 @@ func TestEnvironmentKey(t *testing.T) {
 		}
 		if !strings.Contains(out, "Deleted server-side key 14") {
 			t.Errorf("output = %q", out)
+		}
+	})
+}
+
+// evalEnv writes a config naming Development's client-side key, which doubles as
+// the SDK credential. No Admin credential and no project are set: `evaluate`
+// talks only to the SDK API, so every test here also proves it needs neither.
+func evalEnv(t *testing.T) *fakeInstance {
+	t.Helper()
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	root := tempRepo(t)
+	writeConfig(t, root, `{"environment": "WqXhZk8sVY3dGgTqZ9pJmN", "apiUrl": "`+f.srv.URL+`"}`)
+	return f
+}
+
+// captureOSStderr collects what run writes to the process's stderr — where a
+// library's own logger lands, bypassing the command's writers entirely.
+func captureOSStderr(t *testing.T, run func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	run()
+	os.Stderr = saved
+	w.Close()
+	logged, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Close()
+	return string(logged)
+}
+
+func TestEvaluate(t *testing.T) {
+	t.Run("human table with count", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{
+			"FEATURE", "ENABLED", "VALUE",
+			"onboarding_banner", "on", "-",
+			"max_items", "off", "25", "2 flags",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want it to contain %q", out, want)
+			}
+		}
+	})
+
+	t.Run("the SDK's own logging never reaches stderr", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		var err error
+		logged := captureOSStderr(t, func() { _, err = run("", "evaluate") })
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v", err)
+		}
+		if logged != "" {
+			t.Errorf("stderr = %q, want the SDK's logger silenced", logged)
+		}
+	})
+
+	t.Run("the invocation deadline bounds evaluation", func(t *testing.T) {
+		// Given an SDK API slower than the deadline the user asked for.
+		f := evalEnv(t)
+		f.sdkDelay = 1200 * time.Millisecond
+		t.Setenv("FLAGSMITH_TIMEOUT", "1")
+
+		// When
+		_, err := run("", "evaluate")
+
+		// Then
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("err = %v, want the deadline to bound the SDK's request", err)
+		}
+	})
+
+	t.Run("json is a curated array", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		out, err := run("", "evaluate", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --json: %v\noutput: %s", err, out)
+		}
+		var flags []map[string]any
+		if err := json.Unmarshal([]byte(out), &flags); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if len(flags) != 2 {
+			t.Fatalf("flags = %+v", flags)
+		}
+		if flags[0]["feature"] != "onboarding_banner" || flags[0]["enabled"] != true || flags[0]["value"] != nil {
+			t.Errorf("item = %+v, want the resolved flag hoisted", flags[0])
+		}
+		if flags[1]["value"] != float64(25) {
+			t.Errorf("item = %+v, want the resolved value", flags[1])
+		}
+		if len(flags[0]) != 3 {
+			t.Errorf("item = %+v, want feature/enabled/value only", flags[0])
+		}
+	})
+
+	t.Run("eval is an accepted alias", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		out, err := run("", "eval")
+
+		// Then
+		if err != nil {
+			t.Fatalf("eval: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "2 flags") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("a single feature renders a detail view", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		out, err := run("", "evaluate", "max_items")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate max_items: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"Feature", "max_items", "Enabled", "off", "Value", "25"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if strings.Contains(out, "onboarding_banner") {
+			t.Errorf("output = %q, want only the named feature", out)
+		}
+	})
+
+	t.Run("an unknown feature errors with a hint", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		_, err := run("", "evaluate", "nope")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want an error")
+		}
+		if !strings.Contains(err.Error(), `"nope"`) {
+			t.Errorf("err = %v, want it to name the feature", err)
+		}
+		if !strings.Contains(hintFor(err), "flagsmith eval") {
+			t.Errorf("hint = %q, want it to point at the listing", hintFor(err))
+		}
+	})
+
+	t.Run("no flags", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = []map[string]any{}
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "No flags.") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("without an environment key it names the way in", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"apiUrl": "`+f.srv.URL+`"}`)
+
+		// When
+		_, err := run("", "evaluate")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want an error")
+		}
+		if !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
+			t.Errorf("hint = %q, want it to name the variable", hintFor(err))
+		}
+	})
+
+	t.Run("FLAGSMITH_ENVIRONMENT_KEY evaluates on its own", func(t *testing.T) {
+		// Given a config with no environment at all — the SDK credential is the
+		// only environment reference, as it is in CI.
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"apiUrl": "`+f.srv.URL+`"}`)
+		setEnvCred(t, envEnvironmentKey, f.srv.URL, "ser.serverSideSecret")
+		f.sdkEnvFlags["ser.serverSideSecret"] = sdkFlagsFrom(defaultFeatures())
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "2 flags") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("the CLI's User-Agent replaces the SDK's", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+
+		// When
+		if _, err := run("", "evaluate"); err != nil {
+			t.Fatalf("evaluate: %v", err)
+		}
+
+		// Then
+		agents := f.sdkAgents()
+		if len(agents) != 1 || agents[0] != version.UserAgent() {
+			t.Errorf("User-Agent = %q, want the CLI's %q", agents, version.UserAgent())
+		}
+	})
+
+	t.Run("an unexpected status is reported without a stack of SDK prefixes", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkStatus = http.StatusInternalServerError
+
+		// When
+		_, err := run("", "evaluate")
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want an error")
+		}
+		if strings.Contains(err.Error(), "flagsmith:") {
+			t.Errorf("err = %v, want the SDK's own wording dropped", err)
+		}
+		if !strings.Contains(err.Error(), "500") {
+			t.Errorf("err = %v, want it to carry the status", err)
+		}
+	})
+}
+
+// The environment context is a client-side key or a name, as it is everywhere
+// else. Evaluation needs the key, and a name only costs an Admin lookup when the
+// local name cache cannot answer — so the common case stays credential-free.
+func TestEvaluateResolvesEnvironmentName(t *testing.T) {
+	const productionKey = "K2mVsGdXhZ8kQqZ9pJmNbJ"
+
+	// nameEnv points the context at an environment by name, with no Admin
+	// credential; production is the only environment the SDK API answers for.
+	nameEnv := func(t *testing.T, ref string) *fakeInstance {
+		t.Helper()
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		root := tempRepo(t)
+		writeConfig(t, root, `{"project": 101, "environment": "`+ref+`", "apiUrl": "`+f.srv.URL+`"}`)
+		delete(f.sdkEnvFlags, "WqXhZk8sVY3dGgTqZ9pJmN")
+		f.sdkEnvFlags[productionKey] = sdkFlagsFrom(defaultFeatures())
+		return f
+	}
+
+	t.Run("a cached name resolves without an Admin credential", func(t *testing.T) {
+		// Given
+		f := nameEnv(t, "Production")
+		cache.Merge(f.srv.URL, &cache.Names{Environments: map[string]string{productionKey: "Production"}})
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		if got := f.sdkSentKeys(); len(got) != 1 || got[0] != productionKey {
+			t.Errorf("X-Environment-Key = %q, want the named environment's key", got)
+		}
+		if got := f.environmentLists(); got != 0 {
+			t.Errorf("environment list calls = %d, want the cache to answer for free", got)
+		}
+	})
+
+	t.Run("-e takes a name too", func(t *testing.T) {
+		// Given
+		f := nameEnv(t, "WqXhZk8sVY3dGgTqZ9pJmN")
+		cache.Merge(f.srv.URL, &cache.Names{Environments: map[string]string{productionKey: "Production"}})
+
+		// When
+		out, err := run("", "evaluate", "-e", "Production")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate -e: %v\noutput: %s", err, out)
+		}
+		if got := f.sdkSentKeys(); len(got) != 1 || got[0] != productionKey {
+			t.Errorf("X-Environment-Key = %q, want the named environment's key", got)
+		}
+	})
+
+	t.Run("an uncached name costs one Admin lookup, and is remembered", func(t *testing.T) {
+		// Given
+		f := nameEnv(t, "Production")
+		setMasterKey(t, f.srv.URL)
+		withEnvironments(f)
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		if got := f.sdkSentKeys(); len(got) != 1 || got[0] != productionKey {
+			t.Errorf("X-Environment-Key = %q, want the resolved key", got)
+		}
+		if got := f.environmentLists(); got != 1 {
+			t.Errorf("environment list calls = %d, want exactly one", got)
+		}
+		if got := cache.Load(f.srv.URL).Environments[productionKey]; got != "Production" {
+			t.Errorf("cache = %q, want the name remembered for next time", got)
+		}
+	})
+
+	t.Run("an ambiguous cached name defers to the Admin API", func(t *testing.T) {
+		// Given two projects' environments sharing a name in one instance-wide
+		// cache. Only the Admin API can scope the name to this project.
+		f := nameEnv(t, "Development")
+		setMasterKey(t, f.srv.URL)
+		withEnvironments(f)
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = sdkFlagsFrom(defaultFeatures())
+		cache.Merge(f.srv.URL, &cache.Names{Environments: map[string]string{
+			"WqXhZk8sVY3dGgTqZ9pJmN": "Development",
+			"OtherProjectDevKey1234": "Development",
+		}})
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		if got := f.sdkSentKeys(); len(got) != 1 || got[0] != "WqXhZk8sVY3dGgTqZ9pJmN" {
+			t.Errorf("X-Environment-Key = %q, want this project's Development", got)
+		}
+	})
+
+	t.Run("an uncached name without credentials says how to authenticate", func(t *testing.T) {
+		// Given
+		nameEnv(t, "Production")
+
+		// When
+		_, err := run("", "evaluate")
+
+		// Then
+		if !errors.Is(err, auth.ErrNotLoggedIn) {
+			t.Errorf("err = %v, want the login error — a name cannot be resolved without one", err)
+		}
+	})
+
+	t.Run("a key is never resolved, cache or no cache", func(t *testing.T) {
+		// Given a key the cache has never seen and no credentials at all.
+		f := nameEnv(t, productionKey)
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		if got := f.environmentLists(); got != 0 {
+			t.Errorf("environment list calls = %d, want a key used as-is", got)
+		}
+	})
+}
+
+func TestEvaluateIdentity(t *testing.T) {
+	// The identity's own flags, distinguishable from the environment defaults.
+	overridden := func() []map[string]any {
+		flags := sdkFlagsFrom(defaultFeatures())
+		flags[1]["enabled"], flags[1]["feature_state_value"] = true, 99
+		return flags
+	}
+
+	t.Run("resolves for an identity, transiently by default", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkIdentityFlags["user-123"] = overridden()
+
+		// When
+		out, err := run("", "evaluate", "--identity", "user-123")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --identity: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "99") {
+			t.Errorf("output = %q, want the identity's resolved value", out)
+		}
+		body := f.identifyBody()
+		if body["identifier"] != "user-123" || body["transient"] != true {
+			t.Errorf("body = %+v, want a transient identity", body)
+		}
+	})
+
+	t.Run("traits are typed by inference", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+
+		// When
+		out, err := run("", "evaluate", "--identity", "user-123",
+			"--trait", "plan=premium", "--trait", "age=42", "--trait", "score=1.5", "--trait", "beta=true")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --trait: %v\noutput: %s", err, out)
+		}
+		want := map[string]any{"plan": "premium", "age": float64(42), "score": 1.5, "beta": true}
+		got := map[string]any{}
+		for _, item := range f.identifyBody()["traits"].([]any) {
+			trait := item.(map[string]any)
+			got[trait["trait_key"].(string)] = trait["trait_value"]
+		}
+		if len(got) != len(want) {
+			t.Fatalf("traits = %+v, want %+v", got, want)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("trait %s = %#v, want %#v", k, got[k], v)
+			}
+		}
+	})
+
+	t.Run("--persist opts into persistence", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+
+		// When
+		if _, err := run("", "eval", "--identity", "user-123", "--trait", "plan=premium", "--persist"); err != nil {
+			t.Fatalf("evaluate --persist: %v", err)
+		}
+
+		// Then
+		if body := f.identifyBody(); body["transient"] != false {
+			t.Errorf("body = %+v, want transient dropped", body)
+		}
+	})
+
+	t.Run("traits alone evaluate an anonymous identity", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkIdentityFlags[""] = overridden()
+
+		// When
+		out, err := run("", "evaluate", "--trait", "country=US")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --trait: %v\noutput: %s", err, out)
+		}
+		body := f.identifyBody()
+		if body["identifier"] != "" || body["transient"] != true {
+			t.Errorf("body = %+v, want an anonymous transient identity", body)
+		}
+		if !strings.Contains(out, "99") {
+			t.Errorf("output = %q, want the anonymous identity's flags", out)
+		}
+	})
+
+	t.Run("--persist without an identity is a usage error", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		_, err := run("", "evaluate", "--trait", "country=US", "--persist")
+
+		// Then
+		var usage *usageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("err = %v, want a usage error", err)
+		}
+		if !strings.Contains(err.Error(), "--identity") {
+			t.Errorf("err = %v, want it to name the flag", err)
+		}
+	})
+
+	t.Run("a malformed trait is a usage error", func(t *testing.T) {
+		// Given
+		evalEnv(t)
+
+		// When
+		_, err := run("", "evaluate", "--trait", "plan")
+
+		// Then
+		var usage *usageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("err = %v, want a usage error", err)
+		}
+	})
+
+	t.Run("a single feature resolves for the identity", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		f.sdkIdentityFlags["user-123"] = overridden()
+
+		// When
+		out, err := run("", "evaluate", "max_items", "--identity", "user-123", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate max_items --identity: %v\noutput: %s", err, out)
+		}
+		var flag map[string]any
+		if err := json.Unmarshal([]byte(out), &flag); err != nil {
+			t.Fatalf("parsing %q: %v", out, err)
+		}
+		if flag["feature"] != "max_items" || flag["enabled"] != true || flag["value"] != float64(99) {
+			t.Errorf("flag = %+v", flag)
 		}
 	})
 }

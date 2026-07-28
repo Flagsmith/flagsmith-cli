@@ -30,8 +30,8 @@ const (
 )
 
 // New returns an *http.Client whose transport applies sane per-connection
-// timeouts, sets a default User-Agent when the request carries none, and
-// retries idempotent read requests on transient failures.
+// timeouts, identifies the CLI with userAgent, and retries idempotent read
+// requests on transient failures.
 //
 // It deliberately sets no overall Client.Timeout: the bound comes from the
 // request context, so cancellation works and a per-request deadline does not
@@ -142,9 +142,8 @@ type transport struct {
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// A RoundTripper must not mutate the caller's request, so clone before
-	// stamping the default User-Agent.
-	if t.userAgent != "" && req.Header.Get("User-Agent") == "" {
+	// User-Agent is not negotiable
+	if t.userAgent != "" {
 		req = req.Clone(req.Context())
 		req.Header.Set("User-Agent", t.userAgent)
 	}

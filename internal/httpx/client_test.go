@@ -92,7 +92,7 @@ func TestRetriesIdempotentReads(t *testing.T) {
 	})
 }
 
-func TestSetsUserAgentWhenAbsent(t *testing.T) {
+func TestSetsUserAgent(t *testing.T) {
 	t.Run("stamps the configured agent", func(t *testing.T) {
 		var got string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +110,9 @@ func TestSetsUserAgentWhenAbsent(t *testing.T) {
 		}
 	})
 
-	t.Run("does not override a caller-set agent", func(t *testing.T) {
+	// The CLI's identity wins over a caller-set one — including the one the
+	// Flagsmith SDK sets on every request of its own.
+	t.Run("overrides a caller-set agent", func(t *testing.T) {
 		var got string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			got = r.Header.Get("User-Agent")
@@ -124,8 +126,12 @@ func TestSetsUserAgentWhenAbsent(t *testing.T) {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		if got != "custom/1.0" {
-			t.Errorf("User-Agent = %q, want custom/1.0", got)
+		if got != "flagsmith-cli/test" {
+			t.Errorf("User-Agent = %q, want flagsmith-cli/test", got)
+		}
+		// The caller's own request must come back untouched.
+		if req.Header.Get("User-Agent") != "custom/1.0" {
+			t.Errorf("caller's request was mutated: %q", req.Header.Get("User-Agent"))
 		}
 	})
 }

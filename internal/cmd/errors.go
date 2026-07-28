@@ -27,10 +27,14 @@ const (
 	hintAccessToken      = "For an OAuth access token, set FLAGSMITH_ACCESS_TOKEN instead."
 	hintServerSideKey    = "Server-side keys are secrets — provide them via FLAGSMITH_ENVIRONMENT_KEY instead."
 
+	hintEnvironmentKey = "Check FLAGSMITH_ENVIRONMENT_KEY, or the environment name/key passed with -e."
+	hintSDKAPIURL      = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
+
 	hintEnvironmentList  = "Run `flagsmith environment list` to see the environments in this project."
 	hintProjectList      = "Run `flagsmith project list` to see the projects you can access."
 	hintOrganisationList = "Run `flagsmith organisation list` to see the organisations you can access."
 	hintFlagList         = "Run `flagsmith flag list` to see the flags in this environment."
+	hintEvaluate         = "Run `flagsmith eval` to see the flags this environment resolves to."
 	hintFeatureList      = "Run `flagsmith feature list` to see the features in this project."
 	hintSegmentList      = "Run `flagsmith segment list` to see the segments in this project."
 
