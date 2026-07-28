@@ -18,7 +18,7 @@ Credentials come from [03-authentication.md](03-authentication.md); project/envi
 
 ## 2. Addressing
 
-Resources are addressed by their ID. Each resource may define its own natural human identifier, and resolve it within the current context, while still accepting the ID. In case of ambigous natural human identifier, the CLI offers a choice from candidates when in TTY, and errors 2 otherwise.
+Resources are addressed by their ID. Each resource may define its own natural human identifier, and resolve it within the current context, while still accepting the ID. In case of ambiguous natural human identifier, the CLI offers a choice from candidates when in TTY, and errors 2 otherwise.
 
 ## 3. Result model
 

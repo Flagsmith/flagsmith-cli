@@ -16,7 +16,7 @@ Single static binary via goreleaser, from GitHub Releases:
 
 `get.flagsmith.com` redirects to https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh. Security-conscious users are able to use the github CDN url directly, pinning a SHA they trust.
 
-Upon successfull installation, `install.sh` prompts the user to run `flagsmith init`.
+Upon successful installation, `install.sh` prompts the user to run `flagsmith init`.
 
 ## 3. Later / deprioritised
 
