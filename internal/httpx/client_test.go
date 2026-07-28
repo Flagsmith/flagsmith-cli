@@ -382,7 +382,7 @@ func TestCheckRedirectStripsSecrets(t *testing.T) {
 }
 
 func TestCheckRedirectCapsHops(t *testing.T) {
-	// Given a chain already at the cap
+	// Given
 	req, err := http.NewRequest(http.MethodGet, "https://api.example/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -392,8 +392,14 @@ func TestCheckRedirectCapsHops(t *testing.T) {
 		via[i] = req
 	}
 
-	// When / Then — setting CheckRedirect replaces Go's cap, so ours must hold
-	if err := checkRedirect(req, via); err == nil {
-		t.Error("err = nil, want the redirect chain to stop")
+	// When
+	err = checkRedirect(req, via)
+
+	// Then
+	if err == nil {
+		t.Fatal("err = nil, want the redirect chain to stop")
+	}
+	if got := err.Error(); got != "stopped after 10 redirects" {
+		t.Errorf("err = %q, want it to name the cap in words", got)
 	}
 }
