@@ -88,12 +88,14 @@ func Merge(apiURL string, update *Names) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// Owner-only: nothing else on the machine needs these names, and
+	// this file is the only thing the CLI writes to disk.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	b, err := json.Marshal(all)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	return os.WriteFile(path, b, 0o600)
 }

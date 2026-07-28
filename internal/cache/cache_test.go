@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -87,5 +88,38 @@ func TestLoadMissIsEmptyNotNil(t *testing.T) {
 	}
 	if got.Projects["1"] != "" {
 		t.Error("expected empty lookups to return zero values")
+	}
+}
+
+// The cache holds organisation, project and segment names for one instance —
+// not secrets, but nothing else on this machine needs them either, and the
+// CLI writes nothing else to disk.
+func TestMergeWritesPrivately(t *testing.T) {
+	// Given
+	isolate(t)
+
+	// When
+	if err := Merge("https://api.flagsmith.com", &Names{Projects: map[string]string{"1": "one"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Then the file is owner-only, and so is the directory holding it
+	path, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("cache file mode = %04o, want 0600", perm)
+	}
+	di, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := di.Mode().Perm(); perm != 0o700 {
+		t.Errorf("cache dir mode = %04o, want 0700", perm)
 	}
 }
