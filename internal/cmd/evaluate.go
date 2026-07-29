@@ -250,7 +250,7 @@ func evaluateFlags(ctx context.Context, sdkURL, key, identity string, traits []*
 func newSDKClient(sdkURL, key string) *flagsmith.Client {
 	hc := httpx.New(userAgent())
 	client := flagsmith.NewClient(key,
-		flagsmith.WithBaseURL(strings.TrimRight(sdkURL, "/")+"/api/v1/"),
+		flagsmith.WithBaseURL(sdkAPIBase(sdkURL)),
 		flagsmith.WithHTTPClient(hc),
 		flagsmith.WithSlogLogger(slog.New(slog.DiscardHandler)),
 	)
