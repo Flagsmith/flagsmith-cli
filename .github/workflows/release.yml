@@ -49,3 +49,21 @@ jobs:
         run: gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  install-script:
+    name: install.sh (${{ matrix.os }})
+    needs: goreleaser
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh install.sh --version "$GITHUB_REF_NAME" --bin-dir "$RUNNER_TEMP/bin"
+      - name: the env script puts it on PATH
+        run: |
+          . "$HOME/.local/share/flagsmith/env"
+          flagsmith --version
