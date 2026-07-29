@@ -39,6 +39,7 @@ flagsmith flag list    # list the flags in the current environment
 - `flagsmith environment list|get|create|update|delete|clone` (alias `env`) — manage environments (by name or API key).
 - `flagsmith environment key list|create|delete <environment>` — manage server-side SDK keys.
 - `flagsmith environment document [environment]` — output the environment document (local-evaluation JSON).
+- `flagsmith evaluate [feature]` (alias `eval`) — the flags an SDK resolves for the current environment (`--identity`, `--trait key=value`, `--persist`); `--js` writes the state a frontend SDK hydrates from, `--test` fails when a named flag is disabled.
 - `flagsmith config` — show the resolved context and where each value comes from.
 - `flagsmith login` / `logout` — browser OAuth (PKCE, loopback); also `auth login`/`auth logout`.
 - `flagsmith auth status` — identity, organisations, credential source, token expiry.
@@ -50,18 +51,3 @@ flagsmith flag list    # list the flags in the current environment
 - `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
 - Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK).
 - Self-hosted: `--api-url` or `FLAGSMITH_API_URL`.
-
-## Design
-
-[Installation](docs/design/01-installation.md) ·
-[Output & interactivity](docs/design/02-output-and-interactivity.md) ·
-[Authentication](docs/design/03-authentication.md) ·
-[Project config](docs/design/04-project-config.md) ·
-[CRUD conventions](docs/design/05-crud.md) ·
-[API](docs/design/06-api.md) ·
-[Flags](docs/design/07-flags.md) ·
-[Segments](docs/design/08-segments.md) ·
-[Features](docs/design/09-features.md) ·
-[Projects & organisations](docs/design/10-projects-organisations.md) ·
-[Environments](docs/design/11-environments.md) ·
-[Evaluate](docs/design/12-evaluate.md)
