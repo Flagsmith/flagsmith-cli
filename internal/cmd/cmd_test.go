@@ -5966,8 +5966,10 @@ func captureOSStderr(t *testing.T, run func()) string {
 	}
 	saved := os.Stderr
 	os.Stderr = w
+	// Deferred: run may not return — t.Fatal inside it would otherwise leave
+	// os.Stderr pointing at the pipe, swallowing every later test's output.
+	defer func() { os.Stderr = saved }()
 	run()
-	os.Stderr = saved
 	w.Close()
 	logged, err := io.ReadAll(r)
 	if err != nil {
