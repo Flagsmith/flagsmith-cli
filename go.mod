@@ -3,6 +3,7 @@ module github.com/Flagsmith/flagsmith-cli
 go 1.26
 
 require (
+	github.com/Flagsmith/flagsmith-go-client/v5 v5.1.0
 	github.com/charmbracelet/huh v1.0.0
 	github.com/fatih/color v1.19.0
 	github.com/itchyny/gojq v0.12.19
@@ -15,7 +16,6 @@ require (
 )
 
 require (
-	github.com/Flagsmith/flagsmith-go-client/v5 v5.1.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
