@@ -1331,11 +1331,12 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		f.sdkUserAgents = append(f.sdkUserAgents, r.Header.Get("User-Agent"))
 		f.sdkKeys = append(f.sdkKeys, r.Header.Get("X-Environment-Key"))
 		f.lastIdentify = body
-		status, flags := f.sdkStatus, f.sdkEnvFlags[r.Header.Get("X-Environment-Key")]
+		status, flags, delay := f.sdkStatus, f.sdkEnvFlags[r.Header.Get("X-Environment-Key")], f.sdkDelay
 		if override, ok := f.sdkIdentityFlags[identifier]; ok {
 			flags = override
 		}
 		f.mu.Unlock()
+		time.Sleep(delay)
 		if status != 0 {
 			w.WriteHeader(status)
 			return
