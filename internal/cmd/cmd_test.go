@@ -4288,9 +4288,9 @@ func TestFlagListIdentityOverrides(t *testing.T) {
 		}
 		f.mu.Unlock()
 
-		out, err := run("", "flag", "list", "--feature", "max_items", "--identity")
+		out, err := run("", "flag", "list", "--feature", "max_items", "--identities")
 		if err != nil {
-			t.Fatalf("flag list --feature --identity: %v\noutput: %s", err, out)
+			t.Fatalf("flag list --feature --identities: %v\noutput: %s", err, out)
 		}
 		for _, want := range []string{
 			"IDENTIFIER", "STATE", "VALUE",
@@ -4310,7 +4310,7 @@ func TestFlagListIdentityOverrides(t *testing.T) {
 		f.coreOverrides = map[int]map[int]*fakeFS{501: {2: {id: 9100, enabled: true, value: "hero"}}}
 		f.mu.Unlock()
 
-		out, err := run("", "flag", "list", "--feature", "max_items", "--identity", "--json")
+		out, err := run("", "flag", "list", "--feature", "max_items", "--identities", "--json")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -4335,18 +4335,18 @@ func TestFlagListIdentityOverrides(t *testing.T) {
 		}
 		f.mu.Unlock()
 
-		out, err := run("", "flag", "list", "--feature", "max_items", "--identity")
+		out, err := run("", "flag", "list", "--feature", "max_items", "--identities")
 		if err != nil {
-			t.Fatalf("flag list --identity (edge): %v\noutput: %s", err, out)
+			t.Fatalf("flag list --identities (edge): %v\noutput: %s", err, out)
 		}
 		if !strings.Contains(out, "edge-user") || !strings.Contains(out, "1 override") {
 			t.Errorf("output = %q, want the edge override listed", out)
 		}
 	})
 
-	t.Run("--identity without --feature exits 2", func(t *testing.T) {
+	t.Run("--identities without --feature exits 2", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		_, err := run("", "flag", "list", "--identity")
+		_, err := run("", "flag", "list", "--identities")
 		var ue *usageError
 		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--feature") {
 			t.Errorf("err = %v, want a usage error naming --feature", err)
@@ -4736,6 +4736,35 @@ func TestUsageIsSingleLine(t *testing.T) {
 
 func TestFlagIdentity(t *testing.T) {
 	// max_items is feature id 2 in defaultFeatures; user-1 is core identity 501.
+
+	// -i is the identity everywhere it appears, `eval` included.
+	t.Run("-i is shorthand for --identifier", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+
+		out, err := run("", "flag", "update", "max_items", "-i", "user-1", "--value", "42", "--yes")
+		if err != nil {
+			t.Fatalf("flag update -i: %v\noutput: %s", err, out)
+		}
+		if w := f.lastIdentityWrite; w["feature"] != float64(2) || w["feature_state_value"] != float64(42) {
+			t.Errorf("core write = %+v, want -i to target the identity", w)
+		}
+	})
+
+	t.Run("-i works for get and delete too", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		f.coreOverrides[501] = map[int]*fakeFS{2: {id: 9001, enabled: true, value: 7}}
+
+		out, err := run("", "flag", "get", "max_items", "-i", "user-1")
+		if err != nil {
+			t.Fatalf("flag get -i: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "user-1") || !strings.Contains(out, "7") {
+			t.Errorf("output = %q, want the identity's override", out)
+		}
+		if out, err = run("", "flag", "delete", "max_items", "-i", "user-1", "--yes"); err != nil {
+			t.Fatalf("flag delete -i: %v\noutput: %s", err, out)
+		}
+	})
 
 	t.Run("core: update creates an override via the core endpoint", func(t *testing.T) {
 		f := flagUpdateEnv(t) // useEdge defaults to false
@@ -6545,6 +6574,27 @@ func TestEvaluateIdentity(t *testing.T) {
 			t.Errorf("body = %+v, want a transient identity", body)
 		}
 	})
+
+	// The flag commands name this --identifier; eval names it --identity. Both
+	// spellings work here, so nobody has to remember which command uses which.
+	for _, spelling := range []string{"--identity", "--identifier", "-i"} {
+		t.Run("the identity is addressable as "+spelling, func(t *testing.T) {
+			// Given
+			f := evalEnv(t)
+			f.sdkIdentityFlags["user-123"] = overridden()
+
+			// When
+			out, err := run("", "evaluate", spelling, "user-123")
+
+			// Then
+			if err != nil {
+				t.Fatalf("evaluate %s: %v\noutput: %s", spelling, err, out)
+			}
+			if body := f.identifyBody(); body["identifier"] != "user-123" {
+				t.Errorf("body = %+v, want the identity resolved", body)
+			}
+		})
+	}
 
 	t.Run("traits are typed by inference", func(t *testing.T) {
 		// Given

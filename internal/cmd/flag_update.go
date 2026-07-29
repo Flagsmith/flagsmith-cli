@@ -405,12 +405,12 @@ func init() {
 	flagUpdateCmd.Flags().StringVar(&flagValueFlag, "value", "", "set the flag value")
 	flagUpdateCmd.Flags().StringVar(&flagTypeFlag, "type", "", "force the value type: string, integer, or boolean")
 	flagUpdateCmd.Flags().StringVar(&flagUpdateSegment, "segment", "", "target this segment's override (id or name) instead of the environment default")
-	flagUpdateCmd.Flags().StringVar(&flagUpdateIdentifier, "identifier", "", "target this identity's override instead of the environment default")
+	flagUpdateCmd.Flags().StringVarP(&flagUpdateIdentifier, "identifier", "i", "", "target this identity's override instead of the environment default")
 	flagUpdateCmd.Flags().IntVar(&flagUpdatePriority, "priority", 0, "move the segment override to this priority (0 is evaluated first)")
 	flagDeleteCmd.Flags().StringVar(&flagDeleteSegment, "segment", "", "the segment (id or name) whose override to delete")
-	flagDeleteCmd.Flags().StringVar(&flagDeleteIdentifier, "identifier", "", "the identity whose override to delete")
+	flagDeleteCmd.Flags().StringVarP(&flagDeleteIdentifier, "identifier", "i", "", "the identity whose override to delete")
 	for _, c := range []*cobra.Command{flagEnableCmd, flagDisableCmd} {
 		c.Flags().StringVar(&flagToggleSegment, "segment", "", "target this segment's override (id or name) instead of the environment default")
-		c.Flags().StringVar(&flagToggleIdentifier, "identifier", "", "target this identity's override instead of the environment default")
+		c.Flags().StringVarP(&flagToggleIdentifier, "identifier", "i", "", "target this identity's override instead of the environment default")
 	}
 }

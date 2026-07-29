@@ -314,7 +314,12 @@ func evalError(sdkURL string, err error) error {
 
 func init() {
 	f := evaluateCmd.Flags()
-	f.StringVar(&evalIdentityFlag, "identity", "", "resolve for this identifier")
+	f.StringVarP(&evalIdentityFlag, "identity", "i", "", "resolve for this identifier")
+	// The flag commands call this --identifier; accept that spelling too rather
+	// than making anyone remember which command uses which. Hidden, not
+	// deprecated: both names are correct, one is advertised.
+	f.StringVar(&evalIdentityFlag, "identifier", "", "alias for --identity")
+	f.Lookup("identifier").Hidden = true
 	f.StringArrayVar(&evalTraitFlags, "trait", nil, "trait key=value to evaluate with (repeatable)")
 	f.BoolVar(&evalPersistFlag, "persist", false, "persist the identity and its traits instead of evaluating transiently")
 	f.BoolVar(&evalJSFlag, "js", false, "output the state a Flagsmith frontend SDK hydrates from")

@@ -186,14 +186,15 @@ func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, a
 }
 
 var (
-	flagListSegmentFlag  string
-	flagListFeatureFlag  string
-	flagListIdentityFlag bool
+	flagListSegmentFlag    string
+	flagListFeatureFlag    string
+	flagListIdentitiesFlag bool
 )
 
 var flagListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List every flag in the current environment",
+	Args:  cobra.NoArgs, // a stray positional would otherwise be silently ignored
 	Example: `  # flags in the current environment
   flagsmith flag list
 
@@ -202,13 +203,13 @@ var flagListCmd = &cobra.Command{
 
   # one feature's segment or identity overrides
   flagsmith flag list --feature onboarding
-  flagsmith flag list --feature onboarding --identity`,
+  flagsmith flag list --feature onboarding --identities`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		switch {
 		case flagListSegmentFlag != "" && flagListFeatureFlag != "":
 			return usageErrorf("--segment and --feature are mutually exclusive")
-		case flagListIdentityFlag && flagListFeatureFlag == "":
-			return usageErrorf("--identity only applies together with --feature")
+		case flagListIdentitiesFlag && flagListFeatureFlag == "":
+			return usageErrorf("--identities only applies together with --feature")
 		}
 		_, cred, projectID, env, err := flagContext(cmd)
 		if err != nil {
@@ -223,7 +224,7 @@ var flagListCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if flagListIdentityFlag {
+			if flagListIdentitiesFlag {
 				return listFeatureIdentityOverrides(cmd, cred, env, projectID, feature)
 			}
 			return listFeatureSegmentOverrides(cmd, cred, env, feature)
@@ -551,9 +552,9 @@ func plural(n int, one, many string) string {
 func init() {
 	flagListCmd.Flags().StringVar(&flagListSegmentFlag, "segment", "", "list overrides for this segment (id or name)")
 	flagListCmd.Flags().StringVar(&flagListFeatureFlag, "feature", "", "list this feature's segment overrides (id or name), in priority order")
-	flagListCmd.Flags().BoolVar(&flagListIdentityFlag, "identity", false, "with --feature: list its identity overrides instead")
+	flagListCmd.Flags().BoolVar(&flagListIdentitiesFlag, "identities", false, "with --feature: list its identity overrides instead")
 	flagGetCmd.Flags().StringVar(&flagGetSegmentFlag, "segment", "", "show the override for this segment (id or name)")
-	flagGetCmd.Flags().StringVar(&flagGetIdentifierFlag, "identifier", "", "show the override for this identity")
+	flagGetCmd.Flags().StringVarP(&flagGetIdentifierFlag, "identifier", "i", "", "show the override for this identity")
 	flagCmd.AddCommand(flagListCmd, flagGetCmd, flagUpdateCmd, flagEnableCmd, flagDisableCmd, flagReorderCmd, flagDeleteCmd, flagCreateCmd)
 	rootCmd.AddCommand(flagCmd)
 }
