@@ -64,3 +64,16 @@ jobs:
           persist-credentials: false
       - run: sh install.sh --version "$GITHUB_REF_NAME" --bin-dir "$RUNNER_TEMP/bin"
       - run: flagsmith --version
+
+  install-script-windows:
+    name: install.ps1
+    needs: goreleaser
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: ./install.ps1 -Version $env:GITHUB_REF_NAME
+        shell: pwsh
+      - run: flagsmith --version
+        shell: pwsh

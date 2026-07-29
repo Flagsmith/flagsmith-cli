@@ -21,6 +21,12 @@ To pin the installer itself, fetch it at a commit you trust: `raw.githubusercont
 
 Alternatively, `go install github.com/Flagsmith/flagsmith-cli@latest`, or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases).
 
+On Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.ps1 | iex
+```
+
 ## Build
 
 ```sh
