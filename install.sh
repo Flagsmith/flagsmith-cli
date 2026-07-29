@@ -166,6 +166,14 @@ end
 EOF
 }
 
+# add_ci_path makes the CLI available to later steps of a GitHub Actions job.
+# GITHUB_PATH does not expand variables, so write the resolved directory.
+add_ci_path() {
+	[ -n "${GITHUB_PATH:-}" ] || return 0
+	printf '%s\n' "$INSTALL_DIR" >>"$GITHUB_PATH"
+	say "  added ${INSTALL_DIR} to \$GITHUB_PATH"
+}
+
 # add_source_line appends to a startup file, once.
 add_source_line() {
 	grep -qF "$2" "$1" && return 0
@@ -246,7 +254,10 @@ If ${VERSION} was released moments ago its archives may still be uploading — r
 		err "${INSTALL_DIR}/${BIN_NAME} was installed but will not run — wrong platform?"
 	say "installed ${installed} to ${INSTALL_DIR}/${BIN_NAME}"
 
-	[ "$NO_MODIFY_PATH" = 1 ] || modify_path
+	if [ "$NO_MODIFY_PATH" != 1 ]; then
+		modify_path
+		add_ci_path
+	fi
 
 	say ""
 	if [ "$PATH_MODIFIED" = 1 ]; then

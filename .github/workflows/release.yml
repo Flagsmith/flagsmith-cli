@@ -63,7 +63,4 @@ jobs:
         with:
           persist-credentials: false
       - run: sh install.sh --version "$GITHUB_REF_NAME" --bin-dir "$RUNNER_TEMP/bin"
-      - name: the env script puts it on PATH
-        run: |
-          . "$HOME/.local/share/flagsmith/env"
-          flagsmith --version
+      - run: flagsmith --version
