@@ -8,6 +8,14 @@ The next-generation Flagsmith command-line interface (work in progress).
 go build -o flagsmith .
 ```
 
+## Docker
+
+```sh
+docker run --rm -v "$PWD:/work" -e FLAGSMITH_API_KEY ghcr.io/flagsmith/flagsmith-cli flag list
+```
+
+A container has no keyring, so `flagsmith login` cannot store credentials there — pass `FLAGSMITH_API_KEY` or `FLAGSMITH_ENVIRONMENT_KEY`.
+
 ## Quickstart
 
 ```sh
