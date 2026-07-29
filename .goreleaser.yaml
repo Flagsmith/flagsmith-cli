@@ -1,0 +1,43 @@
+version: 2
+
+builds:
+  - binary: flagsmith
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # .Tag, not .Version: `flagsmith --version` should print the tag verbatim,
+    # and internal/version.IsRelease expects the leading v.
+    ldflags:
+      - -s -w -X github.com/Flagsmith/flagsmith-cli/internal/version.Version={{ .Tag }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - name_template: "flagsmith_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+# changelog handled by release-please.
+changelog:
+  disable: true
+
+release:
+  mode: append
+  prerelease: auto
