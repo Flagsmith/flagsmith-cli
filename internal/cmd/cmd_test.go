@@ -1649,7 +1649,11 @@ func TestServerSideKeyNeverEchoed(t *testing.T) {
 		if err == nil {
 			t.Fatal("err = nil, want an error")
 		}
-		if strings.Contains(out, "SuperSecret123") || strings.Contains(hintFor(err), "SuperSecret123") {
+		// out already carries the rendered error, but assert on the error itself
+		// too rather than lean on cobra printing it into the same buffer.
+		if strings.Contains(out, "SuperSecret123") ||
+			strings.Contains(err.Error(), "SuperSecret123") ||
+			strings.Contains(hintFor(err), "SuperSecret123") {
 			t.Errorf("output = %q — the server-side key leaked", out)
 		}
 	})
