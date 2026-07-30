@@ -2,6 +2,25 @@
 
 The next-generation Flagsmith command-line interface (work in progress).
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh
+```
+
+Installs to `$HOME/.local/bin` and adds it to your `PATH`. Options:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh -s -- --version v2.0.0 --bin-dir /usr/local/bin --no-modify-path
+curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh -s -- --help
+```
+
+`FLAGSMITH_CLI_VERSION`, `FLAGSMITH_INSTALL_DIR` and `FLAGSMITH_NO_MODIFY_PATH` do the same if exported first.
+
+To pin the installer itself, fetch it at a commit you trust: `raw.githubusercontent.com/Flagsmith/flagsmith-cli/<sha>/install.sh`.
+
+Alternatively, `go install github.com/Flagsmith/flagsmith-cli@latest`, or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases).
+
 ## Build
 
 ```sh
