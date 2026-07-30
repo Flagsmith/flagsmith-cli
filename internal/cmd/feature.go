@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/api"
-	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
 var featureCmd = &cobra.Command{

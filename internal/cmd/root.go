@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/auth"
-	"github.com/Flagsmith/flagsmith-cli/internal/output"
-	"github.com/Flagsmith/flagsmith-cli/internal/version"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
 )
 
 // annotationLongRunning marks a command that manages its own long wait (e.g. a

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/prompt"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/prompt"
 )
 
 // stdinIsTTY gates whether prompting is allowed at all; tests stub it.

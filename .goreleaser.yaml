@@ -8,7 +8,7 @@ builds:
       - -trimpath
     ldflags:
       - >-
-        -s -w -X github.com/Flagsmith/flagsmith-cli/internal/version.Version={{ if .IsSnapshot }}v{{ .Version }}{{ else }}{{ .Tag }}{{ end }}
+        -s -w -X github.com/Flagsmith/flagsmith-cli/v2/internal/version.Version={{ if .IsSnapshot }}v{{ .Version }}{{ else }}{{ .Tag }}{{ end }}
     mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux

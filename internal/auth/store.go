@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 
 	"github.com/zalando/go-keyring"
 )

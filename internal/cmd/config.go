@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
 // abbreviateHome shortens a path under the user's home directory to a ~ prefix,

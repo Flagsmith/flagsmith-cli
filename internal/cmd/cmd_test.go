@@ -23,11 +23,11 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/zalando/go-keyring"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/api"
-	"github.com/Flagsmith/flagsmith-cli/internal/auth"
-	"github.com/Flagsmith/flagsmith-cli/internal/cache"
-	"github.com/Flagsmith/flagsmith-cli/internal/config"
-	"github.com/Flagsmith/flagsmith-cli/internal/version"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/config"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
 )
 
 const (

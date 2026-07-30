@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/cache"
-	"github.com/Flagsmith/flagsmith-cli/internal/config"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/config"
 )
 
 const (
