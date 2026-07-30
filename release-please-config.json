@@ -10,7 +10,8 @@
             "draft": false,
             "include-component-in-tag": false,
             "extra-files": [
-                "install.sh"
+                "install.sh",
+                "install.ps1"
             ]
         }
     },

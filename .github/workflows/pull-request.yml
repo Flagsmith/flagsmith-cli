@@ -44,6 +44,23 @@ jobs:
           version: v2.11.4 # keep in step with the hook rev in .pre-commit-config.yaml
       - run: go mod tidy -diff
 
+  install-ps1:
+    name: install.ps1 lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          $found = Invoke-ScriptAnalyzer -Path ./install.ps1 -Severity Warning, Error
+          $found | Format-Table -AutoSize
+          if ($found) { exit 1 }
+      - run: ./install.ps1 -DryRun
+        shell: pwsh
+
   cross-compile:
     runs-on: ubuntu-latest
     steps:
