@@ -6,10 +6,9 @@ builds:
       - CGO_ENABLED=0
     flags:
       - -trimpath
-    # .Tag, not .Version: `flagsmith --version` should print the tag verbatim,
-    # and internal/version.IsRelease expects the leading v.
     ldflags:
-      - -s -w -X github.com/Flagsmith/flagsmith-cli/internal/version.Version={{ .Tag }}
+      - >-
+        -s -w -X github.com/Flagsmith/flagsmith-cli/internal/version.Version={{ if .IsSnapshot }}v{{ .Version }}{{ else }}{{ .Tag }}{{ end }}
     mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
