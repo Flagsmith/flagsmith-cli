@@ -33,6 +33,27 @@ archives:
 checksum:
   name_template: checksums.txt
 
+docker_digest:
+  name_template: digests.txt
+
+dockers_v2:
+  - images:
+      - ghcr.io/flagsmith/flagsmith-cli
+    tags:
+      - "{{ .Tag }}"
+      - "{{ .Version }}"
+      # Beta releases still take :latest — nothing stabler is published yet.
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      # Links the ghcr package to this repo.
+      org.opencontainers.image.source: https://github.com/Flagsmith/flagsmith-cli
+      org.opencontainers.image.version: "{{ .Tag }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MIT
+
 # changelog handled by release-please.
 changelog:
   disable: true
