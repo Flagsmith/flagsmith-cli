@@ -39,5 +39,5 @@ changelog:
   disable: true
 
 release:
-  mode: append
+  mode: keep-existing
   prerelease: auto
