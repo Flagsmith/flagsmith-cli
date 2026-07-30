@@ -267,4 +267,4 @@ If ${VERSION} was released moments ago its archives may still be uploading — r
 	fi
 }
 
-main "$@" || exit 1
+main "$@"
