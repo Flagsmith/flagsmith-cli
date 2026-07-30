@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/api"
-	"github.com/Flagsmith/flagsmith-cli/internal/auth"
-	"github.com/Flagsmith/flagsmith-cli/internal/bug"
-	"github.com/Flagsmith/flagsmith-cli/internal/config"
-	"github.com/Flagsmith/flagsmith-cli/internal/prompt"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/config"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/prompt"
 )
 
 // Every exported Err* sentinel must have an explicit hint decision: a hintFor

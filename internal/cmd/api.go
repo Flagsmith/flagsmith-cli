@@ -13,11 +13,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
 var (

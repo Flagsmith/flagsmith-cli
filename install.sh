@@ -116,7 +116,7 @@ detect_platform() {
 	case "$ARCH" in
 	x86_64 | amd64) ARCH=amd64 ;;
 	aarch64 | arm64) ARCH=arm64 ;;
-	*) err "unsupported architecture '${ARCH}' — 'go install github.com/${REPO}@${VERSION}' builds from source" ;;
+	*) err "unsupported architecture '${ARCH}' — 'go install github.com/${REPO}/v2@${VERSION}' builds from source" ;;
 	esac
 
 	# uname reports x86_64 under Rosetta.

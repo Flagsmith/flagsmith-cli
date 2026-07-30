@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/api"
-	"github.com/Flagsmith/flagsmith-cli/internal/httpx"
-	"github.com/Flagsmith/flagsmith-cli/internal/version"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/httpx"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
 )
 
 // userAgent identifies the CLI on every outbound request.

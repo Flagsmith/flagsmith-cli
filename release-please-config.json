@@ -11,7 +11,8 @@
             "include-component-in-tag": false,
             "extra-files": [
                 "install.sh",
-                "install.ps1"
+                "install.ps1",
+                "README.md"
             ]
         }
     },

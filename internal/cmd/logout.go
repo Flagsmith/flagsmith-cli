@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/auth"
-	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
 func newLogoutCmd() *cobra.Command {
