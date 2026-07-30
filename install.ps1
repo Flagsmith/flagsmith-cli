@@ -105,7 +105,7 @@ if (-not $BinDir) {
         Join-Path $env:USERPROFILE '.local\bin'
     }
 }
-if ($env:FLAGSMITH_NO_MODIFY_PATH) { $NoModifyPath = $true }
+if ($env:FLAGSMITH_NO_MODIFY_PATH -eq '1') { $NoModifyPath = $true }
 
 $arch = Get-TargetArch
 $archive = "flagsmith_$($Version.TrimStart('v'))_windows_$arch.zip"
