@@ -9,7 +9,7 @@ import (
 )
 
 // Version is the CLI version: the release tag stamped by the release build
-// (-ldflags "-X github.com/Flagsmith/flagsmith-cli/internal/version.Version=v1.2.3"),
+// (-ldflags "-X github.com/Flagsmith/flagsmith-cli/v2/internal/version.Version=v1.2.3"),
 // else resolved from build info.
 var Version = "dev"
 

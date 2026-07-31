@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/api"
-	"github.com/Flagsmith/flagsmith-cli/internal/cache"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
 )
 
 // idNameMap builds a canonical→name map from a fetched slice.

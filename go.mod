@@ -1,4 +1,4 @@
-module github.com/Flagsmith/flagsmith-cli
+module github.com/Flagsmith/flagsmith-cli/v2
 
 go 1.26
 

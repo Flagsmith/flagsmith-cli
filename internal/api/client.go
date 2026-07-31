@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/bug"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/httpx"
-	"github.com/Flagsmith/flagsmith-cli/internal/version"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/httpx"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
 )
 
 // Auth applies an Authorization scheme to a request.
