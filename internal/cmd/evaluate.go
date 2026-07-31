@@ -12,9 +12,9 @@ import (
 	flagsmith "github.com/Flagsmith/flagsmith-go-client/v5"
 	"github.com/spf13/cobra"
 
-	"github.com/Flagsmith/flagsmith-cli/internal/bug"
-	"github.com/Flagsmith/flagsmith-cli/internal/httpx"
-	"github.com/Flagsmith/flagsmith-cli/internal/output"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/httpx"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
 // evalView is one resolved flag as the human view shows it — what an SDK hands
