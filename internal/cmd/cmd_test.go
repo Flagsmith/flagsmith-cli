@@ -6684,17 +6684,46 @@ func TestEvaluateIdentity(t *testing.T) {
 		}
 	})
 
-	t.Run("a malformed trait is a usage error", func(t *testing.T) {
+	// A trait needs a key to be a trait at all; both typos are caught here rather
+	// than sent for the SDK API to reject.
+	for _, malformed := range []string{"plan", "=premium"} {
+		t.Run("a malformed trait is a usage error: "+malformed, func(t *testing.T) {
+			// Given
+			evalEnv(t)
+
+			// When
+			_, err := run("", "evaluate", "--trait", malformed)
+
+			// Then
+			var usage *usageError
+			if !errors.As(err, &usage) {
+				t.Fatalf("err = %v, want a usage error", err)
+			}
+			if !strings.Contains(err.Error(), malformed) {
+				t.Errorf("err = %v, want it to quote the trait as passed", err)
+			}
+		})
+	}
+
+	// An empty value is a trait set to "", which is a what-if worth asking.
+	t.Run("a trait with an empty value is sent as one", func(t *testing.T) {
 		// Given
-		evalEnv(t)
+		f := evalEnv(t)
 
 		// When
-		_, err := run("", "evaluate", "--trait", "plan")
+		out, err := run("", "evaluate", "--identity", "user-123", "--trait", "plan=")
 
 		// Then
-		var usage *usageError
-		if !errors.As(err, &usage) {
-			t.Fatalf("err = %v, want a usage error", err)
+		if err != nil {
+			t.Fatalf("evaluate --trait plan=: %v\noutput: %s", err, out)
+		}
+		traits := f.identifyBody()["traits"].([]any)
+		if len(traits) != 1 {
+			t.Fatalf("traits = %+v, want the one trait", traits)
+		}
+		trait := traits[0].(map[string]any)
+		if trait["trait_key"] != "plan" || trait["trait_value"] != "" {
+			t.Errorf("trait = %+v, want plan set to the empty string", trait)
 		}
 	})
 

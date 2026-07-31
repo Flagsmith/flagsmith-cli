@@ -277,7 +277,7 @@ func parseTraits(raw []string) ([]*flagsmith.Trait, error) {
 	traits := make([]*flagsmith.Trait, 0, len(raw))
 	for _, item := range raw {
 		k, v, ok := strings.Cut(item, "=")
-		if !ok {
+		if !ok || k == "" {
 			return nil, usageErrorf("invalid trait %q (want key=value)", item)
 		}
 		traits = append(traits, &flagsmith.Trait{TraitKey: k, TraitValue: typedFieldValue(v)})
