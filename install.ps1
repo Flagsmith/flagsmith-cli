@@ -30,7 +30,7 @@ $ErrorActionPreference = 'Stop'
 # Invoke-WebRequest spends most of its time drawing the progress bar.
 $ProgressPreference = 'SilentlyContinue'
 
-$DefaultVersion = 'v2.0.0-beta.1' # x-release-please-version
+$DefaultVersion = 'v2.0.0-beta.2' # x-release-please-version
 
 $Repo = 'Flagsmith/flagsmith-cli'
 $ExeName = 'flagsmith.exe'
