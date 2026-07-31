@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -100,6 +101,57 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 		return api.Environment{}, err
 	}
 	return *e, nil
+}
+
+// environmentKeyShape matches a client-side SDK key: the backend mints them as
+// shortuuids, which are always 22 alphanumerics. It tells a key apart from a
+// name, so a key nothing has cached yet still reaches the SDK API without an
+// Admin credential. A 22-character name with no separators is the false
+// positive, and even that resolves once the cache has seen the environment.
+var environmentKeyShape = regexp.MustCompile(`^[0-9A-Za-z]{22}$`)
+
+// sdkEnvironmentKey returns the environment key the SDK API authenticates with.
+//
+// FLAGSMITH_ENVIRONMENT_KEY wins: it is the only home for a server-side key, and
+// it names its environment outright. Otherwise the environment context is a key
+// or a name, as it is everywhere else — and a name is turned into a key by the
+// local name cache wherever it can be, so evaluation stays free of the Admin API
+// and of any credential for it. Falling through to the Admin API is what makes a
+// name work at all on a cold cache; it is also the only way to scope a name that
+// the instance-wide cache holds more than one of.
+func sdkEnvironmentKey(cmd *cobra.Command, pc *projectContext) (string, error) {
+	sdkURL, _ := pc.SDKAPIURL.Value.(string)
+	if _, v := envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL); v != "" {
+		return v, nil
+	}
+	ref, _ := pc.Environment.Value.(string)
+	if ref == "" {
+		return "", withHint(errors.New("no environment key"),
+			"Set FLAGSMITH_ENVIRONMENT_KEY, or pass -e.")
+	}
+	names := cache.Load(pc.apiURL()).Environments
+	if _, cached := names[ref]; cached {
+		return ref, nil
+	}
+	if hits := matchByName(names, ref); len(hits) == 1 {
+		return hits[0], nil
+	}
+	if environmentKeyShape.MatchString(ref) {
+		return ref, nil
+	}
+	cred, err := resolveCredential(cmd.Context())
+	if err != nil {
+		return "", err
+	}
+	projectID, err := resolveProjectID(cmd, pc, cred)
+	if err != nil {
+		return "", err
+	}
+	env, err := resolveEnvironmentRef(cmd, cred, projectID, ref)
+	if err != nil {
+		return "", err
+	}
+	return env.APIKey, nil
 }
 
 // resolveEnvironmentRef turns an environment reference (an api_key or a name)

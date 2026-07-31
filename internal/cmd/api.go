@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,7 +96,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 // apiTarget resolves the base URL and the auth applier for the chosen surface.
 func apiTarget(cmd *cobra.Command, pc *projectContext) (string, func(*http.Request), error) {
 	if apiSDKFlag {
-		key, err := sdkEnvironmentKey(pc)
+		key, err := sdkEnvironmentKey(cmd, pc)
 		if err != nil {
 			return "", nil, err
 		}
@@ -110,20 +109,6 @@ func apiTarget(cmd *cobra.Command, pc *projectContext) (string, func(*http.Reque
 		return "", nil, err
 	}
 	return apiURL, cred.auth.Apply, nil
-}
-
-// sdkEnvironmentKey returns the client- or server-side key for --sdk calls,
-// taken verbatim from the environment context (no Admin name resolution).
-func sdkEnvironmentKey(pc *projectContext) (string, error) {
-	sdkURL, _ := pc.SDKAPIURL.Value.(string)
-	if _, v := envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL); v != "" {
-		return v, nil
-	}
-	if k, ok := pc.Environment.Value.(string); ok && k != "" {
-		return k, nil
-	}
-	return "", withHint(errors.New("no environment key"),
-		"Set FLAGSMITH_ENVIRONMENT_KEY, or pass -e.")
 }
 
 // apiRequestBody builds the request body (or query params) and resolves the
