@@ -25,6 +25,15 @@ var (
 func sharedHTTPClient() *http.Client {
 	httpClientOnce.Do(func() {
 		httpClientMemo = httpx.New(userAgent())
+		if activeFlag != nil {
+			httpClientMemo.Transport = activeFlag.Wrap(httpClientMemo.Transport)
+		}
+		// Reaching for the client is the CLI committing to network I/O, which is
+		// the only time the flag's value is worth evaluating: a command that never
+		// leaves the machine does not ask about itself either.
+		if refreshWant {
+			refreshSelfFlags()
+		}
 	})
 	return httpClientMemo
 }

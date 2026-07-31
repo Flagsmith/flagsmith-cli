@@ -172,6 +172,10 @@ func nudgeInit(cmd *cobra.Command) bool {
 
 func Execute() {
 	prepare()
+	startAnimation()
+	// Idempotent, and the last word on a hidden cursor: the explicit calls below
+	// handle the paths that end in os.Exit, this one handles a panic.
+	defer releaseLine()
 	// ExecuteC returns the command that actually ran (or failed to parse), so a
 	// usageError can print the nearest command's usage — not the root's.
 	cmd, err := rootCmd.ExecuteC()
@@ -180,9 +184,14 @@ func Execute() {
 		cancelTimeout = nil
 	}
 	if err == nil {
+		// A command that printed nothing left the last flag standing, and the
+		// cursor with it.
+		releaseLine()
 		return
 	}
-	os.Exit(reportError(cmd, err))
+	code := reportError(cmd, err)
+	releaseLine()
+	os.Exit(code)
 }
 
 // reportError renders an error's hint and, for incorrect-input (exit 2) errors,

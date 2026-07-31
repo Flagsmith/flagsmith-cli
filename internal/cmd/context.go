@@ -188,5 +188,6 @@ func applyContext(cmd *cobra.Command) (*projectContext, error) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", w)
 	}
 	apiURL = pc.apiURL()
+	noteAudience(pc)
 	return pc, nil
 }
