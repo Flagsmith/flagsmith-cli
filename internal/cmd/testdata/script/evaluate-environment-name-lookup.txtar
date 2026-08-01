@@ -1,0 +1,22 @@
+fake sdk-flags WqXhZk8sVY3dGgTqZ9pJmN unknown
+fake sdk-flags K2mVsGdXhZ8kQqZ9pJmNbJ
+fake environments
+
+# Given: a config naming an environment by name, an Admin credential, and a cold cache
+# When: it is evaluated twice
+# Then: the first run costs one Admin lookup and the second costs none — the name was remembered
+exec flagsmith evaluate
+stdout '2 flags'
+exec flagsmith evaluate
+dump env-lists lists.txt
+cmp lists.txt expect-one-list
+dump sdk-keys keys.txt
+cmp keys.txt expect-production-keys
+
+-- flagsmith.json --
+{"project": 101, "environment": "Production"}
+-- expect-one-list --
+1 environment list calls
+-- expect-production-keys --
+K2mVsGdXhZ8kQqZ9pJmNbJ
+K2mVsGdXhZ8kQqZ9pJmNbJ

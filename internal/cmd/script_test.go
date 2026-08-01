@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -12,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
 	"github.com/rogpeppe/go-internal/testscript"
 	"github.com/zalando/go-keyring"
 )
@@ -50,11 +54,16 @@ func TestScripts(t *testing.T) {
 		RequireExplicitExec: true,
 		Setup:               setupScript,
 		Cmds: map[string]func(*testscript.TestScript, bool, []string){
-			"fake": cmdFake,
-			"dump": cmdDump,
+			"fake":  cmdFake,
+			"dump":  cmdDump,
+			"cache": cmdCache,
 		},
 	})
 }
+
+// backref spots a description that leans on a neighbouring case. Whole words
+// only: "against" is not a back-reference to "again".
+var backref = regexp.MustCompile(`\b(the same|above|again|previously|previous|earlier)\b`)
 
 // Every case in a script is described the way the engine's test data describes
 // its own: a Given/When/Then triple, in that order, above the commands it
@@ -106,10 +115,8 @@ func TestEveryScriptCaseIsGivenWhenThen(t *testing.T) {
 					if !strings.HasPrefix(l, "# ") {
 						continue
 					}
-					for _, backref := range []string{"the same", " above", " again", "previous", "earlier"} {
-						if strings.Contains(strings.ToLower(l), backref) {
-							t.Errorf("%q refers to another case — describe this one in full", strings.TrimSpace(l))
-						}
+					if backref.MatchString(strings.ToLower(l)) {
+						t.Errorf("%q refers to another case — describe this one in full", strings.TrimSpace(l))
 					}
 				}
 			}
@@ -140,6 +147,11 @@ func setupScript(env *testscript.Env) error {
 	//	env $SDK_KEY_VAR=ser.serverSideSecret
 	env.Setenv("SDK_KEY_VAR", scopedEnvName(envEnvironmentKey, f.srv.URL))
 	env.Setenv("API_KEY_VAR", scopedEnvName(envAPIKey, f.srv.URL))
+
+	// An `env` in a script lasts to the end of that script, so a case that
+	// clears the credential changes what its neighbours start from. $MASTER_KEY
+	// lets a case put it back rather than depend on what ran before it.
+	env.Setenv("MASTER_KEY", masterKey)
 	env.Setenv("HOME", env.WorkDir)
 	env.Setenv("XDG_CONFIG_HOME", filepath.Join(env.WorkDir, ".config"))
 	return nil
@@ -153,8 +165,11 @@ func setupScript(env *testscript.Env) error {
 //	fake sdk-flags <key>      that environment key resolves the default flags
 //	fake sdk-flags <key> none ...and this one resolves none
 func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
-	if neg || len(args) < 2 {
-		ts.Fatalf("usage: fake <sdk-status|sdk-delay|sdk-flags> <value> [none]")
+	if neg || len(args) == 0 {
+		ts.Fatalf("usage: fake <sdk-status|sdk-delay|sdk-flags|environments> [value...]")
+	}
+	if len(args) < 2 && args[0] != "environments" {
+		ts.Fatalf("fake %s needs a value", args[0])
 	}
 	f := ts.Value("fake").(*fakeInstance)
 	f.mu.Lock()
@@ -170,13 +185,71 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		f.sdkDelay = d
 	case "sdk-flags":
 		flags := sdkFlagsFrom(defaultFeatures())
-		if len(args) > 2 && args[2] == "none" {
+		switch {
+		case len(args) > 2 && args[2] == "none":
 			flags = []map[string]any{}
+		case len(args) > 2 && args[2] == "unknown":
+			// Not in the map at all: the SDK API 401s, as it does for a key
+			// that belongs to no environment.
+			delete(f.sdkEnvFlags, args[1])
+			return
 		}
 		f.sdkEnvFlags[args[1]] = flags
+	case "sdk-identity":
+		// This identity resolves max_items on at 99, so its own flags are
+		// distinguishable from the environment's defaults.
+		flags := sdkFlagsFrom(defaultFeatures())
+		flags[1]["enabled"], flags[1]["feature_state_value"] = true, 99
+		f.sdkIdentityFlags[args[1]] = flags
+	case "environments":
+		// The two environments the Admin API knows about for project 101.
+		f.envs["101"] = []map[string]any{
+			{"id": 1, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN", "project": 101, "description": "Local dev"},
+			{"id": 2, "name": "Production", "api_key": "K2mVsGdXhZ8kQqZ9pJmNbJ", "project": 101, "description": "Live", "use_v2_feature_versioning": true},
+		}
 	default:
 		ts.Fatalf("unknown fake setting %q", args[0])
 	}
+}
+
+// cmdCache seeds the local name cache, for the cases that turn on what the CLI
+// already knows without asking the Admin API.
+//
+//	cache environments K2mVsGdXhZ8kQqZ9pJmNbJ=Production
+func cmdCache(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) < 2 || args[0] != "environments" {
+		ts.Fatalf("usage: cache environments <key>=<name>...")
+	}
+	f := ts.Value("fake").(*fakeInstance)
+	names := map[string]string{}
+	for _, pair := range args[1:] {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok {
+			ts.Fatalf("cache: %q is not key=name", pair)
+		}
+		names[k] = v
+	}
+	body, err := json.Marshal(map[string]*cache.Names{
+		strings.TrimRight(f.srv.URL, "/"): {Environments: names},
+	})
+	ts.Check(err)
+	path := scriptCachePath(ts)
+	ts.Check(os.MkdirAll(filepath.Dir(path), 0o755))
+	ts.Check(os.WriteFile(path, body, 0o600))
+}
+
+// scriptCachePath is where the CLI under test keeps its name cache: what
+// os.UserCacheDir resolves to for the script's HOME, not for this process's.
+// Writing it via cache.Merge would target the developer's own cache directory.
+func scriptCachePath(ts *testscript.TestScript) string {
+	dir := filepath.Join(ts.Getenv("HOME"), ".cache")
+	switch {
+	case runtime.GOOS == "darwin":
+		dir = filepath.Join(ts.Getenv("HOME"), "Library", "Caches")
+	case ts.Getenv("XDG_CACHE_HOME") != "":
+		dir = ts.Getenv("XDG_CACHE_HOME")
+	}
+	return filepath.Join(dir, "flagsmith", "cache.json")
 }
 
 // cmdDump writes a slice of what the fake observed to a file, so a script can

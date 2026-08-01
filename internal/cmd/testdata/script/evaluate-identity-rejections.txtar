@@ -1,0 +1,23 @@
+# Given: traits but no identity to persist them against
+# When: --persist is passed
+# Then: it is a usage error naming the flag that is missing
+! exec flagsmith evaluate --trait country=US --persist
+stderr '--identity'
+stderr 'Usage:'
+
+# Given: a trait with no key at all
+# When: it is passed
+# Then: it is a usage error quoting the trait as it was written
+! exec flagsmith evaluate --trait plan
+stderr 'plan'
+stderr 'Usage:'
+
+# Given: a trait whose key is empty
+# When: it is passed
+# Then: it is a usage error quoting the trait as it was written
+! exec flagsmith evaluate --trait =premium
+stderr '=premium'
+stderr 'Usage:'
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
