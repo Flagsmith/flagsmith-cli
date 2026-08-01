@@ -8,6 +8,7 @@ cmp stdout expect-list
 # Given: an instance with one organisation
 # When: the command is spelled `org`
 # Then: it is an alias for organisation
+fake orgs Acme=3
 exec flagsmith org list
 stdout 'Acme'
 
