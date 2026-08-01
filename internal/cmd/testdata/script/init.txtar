@@ -1,0 +1,189 @@
+# `init` without a terminal: everything it can be told on the command line.
+# Each case runs in a directory of its own, since init writes flagsmith.json
+# into the one it is run from.
+
+# Given: an empty repository and a credential that reaches the instance
+# When: init is told both the project and the environment
+# Then: it verifies access, writes the config with the instance recorded, and seeds the name cache
+mkdir plain
+cd plain
+exec flagsmith init --project 12345 --environment WqXhZk8sVY3dGgTqZ9pJmN --yes
+stderr 'Verified access'
+stderr 'Wrote flagsmith.json'
+exec flagsmith config --json --jq '.project.value, .environment.value'
+cmp stdout $WORK/expect-plain
+grep 'schema/flagsmith.json' flagsmith.json
+grep '"WqXhZk8sVY3dGgTqZ9pJmN":"Development"' $CACHE
+cd $WORK
+
+# Given: an empty repository and no project to write
+# When: init runs non-interactively
+# Then: it is a usage error naming the flag that would have supplied one
+mkdir noproject
+cd noproject
+! exec flagsmith init --yes
+stderr '--project'
+stderr 'Usage:'
+cd $WORK
+
+# Given: an empty repository and an empty --project
+# When: init runs non-interactively
+# Then: it is a usage error rather than an empty reference being written
+mkdir emptyproject
+cd emptyproject
+! exec flagsmith init --project '' --yes
+stderr 'Usage:'
+cd $WORK
+
+# Given: an instance with exactly one organisation, and an empty --organisation
+# When: a project is created
+# Then: the lone organisation is used rather than the empty reference
+mkdir emptyorg
+cd emptyorg
+exec flagsmith init --organisation '' --create-project smoke --yes
+stderr 'Wrote flagsmith.json'
+cd $WORK
+
+# Given: an empty repository and no credentials at all
+# When: init runs
+# Then: it fails, offering both the variable and the command that would supply one
+mkdir nocreds
+cd nocreds
+env $API_KEY_VAR=
+! exec flagsmith init --project 12345 --yes
+stderr 'FLAGSMITH_API_KEY'
+stderr 'flagsmith login'
+env $API_KEY_VAR=$MASTER_KEY
+cd $WORK
+
+# Given: a repository that already has a flagsmith.json
+# When: init runs without --yes
+# Then: it is a usage error naming --yes rather than overwriting
+mkdir existing
+cd existing
+cp $WORK/existing-config.json flagsmith.json
+! exec flagsmith init --project 12345
+stderr '--yes'
+stderr 'Usage:'
+cd $WORK
+
+# Given: an empty repository, and a project and environment to be created
+# When: init is told to create both
+# Then: both are created and the new references are what get written
+mkdir createboth
+cd createboth
+fake forget-requests
+exec flagsmith init --create-project acme-new --create-environment Development --yes
+dump requests requests.txt
+grep 'POST /api/v1/projects/.*"name":"acme-new"' requests.txt
+grep 'POST /api/v1/environments/.*"name":"Development"' requests.txt
+exec flagsmith config --json --jq '.project.value, .environment.value'
+cmp stdout $WORK/expect-created
+cd $WORK
+
+# Given: an instance with more than one organisation
+# When: a project is created without saying which organisation it belongs to
+# Then: it is a usage error naming the flag that would say
+mkdir multiorg
+cd multiorg
+fake orgs Acme=3 Beta=7
+! exec flagsmith init --create-project x --yes
+stderr 'organisation'
+stderr 'Usage:'
+fake orgs Acme=3
+cd $WORK
+
+# Given: a project both named and asked to be created
+# When: init runs
+# Then: it is a usage error — the two flags describe different intents
+mkdir conflictproject
+cd conflictproject
+! exec flagsmith init --project 101 --create-project x --yes
+stderr 'mutually exclusive'
+cd $WORK
+
+# Given: an existing project, and an environment to be created in it
+# When: init is told to create it
+# Then: the environment is created and its minted key is what gets written
+mkdir createenv
+cd createenv
+fake forget-requests
+exec flagsmith init --project 101 --create-environment Staging --yes
+dump requests requests.txt
+grep 'POST /api/v1/environments/.*"name":"Staging"' requests.txt
+exec flagsmith config --json --jq .environment.value
+stdout '^createdEnvKey00000000$'
+cd $WORK
+
+# Given: an environment both named and asked to be created
+# When: init runs
+# Then: it is a usage error — the two flags describe different intents
+mkdir conflictenv
+cd conflictenv
+! exec flagsmith init --project 101 --environment WqXhZk8sVY3dGgTqZ9pJmN --create-environment x --yes
+stderr 'mutually exclusive'
+cd $WORK
+
+# Given: a project with no environments in it, and no terminal to offer to create one
+# When: init runs
+# Then: nothing is created and no environment is written
+mkdir noenvs
+cd noenvs
+fake environments-named
+fake forget-requests
+exec flagsmith init --project 101 --yes
+dump requests requests.txt
+! grep 'POST /api/v1/environments/' requests.txt
+exec flagsmith config --json --jq .environment.value
+stdout '^null$'
+fake environments
+cd $WORK
+
+# Given: a config that already records an organisation
+# When: init rewrites it
+# Then: the organisation is preserved rather than dropped
+mkdir preserveorg
+cd preserveorg
+cp $WORK/with-organisation.json flagsmith.json
+exec flagsmith init --project 12345 --yes
+exec flagsmith config --json --jq .organisation.value
+stdout '^3$'
+cd $WORK
+
+# Given: a config that already records a non-default SDK API URL
+# When: init rewrites it
+# Then: that URL is preserved
+mkdir preservesdk
+cd preservesdk
+cp $WORK/with-sdk-url.json flagsmith.json
+exec flagsmith init --project 12345 --yes
+exec flagsmith config --json --jq .sdkApiUrl.value
+stdout 'sdk.acme.internal'
+cd $WORK
+
+# Given: a repository whose flagsmith.json is not valid JSON
+# When: init is pointed at a different config to write
+# Then: it refuses, and the malformed file is left exactly as it was
+mkdir malformed
+cd malformed
+cp $WORK/broken.json flagsmith.json
+! exec flagsmith init --config-path elsewhere.json --project 12345 --yes
+cmp flagsmith.json $WORK/broken.json
+cd $WORK
+
+-- flagsmith.json --
+{"project": 101}
+-- existing-config.json --
+{"project": 1}
+-- with-organisation.json --
+{"project": 12345, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- with-sdk-url.json --
+{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN", "sdkApiUrl": "https://sdk.acme.internal"}
+-- broken.json --
+{ this is not valid json
+-- expect-plain --
+12345
+WqXhZk8sVY3dGgTqZ9pJmN
+-- expect-created --
+999
+createdEnvKey00000000

@@ -255,7 +255,7 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		ts.Fatalf("usage: fake <sdk-status|sdk-delay|sdk-flags|environments> [value...]")
 	}
 	valueless := []string{"environments", "orgs", "feature-overrides", "workflow-gated",
-		"segment-override-missing", "edge-identities", "forget-requests", "features-default"}
+		"segment-override-missing", "edge-identities", "forget-requests", "features-default", "environments-named"}
 	if len(args) < 2 && !slices.Contains(valueless, args[0]) {
 		ts.Fatalf("fake %s needs a value", args[0])
 	}
