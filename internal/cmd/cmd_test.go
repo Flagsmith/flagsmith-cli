@@ -142,25 +142,19 @@ func (d *delayedReader) Read(p []byte) (int, error) {
 // slice touches. Organisations answers to the master key, the env bearer
 // token, and the OAuth access token; users/me only to bearer credentials.
 
-// commandShapes are the two supported spellings of login/logout:
-// top-level and under `auth`.
-var commandShapes = []struct {
-	name   string
-	prefix []string
-}{
-	{"top-level", nil},
-	{"auth alias", []string{"auth"}},
-}
-
-// shapeArgs prepends a shape prefix to a command line.
-
 // shapeArgs prepends a shape prefix to a command line.
 func shapeArgs(prefix []string, args ...string) []string {
 	return append(append([]string{}, prefix...), args...)
 }
 
 func TestBrowserLoginFlow(t *testing.T) {
-	for _, shape := range commandShapes {
+	for _, shape := range []struct {
+		name   string
+		prefix []string
+	}{
+		{"top-level", nil},
+		{"auth alias", []string{"auth"}},
+	} {
 		t.Run(shape.name, func(t *testing.T) {
 			testBrowserLoginFlow(t, shape.prefix)
 		})

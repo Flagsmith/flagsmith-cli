@@ -300,11 +300,11 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		set(func() { f.features["101"] = items })
 	case "segment-override":
 		// max_items alone, with or without an override for segment 12.
-		set(func() { withSegmentOverride(f, args[1] == "on") })
+		withSegmentOverride(f, args[1] == "on")
 	case "feature-overrides":
 		// max_items with two segment overrides and their feature-states, in
 		// priority order — the fixture the override views are read against.
-		set(func() { withSegmentOverride(f, true) })
+		withSegmentOverride(f, true)
 		withFeatureOverridesRows(f)
 	case "feature-segments":
 		// fake feature-segments 2 rows.json

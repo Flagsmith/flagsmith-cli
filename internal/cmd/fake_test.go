@@ -487,6 +487,8 @@ func withFeatureSegmentDelay(f *fakeInstance, d time.Duration) {
 // withSegmentOverride sets project 101's features to a single max_items
 // feature carrying an environment default and, optionally, a segment override.
 func withSegmentOverride(f *fakeInstance, withOverride bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	item := map[string]any{
 		"id": 2, "name": "max_items", "type": "STANDARD",
 		"num_segment_overrides": 1, "num_identity_overrides": 0,
