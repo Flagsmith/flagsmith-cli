@@ -1,0 +1,25 @@
+fake environments
+
+# Given: an environment named Production
+# When: its document is fetched by name
+# Then: the document is that environment's, carrying its feature states
+exec flagsmith environment document Production --jq '.api_key, (.feature_states | length)'
+cmp stdout expect-production
+
+# Given: a configuration naming Development as the environment
+# When: a document is fetched with no argument
+# Then: the context environment is the one fetched
+exec flagsmith environment document --jq .api_key
+stdout '^WqXhZk8sVY3dGgTqZ9pJmN$'
+
+# Given: an environment document with two feature states in it
+# When: it is filtered with --jq
+# Then: the filter applies to the document
+exec flagsmith environment document Production --jq '.feature_states | length'
+stdout '^2$'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-production --
+K2mVsGdXhZ8kQqZ9pJmNbJ
+2

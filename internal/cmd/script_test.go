@@ -273,6 +273,11 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	case "features-default":
 		// The project's usual two features, as newFake starts with.
 		set(func() { f.features["101"] = defaultFeatures() })
+	case "server-keys":
+		// fake server-keys K2mVsGdXhZ8kQqZ9pJmNbJ keys.json — the server-side
+		// keys an environment already has.
+		rows := scriptRows(ts, args[2])
+		set(func() { f.serverKeys[args[1]] = rows })
 	case "forget-requests":
 		// The request log runs the length of a script, so a case that counts
 		// calls says where its own counting starts.
@@ -395,8 +400,8 @@ func scriptValue(s string) any {
 //
 //	cache environments K2mVsGdXhZ8kQqZ9pJmNbJ=Production
 func cmdCache(ts *testscript.TestScript, neg bool, args []string) {
-	if neg || len(args) < 2 {
-		ts.Fatalf("usage: cache [-url=<instance>] <organisations|projects|environments|segments> <key>=<name>...")
+	if neg || len(args) == 0 {
+		ts.Fatalf("usage: cache [-url=<instance>] <organisations|projects|environments|segments> [<key>=<name>...]")
 	}
 	instance := ts.Value("fake").(*fakeInstance).srv.URL
 	if strings.HasPrefix(args[0], "-url=") {
