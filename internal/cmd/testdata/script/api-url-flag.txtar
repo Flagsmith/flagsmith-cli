@@ -1,0 +1,38 @@
+# The instance is named by a flag here rather than by the environment, so these
+# cases can say where in the command line that flag is allowed to sit.
+env FLAGSMITH_API_URL=
+
+# Given: an instance named by a flag placed after the subcommand
+# When: auth status runs
+# Then: that instance answers
+exec flagsmith auth status --api $API
+cp stdout after.txt
+stdout 'Acme'
+
+# Given: an instance named by a flag placed before the subcommand
+# When: auth status runs
+# Then: it behaves exactly as it does with the flag after the subcommand
+exec flagsmith --api $API auth status
+cmp stdout after.txt
+
+# Given: an instance named by a flag placed between nested subcommands
+# When: auth status runs
+# Then: it behaves exactly as it does with the flag after the subcommand
+exec flagsmith auth --api $API status
+cmp stdout after.txt
+
+# Given: an instance named by the canonical --api-url spelling
+# When: auth status runs
+# Then: it behaves exactly as the --api alias does
+exec flagsmith auth status --api-url $API
+cmp stdout after.txt
+
+# Given: a CLI documenting its global flags
+# When: --help is shown
+# Then: --api-url is documented and the --api alias is kept out of the way
+exec flagsmith --help
+stdout '\-\-api-url'
+! stdout '\-\-api '
+
+-- flagsmith.json --
+{"project": 101}
