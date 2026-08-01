@@ -58,9 +58,6 @@ func isolateStorage(t *testing.T) {
 
 // resetFlags clears package-level flag state that would otherwise leak
 // between Execute calls on the shared rootCmd.
-
-// resetFlags clears package-level flag state that would otherwise leak
-// between Execute calls on the shared rootCmd.
 func resetFlags() {
 	reset := func(f *pflag.Flag) {
 		_ = f.Value.Set(f.DefValue)
@@ -84,10 +81,6 @@ func resetFlags() {
 	apiRawFields = nil
 	evalTraitFlags = nil
 }
-
-// setEnvCred exports a credential variable host-scoped to url, as a
-// self-hosted user must: the unscoped variable is trusted only for the
-// default SaaS host.
 
 // setEnvCred exports a credential variable host-scoped to url, as a
 // self-hosted user must: the unscoped variable is trusted only for the
@@ -125,8 +118,6 @@ func runWithStdin(stdin io.Reader, args ...string) (string, error) {
 }
 
 // delayedReader stalls the first Read — a human thinking at a prompt.
-
-// delayedReader stalls the first Read — a human thinking at a prompt.
 type delayedReader struct {
 	delay time.Duration
 	r     io.Reader
@@ -137,10 +128,6 @@ func (d *delayedReader) Read(p []byte) (int, error) {
 	d.once.Do(func() { time.Sleep(d.delay) })
 	return d.r.Read(p)
 }
-
-// fakeInstance is a Flagsmith instance stub covering the endpoints the auth
-// slice touches. Organisations answers to the master key, the env bearer
-// token, and the OAuth access token; users/me only to bearer credentials.
 
 // shapeArgs prepends a shape prefix to a command line.
 func shapeArgs(prefix []string, args ...string) []string {
@@ -427,11 +414,7 @@ func TestBrowserLoginRefusesNoInput(t *testing.T) {
 	}
 }
 
-// --yes is authorization, not a liveness switch, so it must NOT block a
-// browser login the way --no-input does: with --yes the login proceeds to the
-// OAuth callback flow rather than refusing up front.
-
-// --yes is authorization, not a liveness switch, so it must NOT block a
+// --yes is authorisation, not a liveness switch, so it must NOT block a
 // browser login the way --no-input does: with --yes the login proceeds to the
 // OAuth callback flow rather than refusing up front.
 func TestBrowserLoginNotBlockedByYes(t *testing.T) {
@@ -634,8 +617,6 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 }
 
 // The bearer variable is withheld from a redirected host like the master key.
-
-// The bearer variable is withheld from a redirected host like the master key.
 func TestUnscopedAccessTokenNotSentToRedirectedHost(t *testing.T) {
 	// Given
 	isolateStorage(t)
@@ -655,9 +636,6 @@ func TestUnscopedAccessTokenNotSentToRedirectedHost(t *testing.T) {
 		t.Errorf("organisation calls = %d, want 0 — no request should carry the bearer", got)
 	}
 }
-
-// The SDK credential is scoped to the SDK surface: sdkApiUrl's host, which is
-// where that key is sent — not the Admin host, which can differ.
 
 // The SDK credential is scoped to the SDK surface: sdkApiUrl's host, which is
 // where that key is sent — not the Admin host, which can differ.
