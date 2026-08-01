@@ -178,7 +178,7 @@ func testBrowserLoginFlow(t *testing.T, prefix []string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if q == nil {
-		t.Fatalf("login never printed an authorization URL; output: %q", out.String())
+		t.Fatalf("login never printed an authorisation URL; output: %q", out.String())
 	}
 	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
 		t.Fatal(err)
@@ -383,7 +383,7 @@ func TestBrowserLoginWithoutTTYNeverOpensBrowser(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if q == nil {
-		t.Fatalf("no authorization URL printed; output: %q", out.String())
+		t.Fatalf("no authorisation URL printed; output: %q", out.String())
 	}
 	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
 		t.Fatal(err)
@@ -447,7 +447,7 @@ func TestBrowserLoginNotBlockedByYes(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if q == nil {
-		t.Fatalf("--yes must not refuse login; no authorization URL printed; output: %q", out.String())
+		t.Fatalf("--yes must not refuse login; no authorisation URL printed; output: %q", out.String())
 	}
 	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
 		t.Fatal(err)
