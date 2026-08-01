@@ -168,21 +168,24 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	if neg || len(args) == 0 {
 		ts.Fatalf("usage: fake <sdk-status|sdk-delay|sdk-flags|environments> [value...]")
 	}
-	if len(args) < 2 && !slices.Contains([]string{"environments", "orgs"}, args[0]) {
+	valueless := []string{"environments", "orgs", "feature-overrides", "workflow-gated",
+		"segment-override-missing", "edge-identities"}
+	if len(args) < 2 && !slices.Contains(valueless, args[0]) {
 		ts.Fatalf("fake %s needs a value", args[0])
 	}
 	f := ts.Value("fake").(*fakeInstance)
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	// Not locked here: several of these delegate to fixture helpers that take
+	// the lock themselves. Cases that touch fields directly lock around it.
+	set := func(fn func()) { f.mu.Lock(); defer f.mu.Unlock(); fn() }
 	switch args[0] {
 	case "sdk-status":
 		code, err := strconv.Atoi(args[1])
 		ts.Check(err)
-		f.sdkStatus = code
+		set(func() { f.sdkStatus = code })
 	case "sdk-delay":
 		d, err := time.ParseDuration(args[1])
 		ts.Check(err)
-		f.sdkDelay = d
+		set(func() { f.sdkDelay = d })
 	case "sdk-flags":
 		flags := sdkFlagsFrom(defaultFeatures())
 		switch {
@@ -191,20 +194,93 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		case len(args) > 2 && args[2] == "unknown":
 			// Not in the map at all: the SDK API 401s, as it does for a key
 			// that belongs to no environment.
-			delete(f.sdkEnvFlags, args[1])
+			set(func() { delete(f.sdkEnvFlags, args[1]) })
 			return
 		}
-		f.sdkEnvFlags[args[1]] = flags
+		set(func() { f.sdkEnvFlags[args[1]] = flags })
 	case "sdk-identity":
 		// This identity resolves max_items on at 99, so its own flags are
 		// distinguishable from the environment's defaults.
 		flags := sdkFlagsFrom(defaultFeatures())
 		flags[1]["enabled"], flags[1]["feature_state_value"] = true, 99
-		f.sdkIdentityFlags[args[1]] = flags
+		set(func() { f.sdkIdentityFlags[args[1]] = flags })
+	case "features":
+		// fake features blob.json — the project's features, written out in the
+		// script so the fixture a case turns on is visible next to it.
+		var items []map[string]any
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[1])), &items))
+		set(func() { f.features["101"] = items })
+	case "segment-override":
+		// max_items alone, with or without an override for segment 12.
+		set(func() { withSegmentOverride(f, args[1] == "on") })
+	case "feature-overrides":
+		// max_items with two segment overrides and their feature-states, in
+		// priority order — the fixture the override views are read against.
+		set(func() { withSegmentOverride(f, true) })
+		withFeatureOverridesRows(f)
+	case "feature-segments":
+		// fake feature-segments 2 rows.json
+		id, err := strconv.Atoi(args[1])
+		ts.Check(err)
+		var rows []map[string]any
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[2])), &rows))
+		withFeatureSegments(f, id, rows...)
+	case "feature-states":
+		// fake feature-states 2 rows.json
+		id, err := strconv.Atoi(args[1])
+		ts.Check(err)
+		var rows []map[string]any
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[2])), &rows))
+		withFeatureStates(f, id, rows...)
+	case "identity-overrides":
+		// fake identity-overrides rows.json — one row per identity's override
+		// of one feature, as the core (non-edge) endpoints serve them.
+		var rows []struct {
+			Identifier string `json:"identifier"`
+			ID         int    `json:"id"`
+			Feature    int    `json:"feature"`
+			Enabled    bool   `json:"enabled"`
+			Value      any    `json:"value"`
+		}
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[1])), &rows))
+		set(func() {
+			f.coreIdentities = map[string]int{}
+			f.coreOverrides = map[int]map[int]*fakeFS{}
+			for i, r := range rows {
+				f.coreIdentities[r.Identifier] = r.ID
+				f.coreOverrides[r.ID] = map[int]*fakeFS{
+					r.Feature: {id: 9100 + i, enabled: r.Enabled, value: r.Value},
+				}
+			}
+		})
+	case "edge-overrides":
+		// The same, for a project that keeps its identities at the edge.
+		var rows []struct {
+			Identifier string `json:"identifier"`
+			Feature    int    `json:"feature"`
+			Enabled    bool   `json:"enabled"`
+			Value      any    `json:"value"`
+		}
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[1])), &rows))
+		set(func() {
+			f.useEdge = true
+			f.edgeOverrides = map[string]map[int]*fakeFS{}
+			for _, r := range rows {
+				f.edgeOverrides[r.Identifier] = map[int]*fakeFS{
+					r.Feature: {enabled: r.Enabled, value: r.Value},
+				}
+			}
+		})
+	case "workflow-gated":
+		withWorkflowGating(f)
+	case "segment-override-missing":
+		withMissingSegmentOverride(f)
+	case "edge-identities":
+		withEdgeIdentities(f)
 	case "orgs":
 		// fake orgs Acme=3 Beta=7 — or no pairs at all for an instance the
 		// credential can see no organisations in.
-		f.orgs = nil
+		var orgs []map[string]any
 		for _, pair := range args[1:] {
 			name, id, ok := strings.Cut(pair, "=")
 			if !ok {
@@ -212,11 +288,14 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 			}
 			n, err := strconv.Atoi(id)
 			ts.Check(err)
-			f.orgs = append(f.orgs, map[string]any{"id": n, "name": name})
+			orgs = append(orgs, map[string]any{"id": n, "name": name})
 		}
+		set(func() { f.orgs = orgs })
 	case "org-fields":
 		// Extra API fields on Acme, for the cases about what --json passes through.
-		if len(f.orgs) == 0 {
+		var n int
+		set(func() { n = len(f.orgs) })
+		if n == 0 {
 			ts.Fatalf("fake org-fields: no organisations to add them to")
 		}
 		for _, pair := range args[1:] {
@@ -224,14 +303,30 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 			if !ok {
 				ts.Fatalf("fake org-fields: %q is not key=value", pair)
 			}
-			f.orgs[0][k] = scriptValue(v)
+			set(func() { f.orgs[0][k] = scriptValue(v) })
 		}
+	case "environments-named":
+		// fake environments-named Staging=keyA Staging=keyB — for the cases
+		// about names that do not identify one environment on their own.
+		var envs []map[string]any
+		for i, pair := range args[1:] {
+			name, key, ok := strings.Cut(pair, "=")
+			if !ok {
+				ts.Fatalf("fake environments-named: %q is not name=key", pair)
+			}
+			envs = append(envs, map[string]any{
+				"id": i + 1, "name": name, "api_key": key, "project": 101,
+			})
+		}
+		set(func() { f.envs["101"] = envs })
 	case "environments":
 		// The two environments the Admin API knows about for project 101.
-		f.envs["101"] = []map[string]any{
-			{"id": 1, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN", "project": 101, "description": "Local dev"},
-			{"id": 2, "name": "Production", "api_key": "K2mVsGdXhZ8kQqZ9pJmNbJ", "project": 101, "description": "Live", "use_v2_feature_versioning": true},
-		}
+		set(func() {
+			f.envs["101"] = []map[string]any{
+				{"id": 1, "name": "Development", "api_key": "WqXhZk8sVY3dGgTqZ9pJmN", "project": 101, "description": "Local dev"},
+				{"id": 2, "name": "Production", "api_key": "K2mVsGdXhZ8kQqZ9pJmNbJ", "project": 101, "description": "Live", "use_v2_feature_versioning": true},
+			}
+		})
 	default:
 		ts.Fatalf("unknown fake setting %q", args[0])
 	}

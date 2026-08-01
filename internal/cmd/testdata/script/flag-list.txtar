@@ -1,0 +1,96 @@
+# Given: an environment resolving two flags
+# When: they are listed
+# Then: a table of their state and value is printed, and counted
+exec flagsmith flag list
+cmp stdout expect-list
+
+# Given: an environment resolving two flags
+# When: they are listed as JSON
+# Then: the state is hoisted to the top level and the raw nested state dropped
+exec flagsmith flag list --json --jq '.[0] | .feature, .enabled, has("environment_feature_state"), has("lifecycle_stage")'
+cmp stdout expect-json-shape
+
+# Given: a project with no features in it
+# When: its flags are listed
+# Then: that is said plainly rather than printing an empty table
+fake features empty.json
+exec flagsmith flag list
+stdout 'No flags'
+
+# Given: a config naming no environment, and an environment key in the setting
+# When: the flags are listed
+# Then: the key is enough on its own
+fake features default.json
+env $SDK_KEY_VAR=WqXhZk8sVY3dGgTqZ9pJmN
+exec flagsmith flag list -c no-environment.json
+stdout 'onboarding_banner'
+
+# Given: a config naming no environment, and no environment key anywhere
+# When: the flags are listed
+# Then: it fails, offering both the flag and the command that would set one
+env $SDK_KEY_VAR=
+! exec flagsmith flag list -c no-environment.json
+stderr 'environment'
+stderr '\-e'
+stderr 'flagsmith init'
+
+# Given: a disabled multivariate flag whose value is longer than a column
+# When: the flags are listed
+# Then: the row says so, and the value is truncated rather than wrapped
+fake features long-value.json
+exec flagsmith flag list
+cmp stdout expect-long-value
+
+# Given: a flag whose value is a JSON document written across several lines
+# When: the flags are listed
+# Then: the value is flattened onto its own row rather than spilling over the table
+fake features multiline-value.json
+exec flagsmith flag list
+cmp stdout expect-multiline-value
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- no-environment.json --
+{"project": 101}
+-- empty.json --
+[]
+-- default.json --
+[
+  {"id": 1, "name": "onboarding_banner", "type": "STANDARD",
+   "environment_feature_state": {"enabled": true, "feature_state_value": null}},
+  {"id": 2, "name": "max_items", "type": "STANDARD",
+   "environment_feature_state": {"enabled": false, "feature_state_value": 25}}
+]
+-- long-value.json --
+[
+  {"id": 1, "name": "blob", "type": "MULTIVARIATE",
+   "environment_feature_state": {"enabled": false,
+    "feature_state_value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+]
+-- multiline-value.json --
+[
+  {"id": 1, "name": "blob", "type": "STANDARD",
+   "environment_feature_state": {"enabled": true,
+    "feature_state_value": "[\n  {\n    \"value\": \"EQUAL\"\n  }\n]"}}
+]
+-- expect-list --
+NAME                TYPE       STATE   VALUE   LIFECYCLE
+onboarding_banner   standard   on      -       live
+max_items           standard   off     25      -
+
+2 flags
+-- expect-json-shape --
+onboarding_banner
+true
+false
+true
+-- expect-long-value --
+NAME   TYPE           STATE   VALUE                                      LIFECYCLE
+blob   multivariate   off     xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…   -
+
+1 flag
+-- expect-multiline-value --
+NAME   TYPE       STATE   VALUE                      LIFECYCLE
+blob   standard   on      [ { "value": "EQUAL" } ]   -
+
+1 flag
