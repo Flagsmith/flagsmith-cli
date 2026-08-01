@@ -168,7 +168,7 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	if neg || len(args) == 0 {
 		ts.Fatalf("usage: fake <sdk-status|sdk-delay|sdk-flags|environments> [value...]")
 	}
-	if len(args) < 2 && args[0] != "environments" {
+	if len(args) < 2 && !slices.Contains([]string{"environments", "orgs"}, args[0]) {
 		ts.Fatalf("fake %s needs a value", args[0])
 	}
 	f := ts.Value("fake").(*fakeInstance)
@@ -201,6 +201,31 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		flags := sdkFlagsFrom(defaultFeatures())
 		flags[1]["enabled"], flags[1]["feature_state_value"] = true, 99
 		f.sdkIdentityFlags[args[1]] = flags
+	case "orgs":
+		// fake orgs Acme=3 Beta=7 — or no pairs at all for an instance the
+		// credential can see no organisations in.
+		f.orgs = nil
+		for _, pair := range args[1:] {
+			name, id, ok := strings.Cut(pair, "=")
+			if !ok {
+				ts.Fatalf("fake orgs: %q is not name=id", pair)
+			}
+			n, err := strconv.Atoi(id)
+			ts.Check(err)
+			f.orgs = append(f.orgs, map[string]any{"id": n, "name": name})
+		}
+	case "org-fields":
+		// Extra API fields on Acme, for the cases about what --json passes through.
+		if len(f.orgs) == 0 {
+			ts.Fatalf("fake org-fields: no organisations to add them to")
+		}
+		for _, pair := range args[1:] {
+			k, v, ok := strings.Cut(pair, "=")
+			if !ok {
+				ts.Fatalf("fake org-fields: %q is not key=value", pair)
+			}
+			f.orgs[0][k] = scriptValue(v)
+		}
 	case "environments":
 		// The two environments the Admin API knows about for project 101.
 		f.envs["101"] = []map[string]any{
@@ -210,6 +235,21 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	default:
 		ts.Fatalf("unknown fake setting %q", args[0])
 	}
+}
+
+// scriptValue types a fixture value written in a script the way the API would
+// carry it, so `fake org-fields force_2fa=true` sets a boolean and not "true".
+func scriptValue(s string) any {
+	switch s {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return s
 }
 
 // cmdCache seeds the local name cache, for the cases that turn on what the CLI

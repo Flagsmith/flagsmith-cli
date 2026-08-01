@@ -1,0 +1,73 @@
+# Given: an instance with two organisations
+# When: they are listed
+# Then: both are shown with their ids, and counted
+fake orgs Acme=3 Beta=7
+exec flagsmith organisation list
+cmp stdout expect-list
+
+# Given: an instance with one organisation
+# When: the command is spelled `org`
+# Then: it is an alias for organisation
+exec flagsmith org list
+stdout 'Acme'
+
+# Given: an instance the credential can see no organisations in
+# When: they are listed as JSON
+# Then: the empty list renders as [] rather than null, so --jq can iterate it
+fake orgs
+exec flagsmith organisation list --json
+stdout '^\[\]$'
+exec flagsmith organisation list --jq .[]
+! stdout .
+
+# Given: an organisation named Acme with id 3
+# When: it is fetched by name
+# Then: it is shown by name and id
+fake orgs Acme=3
+exec flagsmith organisation get Acme
+stdout 'Acme \(3\)'
+
+# Given: an organisation carrying API fields the CLI has no opinion about
+# When: it is fetched as JSON
+# Then: those fields are passed through untouched
+fake orgs Acme=3
+fake org-fields force_2fa=true webhook_notification_email=x@y.com
+exec flagsmith organisation get 3 --json
+stdout '"force_2fa": true'
+stdout '"webhook_notification_email": "x@y.com"'
+
+# Given: an instance where an organisation is to be created
+# When: create is called with --force-2fa
+# Then: the flag reaches the request body, and the creation is confirmed
+fake orgs Acme=3
+exec flagsmith organisation create 'Acme Labs' --force-2fa
+stderr 'Created organisation Acme Labs'
+dump requests requests.txt
+grep '"force_2fa":true' requests.txt
+grep '"name":"Acme Labs"' requests.txt
+
+# Given: an organisation named Acme
+# When: its webhook email is updated
+# Then: the new address reaches the request body
+fake orgs Acme=3
+exec flagsmith organisation update Acme --webhook-email a@b.com
+dump requests requests.txt
+grep '"webhook_notification_email":"a@b.com"' requests.txt
+
+# Given: an organisation named Acme with id 3
+# When: it is deleted
+# Then: the deletion is confirmed and the organisation is gone
+fake orgs Acme=3
+exec flagsmith organisation delete Acme --yes
+stderr 'Deleted organisation Acme \(3\)'
+exec flagsmith organisation list
+! stdout 'Acme'
+
+-- flagsmith.json --
+{"project": 101}
+-- expect-list --
+NAME   ID
+Acme   3
+Beta   7
+
+2 organisations
