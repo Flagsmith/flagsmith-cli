@@ -359,6 +359,11 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		// fake projects 3 acme.json — the projects an organisation holds.
 		rows := scriptRows(ts, args[2])
 		set(func() { f.projects[args[1]] = rows })
+	case "project-environments":
+		// fake project-environments 202 envs.json — one project's environments,
+		// for the cases that pick a project other than the default one.
+		rows := scriptRows(ts, args[2])
+		set(func() { f.envs[args[1]] = rows })
 	case "server-keys":
 		// fake server-keys K2mVsGdXhZ8kQqZ9pJmNbJ keys.json — the server-side
 		// keys an environment already has.
