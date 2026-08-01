@@ -1,0 +1,40 @@
+# Given: an environment where max_items is disabled
+# When: it is evaluated with --test
+# Then: the invocation fails as an ordinary failure, and the environment is not named
+! exec flagsmith evaluate max_items --test
+stderr 'max_items is disabled'
+! stderr 'Usage:'
+! stderr 'WqXhZk8sVY3dGgTqZ9pJmN'
+cmp stdout expect-detail
+
+# Given: an environment where onboarding_banner is enabled
+# When: it is evaluated with --test
+# Then: the flag passes straight through
+exec flagsmith evaluate onboarding_banner --test
+stdout 'onboarding_banner'
+
+# Given: an environment where max_items is disabled
+# When: --test is combined with --json
+# Then: it still fails, and the entry is printed as well
+! exec flagsmith evaluate max_items --test --json
+cmp stdout expect-json
+
+# Given: an environment resolving two flags
+# When: --test is passed without naming a feature
+# Then: it is a usage error naming the flag — there is nothing to test
+! exec flagsmith evaluate --test
+stderr '--test'
+stderr 'Usage:'
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-detail --
+Feature   max_items
+Enabled   off
+Value     25
+-- expect-json --
+{
+  "name": "max_items",
+  "enabled": false,
+  "value": 25
+}

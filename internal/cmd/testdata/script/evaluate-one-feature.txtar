@@ -1,0 +1,20 @@
+# Given: an environment resolving two flags
+# When: one of them is named
+# Then: a detail view of just that one is rendered
+exec flagsmith evaluate max_items
+cmp stdout expect-detail
+! stdout 'onboarding_banner'
+
+# Given: an environment resolving two flags
+# When: a feature it does not resolve is named
+# Then: the error quotes the name and points at the listing
+! exec flagsmith evaluate nope
+stderr '"nope"'
+stderr 'Run `flagsmith eval`'
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-detail --
+Feature   max_items
+Enabled   off
+Value     25

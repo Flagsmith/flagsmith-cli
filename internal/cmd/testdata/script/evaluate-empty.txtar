@@ -1,0 +1,22 @@
+fake sdk-flags WqXhZk8sVY3dGgTqZ9pJmN none
+
+# Given: an environment that resolves no flags at all
+# When: it is evaluated
+# Then: that is reported, not treated as an error
+exec flagsmith evaluate
+stdout 'No flags\.'
+
+# Given: an environment that resolves no flags at all
+# When: a hydration state is asked for with --js
+# Then: the state is still emitted, but stderr warns that nothing can hydrate it
+exec flagsmith evaluate --js
+stderr 'Warning:'
+cmpenv stdout expect-js
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-js --
+{
+  "api": "$API/api/v1/",
+  "flags": {}
+}

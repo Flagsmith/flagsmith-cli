@@ -142,6 +142,7 @@ type fakeInstance struct {
 	srv *httptest.Server
 
 	mu             sync.Mutex
+	reqLog         []string // every request served, in arrival order
 	revoked        []url.Values
 	orgs           []map[string]any
 	projects       map[string][]map[string]any // orgID -> projects
@@ -268,6 +269,15 @@ type fakeFS struct {
 
 func newFakeInstance(t *testing.T) *fakeInstance {
 	t.Helper()
+	f := newFake()
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+// newFake builds the fake instance without a *testing.T, so a testscript Setup
+// hook — which only has an Env — can construct one too. The caller owns the
+// server's lifetime.
+func newFake() *fakeInstance {
 	f := &fakeInstance{
 		orgs: []map[string]any{{"id": 3, "name": "Acme"}},
 		projects: map[string][]map[string]any{
@@ -1367,9 +1377,56 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			"body":          string(body),
 		})
 	})
-	f.srv = httptest.NewServer(mux)
-	t.Cleanup(f.srv.Close)
+	f.srv = httptest.NewServer(f.record(mux))
 	return f
+}
+
+// record wraps the fake's mux so every request the CLI makes is logged. The
+// log is what a transcript asserts on: it makes request bodies, call counts and
+// query parameters visible without a bespoke recording field per endpoint.
+func (f *fakeInstance) record(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		line := r.Method + " " + r.URL.RequestURI()
+		// Which credential travelled, by kind not by value: enough to pin
+		// scoping ("the master key never reaches the SDK surface") without
+		// writing a secret into a golden file.
+		if cred := credKind(r); cred != "" {
+			line += " [" + cred + "]"
+		}
+		if len(body) > 0 {
+			line += " " + string(body)
+		}
+		f.mu.Lock()
+		f.reqLog = append(f.reqLog, line)
+		f.mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// credKind names the credential a request carried, without echoing it.
+func credKind(r *http.Request) string {
+	switch {
+	case r.Header.Get("X-Environment-Key") == masterKey:
+		return "master-key-as-environment-key" // a leak, and the transcript says so
+	case r.Header.Get("X-Environment-Key") != "":
+		return "environment-key"
+	case r.Header.Get("Authorization") == "Api-Key "+masterKey:
+		return "master-key"
+	case strings.HasPrefix(r.Header.Get("Authorization"), "Bearer "):
+		return "bearer"
+	case r.Header.Get("Authorization") != "":
+		return "other-credential"
+	}
+	return ""
+}
+
+// requests returns the logged requests in the order they arrived.
+func (f *fakeInstance) requests() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.reqLog...)
 }
 
 // applyFlagUpdate mutates the stored features to reflect an update-flag-v2
@@ -5959,464 +6016,6 @@ func evalDoc(t *testing.T, out string) map[string]any {
 		t.Fatalf("parsing %q: %v", out, err)
 	}
 	return doc
-}
-
-// captureOSStderr collects what run writes to the process's stderr — where a
-// library's own logger lands, bypassing the command's writers entirely.
-func captureOSStderr(t *testing.T, run func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved := os.Stderr
-	os.Stderr = w
-	// Deferred: run may not return — t.Fatal inside it would otherwise leave
-	// os.Stderr pointing at the pipe, swallowing every later test's output.
-	defer func() { os.Stderr = saved }()
-	run()
-	w.Close()
-	logged, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.Close()
-	return string(logged)
-}
-
-func TestEvaluate(t *testing.T) {
-	t.Run("human table with count", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		out, err := run("", "evaluate")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate: %v\noutput: %s", err, out)
-		}
-		for _, want := range []string{
-			"FEATURE", "ENABLED", "VALUE",
-			"onboarding_banner", "on", "-",
-			"max_items", "off", "25", "2 flags",
-		} {
-			if !strings.Contains(out, want) {
-				t.Errorf("output = %q, want it to contain %q", out, want)
-			}
-		}
-	})
-
-	t.Run("the SDK's own logging never reaches stderr", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		var err error
-		logged := captureOSStderr(t, func() { _, err = run("", "evaluate") })
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate: %v", err)
-		}
-		if logged != "" {
-			t.Errorf("stderr = %q, want the SDK's logger silenced", logged)
-		}
-	})
-
-	t.Run("the invocation deadline bounds evaluation", func(t *testing.T) {
-		// Given an SDK API slower than the deadline the user asked for.
-		f := evalEnv(t)
-		f.sdkDelay = 1200 * time.Millisecond
-		t.Setenv("FLAGSMITH_TIMEOUT", "1")
-
-		// When
-		_, err := run("", "evaluate")
-
-		// Then
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Errorf("err = %v, want the deadline to bound the SDK's request", err)
-		}
-	})
-
-	t.Run("json is an EvaluationResult", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		out, err := run("", "evaluate", "--json")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate --json: %v\noutput: %s", err, out)
-		}
-		doc := evalDoc(t, out)
-		if got, _ := doc["$schema"].(string); !strings.HasSuffix(got, "/sdk/evaluation-result.json") {
-			t.Errorf("$schema = %q, want the SDK's evaluation-result schema", got)
-		}
-		flags, _ := doc["flags"].(map[string]any)
-		if len(flags) != 2 {
-			t.Fatalf("flags = %+v, want one entry per feature, keyed by name", flags)
-		}
-		banner, _ := flags["onboarding_banner"].(map[string]any)
-		if banner["name"] != "onboarding_banner" || banner["enabled"] != true {
-			t.Errorf("flag = %+v, want the resolved state", banner)
-		}
-		if v, ok := banner["value"]; !ok || v != nil {
-			t.Errorf("flag = %+v, want an explicit null value — the schema requires the field", banner)
-		}
-		items, _ := flags["max_items"].(map[string]any)
-		if items["value"] != float64(25) || items["enabled"] != false {
-			t.Errorf("flag = %+v, want the resolved value", items)
-		}
-		// Omitted until the SDK API returns them: absent, never faked.
-		for _, absent := range []string{"reason", "variant"} {
-			if _, ok := items[absent]; ok {
-				t.Errorf("flag = %+v, want %q omitted rather than invented", items, absent)
-			}
-		}
-		if _, ok := doc["segments"]; ok {
-			t.Errorf("doc = %+v, want segments omitted rather than invented", doc)
-		}
-	})
-
-	t.Run("--js is the frontend SDK's hydration state", func(t *testing.T) {
-		// Given
-		f := evalEnv(t)
-		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = []map[string]any{
-			{"enabled": true, "feature_state_value": "Welcome!",
-				"feature": map[string]any{"id": 1, "name": "banner-text"}},
-		}
-
-		// When
-		out, err := run("", "evaluate", "--js")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate --js: %v\noutput: %s", err, out)
-		}
-		doc := evalDoc(t, out)
-		api, _ := doc["api"].(string)
-		if !strings.HasSuffix(api, "/api/v1/") {
-			t.Errorf("api = %q, want the SDK API base with its trailing slash", api)
-		}
-		flags, _ := doc["flags"].(map[string]any)
-		flag, ok := flags["banner-text"].(map[string]any)
-		if !ok {
-			t.Fatalf("flags = %+v, want the feature name as the key, verbatim", flags)
-		}
-		if flag["enabled"] != true || flag["value"] != "Welcome!" {
-			t.Errorf("flag = %+v", flag)
-		}
-		if _, ok := flag["name"]; ok {
-			t.Errorf("flag = %+v, want no name — the key is the name", flag)
-		}
-		if _, ok := doc["$schema"]; ok {
-			t.Errorf("doc = %+v, want no $schema — this is not an EvaluationResult", doc)
-		}
-	})
-
-	t.Run("--js and --json are mutually exclusive", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		_, err := run("", "evaluate", "--js", "--json")
-
-		// Then
-		var usage *usageError
-		if !errors.As(err, &usage) {
-			t.Fatalf("err = %v, want a usage error", err)
-		}
-	})
-
-	t.Run("--test makes a disabled flag a failure", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		out, errOut, err := runSplit("", "evaluate", "max_items", "--test")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want the disabled flag to fail")
-		}
-		if !strings.Contains(err.Error(), "max_items is disabled") {
-			t.Errorf("err = %v, want it to say the flag is disabled", err)
-		}
-		// A failure like any other: exit 1, reason on stderr
-		if code := reportError(evaluateCmd, err); code != 1 {
-			t.Errorf("exit code = %d, want 1", code)
-		}
-		if h := hintFor(err); h != "" {
-			t.Errorf("hint = %q, want none", h)
-		}
-		// The environment is not named
-		if strings.Contains(errOut, "WqXhZk8sVY3dGgTqZ9pJmN") {
-			t.Errorf("stderr = %q, want no environment key", errOut)
-		}
-		// The flag itself still prints.
-		if !strings.Contains(out, "max_items") || !strings.Contains(out, "off") {
-			t.Errorf("stdout = %q, want the flag printed anyway", out)
-		}
-	})
-
-	t.Run("--test passes an enabled flag through", func(t *testing.T) {
-		// Given onboarding_banner is on.
-		evalEnv(t)
-
-		// When
-		out, err := run("", "evaluate", "onboarding_banner", "--test")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate --test: %v\noutput: %s", err, out)
-		}
-		if !strings.Contains(out, "onboarding_banner") {
-			t.Errorf("output = %q", out)
-		}
-	})
-
-	t.Run("--test composes with --json", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		out, _, err := runSplit("", "evaluate", "max_items", "--test", "--json")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want the disabled flag to fail")
-		}
-		if flag := evalDoc(t, out); flag["name"] != "max_items" || flag["enabled"] != false {
-			t.Errorf("flag = %+v, want the entry printed as well", flag)
-		}
-	})
-
-	t.Run("--test needs a named feature", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		_, err := run("", "evaluate", "--test")
-
-		// Then
-		var usage *usageError
-		if !errors.As(err, &usage) {
-			t.Fatalf("err = %v, want a usage error", err)
-		}
-		if !strings.Contains(err.Error(), "--test") {
-			t.Errorf("err = %v, want it to name the flag", err)
-		}
-	})
-
-	t.Run("--js refuses a named feature", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		_, err := run("", "evaluate", "max_items", "--js")
-
-		// Then
-		var usage *usageError
-		if !errors.As(err, &usage) {
-			t.Fatalf("err = %v, want a usage error — a one-flag state is a dud", err)
-		}
-	})
-
-	t.Run("--jq filters whichever shape was asked for", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		jsOut, err := run("", "evaluate", "--js", "--jq", ".flags.max_items.value")
-		if err != nil {
-			t.Fatalf("evaluate --js --jq: %v", err)
-		}
-		jsonOut, err := run("", "evaluate", "--jq", ".flags.max_items.name")
-		if err != nil {
-			t.Fatalf("evaluate --jq: %v", err)
-		}
-
-		// Then
-		if strings.TrimSpace(jsOut) != "25" {
-			t.Errorf("--js --jq = %q, want 25", jsOut)
-		}
-		if strings.TrimSpace(jsonOut) != "max_items" {
-			t.Errorf("--jq = %q, want max_items", jsonOut)
-		}
-	})
-
-	t.Run("--js warns rather than ship a state nothing can hydrate", func(t *testing.T) {
-		// Given
-		f := evalEnv(t)
-		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = []map[string]any{}
-
-		// When
-		out, errOut, err := runSplit("", "evaluate", "--js")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate --js: %v", err)
-		}
-		if !strings.Contains(errOut, "Warning:") {
-			t.Errorf("stderr = %q, want a warning that the state is empty", errOut)
-		}
-		flags, _ := evalDoc(t, out)["flags"].(map[string]any)
-		if len(flags) != 0 {
-			t.Errorf("flags = %+v, want an empty map", flags)
-		}
-	})
-
-	t.Run("eval is an accepted alias", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		out, err := run("", "eval")
-
-		// Then
-		if err != nil {
-			t.Fatalf("eval: %v\noutput: %s", err, out)
-		}
-		if !strings.Contains(out, "2 flags") {
-			t.Errorf("output = %q", out)
-		}
-	})
-
-	t.Run("a single feature renders a detail view", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		out, err := run("", "evaluate", "max_items")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate max_items: %v\noutput: %s", err, out)
-		}
-		for _, want := range []string{"Feature", "max_items", "Enabled", "off", "Value", "25"} {
-			if !strings.Contains(out, want) {
-				t.Errorf("output = %q, want %q", out, want)
-			}
-		}
-		if strings.Contains(out, "onboarding_banner") {
-			t.Errorf("output = %q, want only the named feature", out)
-		}
-	})
-
-	t.Run("an unknown feature errors with a hint", func(t *testing.T) {
-		// Given
-		evalEnv(t)
-
-		// When
-		_, err := run("", "evaluate", "nope")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want an error")
-		}
-		if !strings.Contains(err.Error(), `"nope"`) {
-			t.Errorf("err = %v, want it to name the feature", err)
-		}
-		if !strings.Contains(hintFor(err), "flagsmith eval") {
-			t.Errorf("hint = %q, want it to point at the listing", hintFor(err))
-		}
-	})
-
-	t.Run("no flags", func(t *testing.T) {
-		// Given
-		f := evalEnv(t)
-		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = []map[string]any{}
-
-		// When
-		out, err := run("", "evaluate")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate: %v\noutput: %s", err, out)
-		}
-		if !strings.Contains(out, "No flags.") {
-			t.Errorf("output = %q", out)
-		}
-	})
-
-	t.Run("without an environment key it names the way in", func(t *testing.T) {
-		// Given
-		isolateStorage(t)
-		f := newFakeInstance(t)
-		root := tempRepo(t)
-		writeConfig(t, root, `{"apiUrl": "`+f.srv.URL+`"}`)
-
-		// When
-		_, err := run("", "evaluate")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want an error")
-		}
-		if !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
-			t.Errorf("hint = %q, want it to name the variable", hintFor(err))
-		}
-	})
-
-	t.Run("FLAGSMITH_ENVIRONMENT_KEY evaluates on its own", func(t *testing.T) {
-		// Given a config with no environment at all — the SDK credential is the
-		// only environment reference, as it is in CI.
-		isolateStorage(t)
-		f := newFakeInstance(t)
-		root := tempRepo(t)
-		writeConfig(t, root, `{"apiUrl": "`+f.srv.URL+`"}`)
-		setEnvCred(t, envEnvironmentKey, f.srv.URL, "ser.serverSideSecret")
-		f.sdkEnvFlags["ser.serverSideSecret"] = sdkFlagsFrom(defaultFeatures())
-
-		// When
-		out, err := run("", "evaluate")
-
-		// Then
-		if err != nil {
-			t.Fatalf("evaluate: %v\noutput: %s", err, out)
-		}
-		if !strings.Contains(out, "2 flags") {
-			t.Errorf("output = %q", out)
-		}
-	})
-
-	t.Run("the CLI's User-Agent replaces the SDK's", func(t *testing.T) {
-		// Given
-		f := evalEnv(t)
-
-		// When
-		if _, err := run("", "evaluate"); err != nil {
-			t.Fatalf("evaluate: %v", err)
-		}
-
-		// Then
-		agents := f.sdkAgents()
-		if len(agents) != 1 || agents[0] != version.UserAgent() {
-			t.Errorf("User-Agent = %q, want the CLI's %q", agents, version.UserAgent())
-		}
-	})
-
-	t.Run("an unexpected status is reported without a stack of SDK prefixes", func(t *testing.T) {
-		// Given
-		f := evalEnv(t)
-		f.sdkStatus = http.StatusInternalServerError
-
-		// When
-		_, err := run("", "evaluate")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want an error")
-		}
-		if strings.Contains(err.Error(), "flagsmith:") {
-			t.Errorf("err = %v, want the SDK's own wording dropped", err)
-		}
-		if !strings.Contains(err.Error(), "500") {
-			t.Errorf("err = %v, want it to carry the status", err)
-		}
-	})
 }
 
 // The environment context is a client-side key or a name, as it is everywhere
