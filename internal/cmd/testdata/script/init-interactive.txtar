@@ -26,6 +26,9 @@ cd $WORK
 # Then: every prompt goes to stderr, leaving stdout empty for data
 mkdir streams
 cd streams
+fake orgs Acme=3 Beta=7
+fake projects 7 $WORK/beta-projects.json
+fake project-environments 202 $WORK/beta-envs.json
 ttyin -stdin $WORK/pick-2-1-1
 exec flagsmith init
 ! stdout .
