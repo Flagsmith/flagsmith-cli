@@ -1,0 +1,106 @@
+# Identity overrides on a project that keeps its identities in the core API.
+# max_items is feature 2; user-1 is an identity the environment already knows.
+
+# Given: a flag and an identity the environment knows
+# When: an override is set with -i
+# Then: -i is the identifier, and the write targets that identity's feature state
+exec flagsmith flag update max_items -i user-1 --value 42 --yes
+dump requests requests.txt
+grep '"feature":2,.*"feature_state_value":42' requests.txt
+
+# Given: an identity with an override on a flag
+# When: it is fetched and then deleted with -i
+# Then: -i is the identifier for both
+fake identity-overrides user-1-override.json
+exec flagsmith flag get max_items -i user-1
+stdout 'user-1'
+stdout '7'
+exec flagsmith flag delete max_items -i user-1 --yes
+
+# Given: a flag and an identity the environment knows
+# When: an override is set with --identifier
+# Then: the core endpoint carries it, the edge endpoint is untouched, and the change is confirmed
+fake features-default
+fake forget-requests
+exec flagsmith flag update max_items --identifier user-1 --value 42 --yes
+stderr 'Set max_items to 42 for identifier user-1'
+dump requests requests.txt
+grep '"enabled":false,"feature":2,"feature_state_value":42' requests.txt
+! grep 'edge-identities' requests.txt
+
+# Given: an identity whose override on a flag is on at "custom"
+# When: that override is fetched
+# Then: the detail names the identifier and shows the override's own state
+fake identity-overrides user-1-custom.json
+exec flagsmith flag get max_items --identifier user-1
+stdout 'Identifier'
+stdout 'user-1'
+stdout 'custom'
+stdout 'on'
+
+# Given: an identity with an override on a flag
+# When: that override is deleted
+# Then: the deletion is confirmed and the override is gone
+fake identity-overrides user-1-custom.json
+exec flagsmith flag delete max_items --identifier user-1 --yes
+stderr 'Deleted max_items override for identifier user-1'
+! exec flagsmith flag get max_items --identifier user-1
+
+# Given: an identifier the environment has never seen, and no --yes to confirm with
+# When: its override is deleted
+# Then: the missing identity is reported rather than a confirmation being demanded first
+! exec flagsmith flag delete max_items --identifier ghost
+stderr 'identity "ghost" not found'
+! stderr '\-\-yes'
+
+# Given: an identity whose override on a flag is off at "x"
+# When: it is enabled
+# Then: the identifier is resolved once, and the updated detail is reprinted
+fake identity-overrides user-1-off.json
+fake forget-requests
+exec flagsmith flag update max_items --identifier user-1 --enable --yes
+stdout 'on'
+stdout 'x'
+dump requests requests.txt
+grep -count=1 'GET /api/v1/environments/WqXhZk8sVY3dGgTqZ9pJmN/identities/\?q=' requests.txt
+
+# Given: a flag turned on, and an identity with no override for it
+# When: an override is created with only a value
+# Then: it inherits the environment default's state
+fake features-default
+exec flagsmith flag update onboarding_banner --identifier user-1 --value yo --yes
+dump requests requests.txt
+grep '"enabled":true,"feature":1,"feature_state_value":"yo"' requests.txt
+
+# Given: an identifier the environment has never seen
+# When: an override is set for it
+# Then: the identity is created after one lookup, and the override written against it
+fake features-default
+fake forget-requests
+exec flagsmith flag update max_items --identifier new-user --enable --yes
+dump requests requests.txt
+grep -count=1 'GET /api/v1/environments/WqXhZk8sVY3dGgTqZ9pJmN/identities/\?q=' requests.txt
+grep '"enabled":true,"feature":2' requests.txt
+
+# Given: a flag, a segment and an identity named at once
+# When: both --segment and --identifier are passed
+# Then: it is a usage error — an override belongs to one or the other
+! exec flagsmith flag update max_items --segment 1 --identifier user-1 --yes
+stderr 'mutually exclusive'
+stderr 'Usage:'
+
+# Given: a flag and no override target at all
+# When: a delete is attempted
+# Then: it is a usage error naming the targets it could have had
+! exec flagsmith flag delete max_items --yes
+stderr '--identifier'
+stderr 'Usage:'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- user-1-override.json --
+[{"identifier": "user-1", "id": 501, "feature": 2, "enabled": true, "value": 7}]
+-- user-1-custom.json --
+[{"identifier": "user-1", "id": 501, "feature": 2, "enabled": true, "value": "custom"}]
+-- user-1-off.json --
+[{"identifier": "user-1", "id": 501, "feature": 2, "enabled": false, "value": "x"}]
