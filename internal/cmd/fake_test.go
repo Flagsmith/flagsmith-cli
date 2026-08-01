@@ -85,9 +85,6 @@ type fakeInstance struct {
 
 // envByAPIKey finds a stored environment by its client-side key, returning its
 // project key too (caller holds the lock).
-
-// envByAPIKey finds a stored environment by its client-side key, returning its
-// project key too (caller holds the lock).
 func (f *fakeInstance) envByAPIKey(key string) (string, map[string]any) {
 	for proj, list := range f.envs {
 		for _, e := range list {
@@ -109,8 +106,6 @@ func (f *fakeInstance) orgByID(id int) map[string]any {
 }
 
 // projectByID finds a stored project across all orgs (caller holds the lock).
-
-// projectByID finds a stored project across all orgs (caller holds the lock).
 func (f *fakeInstance) projectByID(id int) map[string]any {
 	for _, list := range f.projects {
 		for _, p := range list {
@@ -123,8 +118,6 @@ func (f *fakeInstance) projectByID(id int) map[string]any {
 }
 
 // featureByID finds a stored feature item by id (caller holds the lock).
-
-// featureByID finds a stored feature item by id (caller holds the lock).
 func (f *fakeInstance) featureByID(project string, id int) map[string]any {
 	for _, it := range f.features[project] {
 		if it["id"] == id {
@@ -133,8 +126,6 @@ func (f *fakeInstance) featureByID(project string, id int) map[string]any {
 	}
 	return nil
 }
-
-// fakeFS is a stored identity feature-state in the fake backend.
 
 // fakeFS is a stored identity feature-state in the fake backend.
 type fakeFS struct {
@@ -149,10 +140,6 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 	t.Cleanup(f.srv.Close)
 	return f
 }
-
-// newFake builds the fake instance without a *testing.T, so a testscript Setup
-// hook — which only has an Env — can construct one too. The caller owns the
-// server's lifetime.
 
 // newFake builds the fake instance without a *testing.T, so a testscript Setup
 // hook — which only has an Env — can construct one too. The caller owns the
@@ -229,10 +216,6 @@ func newFake() *fakeInstance {
 // record wraps the fake's mux so every request the CLI makes is logged. The
 // log is what a transcript asserts on: it makes request bodies, call counts and
 // query parameters visible without a bespoke recording field per endpoint.
-
-// record wraps the fake's mux so every request the CLI makes is logged. The
-// log is what a transcript asserts on: it makes request bodies, call counts and
-// query parameters visible without a bespoke recording field per endpoint.
 func (f *fakeInstance) record(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -255,8 +238,6 @@ func (f *fakeInstance) record(next http.Handler) http.Handler {
 }
 
 // credKind names the credential a request carried, without echoing it.
-
-// credKind names the credential a request carried, without echoing it.
 func credKind(r *http.Request) string {
 	switch {
 	case r.Header.Get("X-Environment-Key") == masterKey:
@@ -274,16 +255,11 @@ func credKind(r *http.Request) string {
 }
 
 // requests returns the logged requests in the order they arrived.
-
-// requests returns the logged requests in the order they arrived.
 func (f *fakeInstance) requests() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.reqLog...)
 }
-
-// applyFlagUpdate mutates the stored features to reflect an update-flag-v2
-// body, so a re-fetch after the mutation sees the new state. Called under lock.
 
 // applyFlagUpdate mutates the stored features to reflect an update-flag-v2
 // body, so a re-fetch after the mutation sees the new state. Called under lock.
@@ -338,9 +314,6 @@ func (f *fakeInstance) applyFlagUpdate(body map[string]any) {
 
 // scalarFromWire turns an update-flag-v2 {type,value} into the bare scalar the
 // features list would report.
-
-// scalarFromWire turns an update-flag-v2 {type,value} into the bare scalar the
-// features list would report.
 func scalarFromWire(val map[string]any) any {
 	t, _ := val["type"].(string)
 	v, _ := val["value"].(string)
@@ -368,16 +341,11 @@ func (f *fakeInstance) featuresCalls() int {
 }
 
 // featureSegmentsCalls returns how many times feature-segments was hit.
-
-// featureSegmentsCalls returns how many times feature-segments was hit.
 func (f *fakeInstance) featureSegmentsCalls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fsListCalls
 }
-
-// featureSegmentsPeak returns the most feature-segments requests that were
-// ever in flight at once.
 
 // featureSegmentsPeak returns the most feature-segments requests that were
 // ever in flight at once.
@@ -392,9 +360,6 @@ func (f *fakeInstance) organisationLists() int {
 	defer f.mu.Unlock()
 	return f.orgListCalls
 }
-
-// defaultFeatures is the stock project features list (with per-environment
-// state embedded) returned by the fake /features/ endpoint.
 
 // defaultFeatures is the stock project features list (with per-environment
 // state embedded) returned by the fake /features/ endpoint.
@@ -415,9 +380,6 @@ func defaultFeatures() []map[string]any {
 		},
 	}
 }
-
-// sdkFlagsFrom renders admin feature fixtures as the SDK API's flags payload —
-// the shape `flagsmith evaluate` reads.
 
 // sdkFlagsFrom renders admin feature fixtures as the SDK API's flags payload —
 // the shape `flagsmith evaluate` reads.
@@ -482,9 +444,6 @@ func withFeatureSegments(f *fakeInstance, featureID int, rows ...map[string]any)
 
 // withFeatureStates registers the admin featurestates rows the fake returns
 // for one feature.
-
-// withFeatureStates registers the admin featurestates rows the fake returns
-// for one feature.
 func withFeatureStates(f *fakeInstance, featureID int, rows ...map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -498,8 +457,6 @@ func withFeatureStates(f *fakeInstance, featureID int, rows ...map[string]any) {
 // reads is set through a locked setter rather than assigned directly.
 
 // withWorkflowGating makes the update endpoints answer 403.
-
-// withWorkflowGating makes the update endpoints answer 403.
 func withWorkflowGating(f *fakeInstance) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -507,15 +464,11 @@ func withWorkflowGating(f *fakeInstance) {
 }
 
 // withMissingSegmentOverride makes delete-segment-override answer 404.
-
-// withMissingSegmentOverride makes delete-segment-override answer 404.
 func withMissingSegmentOverride(f *fakeInstance) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.segmentMissing = true
 }
-
-// withEdgeIdentities makes the project report use_edge_identities.
 
 // withEdgeIdentities makes the project report use_edge_identities.
 func withEdgeIdentities(f *fakeInstance) {
@@ -526,17 +479,11 @@ func withEdgeIdentities(f *fakeInstance) {
 
 // withFeatureSegmentDelay adds latency to feature-segments, so overlapping
 // requests are observable in fsPeak.
-
-// withFeatureSegmentDelay adds latency to feature-segments, so overlapping
-// requests are observable in fsPeak.
 func withFeatureSegmentDelay(f *fakeInstance, d time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.fsDelay = d
 }
-
-// withSegmentOverride sets project 101's features to a single max_items
-// feature carrying an environment default and, optionally, a segment override.
 
 // withSegmentOverride sets project 101's features to a single max_items
 // feature carrying an environment default and, optionally, a segment override.
