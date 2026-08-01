@@ -420,9 +420,8 @@ func (f *fakeInstance) refreshCount() int {
 	return f.tokenPosts
 }
 
-// commandShapes are the two supported spellings of login/logout:
-// top-level and under `auth`.
-
+// flagUpdateEnv writes a config bound to project 101 / Development and returns
+// the fake instance with admin credentials set.
 func flagUpdateEnv(t *testing.T) *fakeInstance {
 	t.Helper()
 	isolateStorage(t)
