@@ -1,0 +1,31 @@
+# A server-side key is a secret. Nothing the CLI prints may contain one, on
+# either stream, however the key got there.
+env $SDK_KEY_VAR=ser.SuperSecret123
+
+# Given: a config naming no environment, and a server-side key offered as one
+# When: the flags are listed
+# Then: the error names the variable it came from, never its value
+! exec flagsmith flag list -c no-environment.json
+stderr 'FLAGSMITH_ENVIRONMENT_KEY'
+! stderr 'SuperSecret123'
+! stdout 'SuperSecret123'
+
+# Given: a server-side key the SDK API does not recognise
+# When: an evaluation is attempted with it
+# Then: the rejection is reported without echoing the key
+! exec flagsmith evaluate -c no-environment.json
+! stderr 'SuperSecret123'
+! stdout 'SuperSecret123'
+
+# Given: a server-side key written on the command line where an environment goes
+# When: it is used to name an environment
+# Then: it is refused, pointing at the variable meant for secrets, without echoing it
+! exec flagsmith environment get ser.SuperSecret123
+stderr 'FLAGSMITH_ENVIRONMENT_KEY'
+! stderr 'SuperSecret123'
+! stdout 'SuperSecret123'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- no-environment.json --
+{"project": 101}

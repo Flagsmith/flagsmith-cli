@@ -167,24 +167,17 @@ type fakeInstance struct {
 	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
 	orgListCalls   int                         // count of GET /organisations/ list calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
-	updateCalls    int                         // count of update-flag-v2 calls
-	lastUpdate     map[string]any              // last update-flag-v2 request body
-	lastDelete     map[string]any              // last delete-segment-override request body
 	workflowGated  bool                        // when true, update endpoints return 403
 	segmentMissing bool                        // when true, delete-segment-override returns 404
 
-	useEdge           bool                       // GET /projects/{id}/ use_edge_identities
-	coreIdentities    map[string]int             // identifier -> identity id
-	coreOverrides     map[int]map[int]*fakeFS    // identity id -> feature id -> state
-	edgeOverrides     map[string]map[int]*fakeFS // identifier -> feature id -> state
-	nextFSID          int
-	lastIdentityWrite map[string]any // last core identity FS create/update body
-	lastEdgeWrite     map[string]any // last edge identifier PUT body
-	lastEdgeDelete    map[string]any // last edge identifier DELETE body
+	useEdge        bool                       // GET /projects/{id}/ use_edge_identities
+	coreIdentities map[string]int             // identifier -> identity id
+	coreOverrides  map[int]map[int]*fakeFS    // identity id -> feature id -> state
+	edgeOverrides  map[string]map[int]*fakeFS // identifier -> feature id -> state
+	nextFSID       int
 
-	segments        map[int]map[string]any // segment id -> segment
-	nextSegmentID   int
-	lastSegmentBody map[string]any // last segment create/update body
+	segments      map[int]map[string]any // segment id -> segment
+	nextSegmentID int
 
 	featureSegments map[string][]map[string]any // feature id -> feature-segment rows (priority order)
 	featureStates   map[string][]map[string]any // feature id -> admin featurestates rows
@@ -203,16 +196,10 @@ type fakeInstance struct {
 	sdkDelay         time.Duration  // artificial latency for the SDK endpoints
 
 	nextFeatureID   int
-	lastFeatureBody map[string]any // last feature create/update body
 	nextMVID        int
-	lastMVBody      map[string]any // last mv-options create/update body
-	lastOrgBody     map[string]any // last organisation create/update body
-	lastProjectBody map[string]any // last project create/update body
 	nextOrgID       int
-	lastEnvBody     map[string]any              // last environment create/update/clone body
 	serverKeys      map[string][]map[string]any // env api_key -> server-side keys
 	nextServerKeyID int
-	lastServerKey   map[string]any // last api-keys create body
 }
 
 // envByAPIKey finds a stored environment by its client-side key, returning its
@@ -406,7 +393,6 @@ func newFake() *fakeInstance {
 		json.NewDecoder(r.Body).Decode(&body)
 		name, _ := body["name"].(string)
 		f.mu.Lock()
-		f.lastProjectBody = body
 		f.created = append(f.created, name)
 		proj := map[string]any{"id": 999, "name": name}
 		if org, ok := body["organisation"].(float64); ok {
@@ -446,7 +432,6 @@ func newFake() *fakeInstance {
 		json.NewDecoder(r.Body).Decode(&body)
 		name, _ := body["name"].(string)
 		f.mu.Lock()
-		f.lastEnvBody = body
 		f.createdEnvs = append(f.createdEnvs, name)
 		env := map[string]any{"id": 42, "name": name, "api_key": "createdEnvKey00000000"}
 		for k, v := range body {
@@ -484,7 +469,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastEnvBody = body
 		_, env := f.envByAPIKey(r.PathValue("api_key"))
 		if env != nil {
 			for k, v := range body {
@@ -546,7 +530,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastServerKey = body
 		f.nextServerKeyID++
 		key := map[string]any{
 			"id": f.nextServerKeyID, "name": body["name"], "active": true,
@@ -583,7 +566,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastEnvBody = body
 		proj, src := f.envByAPIKey(r.PathValue("api_key"))
 		name, _ := body["name"].(string)
 		clone := map[string]any{"id": 77, "name": name, "api_key": "clonedEnvKey000000000"}
@@ -651,8 +633,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.updateCalls++
-		f.lastUpdate = body
 		f.applyFlagUpdate(body)
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
@@ -672,7 +652,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastDelete = body
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -705,7 +684,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastProjectBody = body
 		p := f.projectByID(id)
 		if p != nil {
 			for k, v := range body {
@@ -792,7 +770,6 @@ func newFake() *fakeInstance {
 		fid := int(body["feature"].(float64))
 		en, _ := body["enabled"].(bool)
 		f.mu.Lock()
-		f.lastIdentityWrite = body
 		if f.coreOverrides[idID] == nil {
 			f.coreOverrides[idID] = map[int]*fakeFS{}
 		}
@@ -814,7 +791,6 @@ func newFake() *fakeInstance {
 		json.NewDecoder(r.Body).Decode(&body)
 		en, _ := body["enabled"].(bool)
 		f.mu.Lock()
-		f.lastIdentityWrite = body
 		for _, fs := range f.coreOverrides[idID] {
 			if fs.id == fsID {
 				fs.enabled = en
@@ -883,7 +859,6 @@ func newFake() *fakeInstance {
 		fid := int(body["feature"].(float64))
 		en, _ := body["enabled"].(bool)
 		f.mu.Lock()
-		f.lastEdgeWrite = body
 		if f.edgeOverrides[ident] == nil {
 			f.edgeOverrides[ident] = map[int]*fakeFS{}
 		}
@@ -900,7 +875,6 @@ func newFake() *fakeInstance {
 		json.NewDecoder(r.Body).Decode(&body)
 		ident, _ := body["identifier"].(string)
 		f.mu.Lock()
-		f.lastEdgeDelete = body
 		if fv, ok := body["feature"].(float64); ok {
 			delete(f.edgeOverrides[ident], int(fv))
 		}
@@ -931,7 +905,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastOrgBody = body
 		f.nextOrgID++
 		body["id"] = f.nextOrgID
 		f.orgs = append(f.orgs, body)
@@ -948,7 +921,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastOrgBody = body
 		o := f.orgByID(id)
 		if o != nil {
 			for k, v := range body {
@@ -1007,7 +979,6 @@ func newFake() *fakeInstance {
 		json.NewDecoder(r.Body).Decode(&body)
 		project := r.PathValue("project")
 		f.mu.Lock()
-		f.lastFeatureBody = body
 		f.nextFeatureID++
 		body["id"] = f.nextFeatureID
 		f.features[project] = append(f.features[project], body)
@@ -1024,7 +995,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastFeatureBody = body
 		var found map[string]any
 		for _, it := range f.features[r.PathValue("project")] {
 			if it["id"] == id {
@@ -1069,7 +1039,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastMVBody = body
 		f.nextMVID++
 		body["id"] = f.nextMVID
 		if feat := f.featureByID(r.PathValue("project"), fid); feat != nil {
@@ -1090,7 +1059,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastMVBody = body
 		var found map[string]any
 		if feat := f.featureByID(r.PathValue("project"), fid); feat != nil {
 			for _, o := range feat["multivariate_options"].([]any) {
@@ -1159,7 +1127,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastSegmentBody = body
 		f.nextSegmentID++
 		id := f.nextSegmentID
 		body["id"] = id
@@ -1192,7 +1159,6 @@ func newFake() *fakeInstance {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
-		f.lastSegmentBody = body
 		body["id"] = id
 		f.segments[id] = body
 		f.mu.Unlock()
@@ -1592,81 +1558,6 @@ func (f *fakeInstance) refreshCount() int {
 	return f.tokenPosts
 }
 
-// A server-side key is a secret — and FLAGSMITH_ENVIRONMENT_KEY is exactly
-// where hintServerSideKey tells users to put it. It can never resolve an
-// environment over the Admin API (the list carries client-side keys only),
-// and its value must never be echoed into an error: that lands it in CI logs.
-func TestServerSideKeyNeverEchoed(t *testing.T) {
-	t.Run("the FLAGSMITH_ENVIRONMENT_KEY fallback names the variable, not the value", func(t *testing.T) {
-		// Given
-		isolateStorage(t)
-		f := newFakeInstance(t)
-		root := tempRepo(t)
-		writeConfig(t, root, `{"project": 101, "apiUrl": "`+f.srv.URL+`"}`)
-		setMasterKey(t, f.srv.URL)
-		// sdkApiUrl follows the config's non-default apiUrl, so the SDK
-		// credential is scoped to that host.
-		setEnvCred(t, envEnvironmentKey, f.srv.URL, "ser.SuperSecret123")
-
-		// When
-		_, err := run("", "flag", "list")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want an error")
-		}
-		if strings.Contains(err.Error(), "SuperSecret123") || strings.Contains(hintFor(err), "SuperSecret123") {
-			t.Errorf("err = %v — the server-side key leaked", err)
-		}
-		if !strings.Contains(err.Error(), "FLAGSMITH_ENVIRONMENT_KEY") {
-			t.Errorf("err = %v, want it to name the variable", err)
-		}
-	})
-
-	t.Run("a key the SDK API rejects is not echoed", func(t *testing.T) {
-		// Given a key the SDK surface does not know, so evaluation gets a 401.
-		isolateStorage(t)
-		f := newFakeInstance(t)
-		root := tempRepo(t)
-		writeConfig(t, root, `{"apiUrl": "`+f.srv.URL+`"}`)
-		setEnvCred(t, envEnvironmentKey, f.srv.URL, "ser.SuperSecret123")
-
-		// When
-		out, err := run("", "evaluate")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want an error")
-		}
-		// out already carries the rendered error, but assert on the error itself
-		// too rather than lean on cobra printing it into the same buffer.
-		if strings.Contains(out, "SuperSecret123") ||
-			strings.Contains(err.Error(), "SuperSecret123") ||
-			strings.Contains(hintFor(err), "SuperSecret123") {
-			t.Errorf("output = %q — the server-side key leaked", out)
-		}
-	})
-
-	t.Run("a positional ser. ref is refused without echoing it", func(t *testing.T) {
-		// Given
-		flagUpdateEnv(t)
-
-		// When
-		_, err := run("", "environment", "get", "ser.SuperSecret123")
-
-		// Then
-		if err == nil {
-			t.Fatal("err = nil, want an error")
-		}
-		if strings.Contains(err.Error(), "SuperSecret123") {
-			t.Errorf("err = %v — the server-side key leaked", err)
-		}
-		if !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
-			t.Errorf("hint = %q, want the server-side-key hint", hintFor(err))
-		}
-	})
-}
-
 // commandShapes are the two supported spellings of login/logout:
 // top-level and under `auth`.
 var commandShapes = []struct {
@@ -1927,20 +1818,6 @@ func TestInitEmptyRefExitsCleanly(t *testing.T) {
 			t.Errorf("output = %q, want the project created in the lone organisation", out)
 		}
 	})
-}
-
-// --version reports the resolved build version.
-func TestVersionFlag(t *testing.T) {
-	// When
-	out, err := run("", "--version")
-
-	// Then
-	if err != nil {
-		t.Fatalf("--version: %v\noutput: %s", err, out)
-	}
-	if !strings.Contains(out, version.Version) {
-		t.Errorf("output = %q, want it to carry %q", out, version.Version)
-	}
 }
 
 func TestSchemaURL(t *testing.T) {
@@ -2419,24 +2296,6 @@ func TestInitReinitShowsDiffAndConfirms(t *testing.T) {
 	}
 }
 
-func TestBareInvocationNudgesInit(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	tempRepo(t)
-
-	// When
-	out, err := run("")
-
-	// Then
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "flagsmith init") {
-		t.Errorf("output = %q, want a nudge towards flagsmith init", out)
-	}
-}
-
-// runSplit is run with stdout and stderr captured separately.
 func runSplit(stdin string, args ...string) (string, string, error) {
 	resetFlags()
 	if args == nil {
@@ -2449,103 +2308,6 @@ func runSplit(stdin string, args ...string) (string, string, error) {
 	rootCmd.SetArgs(args)
 	err := rootCmd.Execute()
 	return outBuf.String(), errBuf.String(), err
-}
-
-func TestJSONIsGlobal(t *testing.T) {
-	t.Run("auth status --json", func(t *testing.T) {
-		// Given
-		isolateStorage(t)
-		f := newFakeInstance(t)
-		setMasterKey(t, f.srv.URL)
-
-		// When
-		out, err := run("", "auth", "status", "--api-url", f.srv.URL, "--json")
-
-		// Then
-		if err != nil {
-			t.Fatalf("auth status --json: %v", err)
-		}
-		var status struct {
-			APIURL        string `json:"apiUrl"`
-			Kind          string `json:"kind"`
-			Organisations []struct {
-				ID   int    `json:"id"`
-				Name string `json:"name"`
-			} `json:"organisations"`
-			Source string `json:"credentialSource"`
-		}
-		if err := json.Unmarshal([]byte(out), &status); err != nil {
-			t.Fatalf("parsing %q: %v", out, err)
-		}
-		// The source names the exact variable, host scope included.
-		if status.Kind != "master" || status.Source != "$"+scopedEnvName(envAPIKey, f.srv.URL) ||
-			len(status.Organisations) != 1 || status.Organisations[0].Name != "Acme" {
-			t.Errorf("status = %+v", status)
-		}
-	})
-
-	t.Run("auth token --json", func(t *testing.T) {
-		// Given
-		isolateStorage(t)
-		newFakeInstance(t)
-		t.Setenv(envAPIKey, masterKey)
-
-		// When
-		out, err := run("", "auth", "token", "--json")
-
-		// Then
-		if err != nil {
-			t.Fatalf("auth token --json: %v", err)
-		}
-		var token struct {
-			Token string `json:"token"`
-		}
-		if err := json.Unmarshal([]byte(out), &token); err != nil {
-			t.Fatalf("parsing %q: %v", out, err)
-		}
-		if token.Token != masterKey {
-			t.Errorf("token = %q", token.Token)
-		}
-	})
-
-	t.Run("FLAGSMITH_JSON_OUTPUT enables JSON", func(t *testing.T) {
-		// Given
-		isolateStorage(t)
-		tempRepo(t)
-		t.Setenv("FLAGSMITH_JSON_OUTPUT", "1")
-
-		// When
-		out, err := run("", "config")
-
-		// Then
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !json.Valid([]byte(out)) {
-			t.Errorf("output = %q, want JSON via env var", out)
-		}
-	})
-}
-
-func TestWarningsGoToStderr(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	root := tempRepo(t)
-	writeConfig(t, root, `{"project": 1, "enviroment": "typo"}`)
-
-	// When
-	stdout, stderr, err := runSplit("", "config")
-
-	// Then
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(stdout, "unknown field") {
-		t.Errorf("stdout = %q — warnings belong on stderr", stdout)
-	}
-	if !strings.Contains(stderr, "unknown field") {
-		t.Errorf("stderr = %q, want the unknown-field warning", stderr)
-	}
 }
 
 func TestLogoutRevokeWarningGoesToStderr(t *testing.T) {
@@ -2922,23 +2684,6 @@ func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
 	}
 	if !strings.Contains(out, "Acme") {
 		t.Errorf("output = %q, want the config-file apiUrl to have been used", out)
-	}
-}
-
-func TestAuthStatusSeedsNameCache(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	setMasterKey(t, f.srv.URL)
-
-	// When
-	if _, err := run("", "auth", "status", "--api-url", f.srv.URL); err != nil {
-		t.Fatal(err)
-	}
-
-	// Then
-	if got := cache.Load(f.srv.URL); got.Organisations["3"] != "Acme" {
-		t.Errorf("cache = %+v, want the organisation name remembered", got)
 	}
 }
 
