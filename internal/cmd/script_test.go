@@ -265,6 +265,13 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) < 2 && !slices.Contains(valueless, args[0]) {
 		ts.Fatalf("fake %s needs a value", args[0])
 	}
+	// These name a target and a fixture file, so say which is missing rather
+	// than indexing past the end of the arguments.
+	withFixture := []string{"feature-segments", "feature-states", "project-environments",
+		"server-keys", "projects"}
+	if len(args) < 3 && slices.Contains(withFixture, args[0]) {
+		ts.Fatalf("usage: fake %s <target> <file>", args[0])
+	}
 	f := ts.Value("fake").(*fakeInstance)
 	// Not locked here: several of these delegate to fixture helpers that take
 	// the lock themselves. Cases that touch fields directly lock around it.
