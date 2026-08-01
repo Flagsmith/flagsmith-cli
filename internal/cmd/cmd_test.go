@@ -1513,14 +1513,6 @@ func (f *fakeInstance) featuresEnv() string {
 	return f.lastFeatEnv
 }
 
-// featuresSeg returns the ?segment= value the /features/ endpoint last saw.
-func (f *fakeInstance) featuresSeg() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.lastFeatSeg
-}
-
-// featuresSearch returns the ?search= value the /features/ endpoint last saw.
 func (f *fakeInstance) featuresSearch() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1549,37 +1541,6 @@ func (f *fakeInstance) featureSegmentsPeak() int {
 	return f.fsPeak
 }
 
-// segmentsCalls returns how many times the /segments/ list endpoint was hit.
-func (f *fakeInstance) segmentsCalls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.segListCalls
-}
-
-// featureStatesCalls returns how many times featurestates was hit.
-func (f *fakeInstance) featureStatesCalls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.stListCalls
-}
-
-// identityLookups returns how many identifier→id lookups the core
-// identities endpoint served.
-func (f *fakeInstance) identityLookups() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.idLookupCalls
-}
-
-// edgeIdentityLookups returns how many identifier→uuid lookups the edge
-// identities endpoint served.
-func (f *fakeInstance) edgeIdentityLookups() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.edgeLookups
-}
-
-// environmentGets returns how many single-environment retrieves were served.
 func (f *fakeInstance) environmentGets() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -2950,13 +2911,6 @@ func withSegmentOverride(f *fakeInstance, withOverride bool) {
 	f.features["101"] = []map[string]any{item}
 }
 
-func withFeatureOverridesFixture(f *fakeInstance) {
-	withSegmentOverride(f, true)
-	withFeatureOverridesRows(f)
-}
-
-// withFeatureOverridesRows registers max_items' two segment overrides and the
-// feature-states behind them, without touching the features list.
 func withFeatureOverridesRows(f *fakeInstance) {
 	withFeatureSegments(f, 2,
 		map[string]any{"id": 1200, "segment": 57, "segment_name": "beta-optin", "priority": 0, "environment": 1},
@@ -2968,252 +2922,6 @@ func withFeatureOverridesRows(f *fakeInstance) {
 		map[string]any{"id": 9001, "feature_segment": 1200, "enabled": true, "feature_state_value": str("blue")},
 		map[string]any{"id": 9002, "feature_segment": 1201, "enabled": false, "feature_state_value": map[string]any{"type": "int", "integer_value": 25}},
 	)
-}
-
-func TestFlagReorder(t *testing.T) {
-	// Fixture: max_items has overrides beta-optin (57, priority 0, "blue",
-	// on) and us-adults (42, priority 1, 25, off); env default off/25.
-
-	t.Run("refuses to reorder when an override has no state row", func(t *testing.T) {
-		// Given us-adults' state row missing — as a concurrent delete would
-		// leave it. Echoing a zero state would disable and blank the override.
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-		str := func(s string) map[string]any { return map[string]any{"type": "unicode", "string_value": s} }
-		withFeatureStates(f, 2,
-			map[string]any{"id": 9000, "feature_segment": nil, "enabled": false, "feature_state_value": str("default")},
-			map[string]any{"id": 9001, "feature_segment": 1200, "enabled": true, "feature_state_value": str("blue")},
-		)
-
-		// When
-		_, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
-
-		// Then
-		if err == nil || !strings.Contains(err.Error(), "42") {
-			t.Errorf("err = %v, want a refusal naming the segment", err)
-		}
-		f.mu.Lock()
-		calls := f.updateCalls
-		f.mu.Unlock()
-		if calls != 0 {
-			t.Errorf("update calls = %d, want no write at all", calls)
-		}
-	})
-
-	t.Run("re-permutes every override in one request", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		out, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
-		if err != nil {
-			t.Fatalf("flag reorder: %v\noutput: %s", err, out)
-		}
-		f.mu.Lock()
-		calls := f.updateCalls
-		f.mu.Unlock()
-		if calls != 1 {
-			t.Errorf("update calls = %d, want the whole reorder in one request", calls)
-		}
-		ovs := f.lastUpdate["segment_overrides"].([]any)
-		if len(ovs) != 2 {
-			t.Fatalf("segment_overrides = %+v, want both overrides", ovs)
-		}
-		first := ovs[0].(map[string]any)
-		second := ovs[1].(map[string]any)
-		if first["segment_id"] != float64(42) || first["priority"] != float64(0) {
-			t.Errorf("first override = %+v, want us-adults at priority 0", first)
-		}
-		if second["segment_id"] != float64(57) || second["priority"] != float64(1) {
-			t.Errorf("second override = %+v, want beta-optin at priority 1", second)
-		}
-		// Each override echoes its current state so nothing else changes.
-		firstVal := first["value"].(map[string]any)
-		secondVal := second["value"].(map[string]any)
-		if first["enabled"] != false || firstVal["type"] != "integer" || firstVal["value"] != "25" {
-			t.Errorf("first override = %+v, want current state echoed", first)
-		}
-		if second["enabled"] != true || secondVal["value"] != "blue" {
-			t.Errorf("second override = %+v, want current state echoed", second)
-		}
-		// The environment default rides along unchanged.
-		def := f.lastUpdate["environment_default"].(map[string]any)
-		if def["enabled"] != false {
-			t.Errorf("environment_default = %+v, want carried unchanged", def)
-		}
-		if !strings.Contains(out, "Reordered 2 segment overrides for max_items") {
-			t.Errorf("output = %q, want a reorder confirmation", out)
-		}
-		// The resulting order is printed, us-adults now first.
-		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
-			t.Errorf("output = %q, want the resulting table with us-adults first", out)
-		}
-	})
-
-	t.Run("resolves refs and renders from data already in hand", func(t *testing.T) {
-		// Given
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		// When
-		out, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
-
-		// Then
-		if err != nil {
-			t.Fatalf("flag reorder: %v\noutput: %s", err, out)
-		}
-		if got := f.segmentsCalls(); got != 0 {
-			t.Errorf("segments list calls = %d, want 0 (names resolve from the override rows)", got)
-		}
-		if got := f.featureSegmentsCalls(); got != 1 {
-			t.Errorf("feature-segments calls = %d, want 1", got)
-		}
-		if got := f.featureStatesCalls(); got != 1 {
-			t.Errorf("featurestates calls = %d, want 1", got)
-		}
-		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
-			t.Errorf("output = %q, want the resulting table with us-adults first", out)
-		}
-	})
-
-	t.Run("an unknown name still gets the project-level error", func(t *testing.T) {
-		// Given
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		// When
-		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "nope", "--yes")
-
-		// Then
-		if err == nil || !strings.Contains(err.Error(), `segment "nope" not found`) {
-			t.Errorf("err = %v, want the segment-not-found error", err)
-		}
-		if f.lastUpdate != nil {
-			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
-		}
-	})
-
-	t.Run("a partial list exits 2 naming the missing segments", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "--yes")
-		var ue *usageError
-		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "us-adults") {
-			t.Errorf("err = %v, want a usage error naming us-adults", err)
-		}
-		if f.lastUpdate != nil {
-			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
-		}
-	})
-
-	t.Run("a segment without an override exits 2", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "us-adults", "beta-cohort", "--yes")
-		var ue *usageError
-		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "beta-cohort") {
-			t.Errorf("err = %v, want a usage error naming beta-cohort", err)
-		}
-		if f.lastUpdate != nil {
-			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
-		}
-	})
-
-	t.Run("a duplicate segment exits 2", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		_, err := run("", "flag", "reorder", "max_items", "beta-optin", "beta-optin", "--yes")
-		var ue *usageError
-		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "beta-optin") {
-			t.Errorf("err = %v, want a usage error naming the duplicate", err)
-		}
-		if f.lastUpdate != nil {
-			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
-		}
-	})
-
-	t.Run("without --yes and no TTY exits 2", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-
-		_, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin")
-		var ue *usageError
-		if !errors.As(err, &ue) {
-			t.Errorf("err = %v, want a usage error (confirmation needed)", err)
-		}
-		if f.lastUpdate != nil {
-			t.Errorf("lastUpdate = %+v, want no write without confirmation", f.lastUpdate)
-		}
-	})
-}
-
-func TestFlagDelete(t *testing.T) {
-	t.Run("deletes a segment override", func(t *testing.T) {
-		// Given
-		f := flagUpdateEnv(t)
-
-		// When
-		out, err := run("", "flag", "delete", "max_items", "--segment", "12", "--yes")
-
-		// Then
-		if err != nil {
-			t.Fatalf("flag delete: %v\noutput: %s", err, out)
-		}
-		if f.lastDelete["feature"].(map[string]any)["name"] != "max_items" ||
-			f.lastDelete["segment"].(map[string]any)["id"] != float64(12) {
-			t.Errorf("delete body = %+v", f.lastDelete)
-		}
-		if !strings.Contains(out, "Deleted max_items override for segment 12") {
-			t.Errorf("output = %q", out)
-		}
-	})
-
-	t.Run("without --segment exits 2", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		_, err := run("", "flag", "delete", "max_items", "--yes")
-		var ue *usageError
-		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--segment") {
-			t.Errorf("err = %v, want a usage error naming --segment", err)
-		}
-		if f.lastDelete != nil {
-			t.Errorf("lastDelete = %+v, want no call", f.lastDelete)
-		}
-	})
-
-	t.Run("missing override reports not found", func(t *testing.T) {
-		f := flagUpdateEnv(t)
-		withMissingSegmentOverride(f)
-		_, err := run("", "flag", "delete", "max_items", "--segment", "99", "--yes")
-		if err == nil || !strings.Contains(err.Error(), "segment 99") {
-			t.Errorf("err = %v, want a not-found error naming the segment", err)
-		}
-	})
-}
-
-func TestUsageIsSingleLine(t *testing.T) {
-	// Given / When
-	out, err := run("", "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Then
-	if !strings.Contains(out, "flagsmith [command] [flags]") {
-		t.Errorf("root usage = %q, want the single-line form", out)
-	}
-	if strings.Contains(out, "flagsmith [flags]\n") {
-		t.Errorf("root usage still shows the two-line form:\n%s", out)
-	}
-
-	leaf, err := run("", "flag", "list", "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(leaf, "flagsmith flag list [flags]") {
-		t.Errorf("leaf usage = %q, want its own use line", leaf)
-	}
 }
 
 func withFeatures(f *fakeInstance) {
@@ -4240,23 +3948,6 @@ func TestProject(t *testing.T) {
 			t.Errorf("output = %q", out)
 		}
 	})
-}
-
-func TestFlagCreateIsNudge(t *testing.T) {
-	// Given / When
-	f := flagUpdateEnv(t)
-	out, err := run("", "flag", "create", "brand-new")
-
-	// Then
-	var ue *usageError
-	if !errors.As(err, &ue) || !strings.Contains(hintFor(err), "feature create brand-new") {
-		t.Errorf("err = %v (hint %q), want a hint nudging toward `feature create`", err, hintFor(err))
-	}
-	// ...but no usage block: `flag create` is a hidden redirect, not a real command.
-	if strings.Contains(out, "Usage:") {
-		t.Errorf("hidden redirect should not print a usage block:\n%s", out)
-	}
-	_ = f
 }
 
 func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {

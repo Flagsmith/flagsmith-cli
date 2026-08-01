@@ -1,0 +1,27 @@
+# Given: a flag with an override for segment 12
+# When: that override is deleted
+# Then: the delete names the feature and segment, and the deletion is confirmed
+exec flagsmith flag delete max_items --segment 12 --yes
+stderr 'Deleted max_items override for segment 12'
+dump requests requests.txt
+grep '"feature":\{"name":"max_items"\},"segment":\{"id":12\}' requests.txt
+
+# Given: a flag and no override target
+# When: a delete is attempted
+# Then: it is a usage error naming --segment, and nothing is deleted
+fake forget-requests
+! exec flagsmith flag delete max_items --yes
+stderr '--segment'
+stderr 'Usage:'
+dump requests requests.txt
+! grep 'delete-segment-override' requests.txt
+
+# Given: an environment where the override being deleted does not exist
+# When: it is deleted
+# Then: it fails, naming the segment that has none
+fake segment-override-missing
+! exec flagsmith flag delete max_items --segment 99 --yes
+stderr 'segment 99'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
