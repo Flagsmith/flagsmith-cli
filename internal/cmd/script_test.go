@@ -211,8 +211,7 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	case "features":
 		// fake features blob.json — the project's features, written out in the
 		// script so the fixture a case turns on is visible next to it.
-		var items []map[string]any
-		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[1])), &items))
+		items := scriptRows(ts, args[1])
 		set(func() { f.features["101"] = items })
 	case "segment-override":
 		// max_items alone, with or without an override for segment 12.
@@ -226,16 +225,12 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		// fake feature-segments 2 rows.json
 		id, err := strconv.Atoi(args[1])
 		ts.Check(err)
-		var rows []map[string]any
-		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[2])), &rows))
-		withFeatureSegments(f, id, rows...)
+		withFeatureSegments(f, id, scriptRows(ts, args[2])...)
 	case "feature-states":
 		// fake feature-states 2 rows.json
 		id, err := strconv.Atoi(args[1])
 		ts.Check(err)
-		var rows []map[string]any
-		ts.Check(json.Unmarshal([]byte(ts.ReadFile(args[2])), &rows))
-		withFeatureStates(f, id, rows...)
+		withFeatureStates(f, id, scriptRows(ts, args[2])...)
 	case "identity-overrides":
 		// fake identity-overrides rows.json — one row per identity's override
 		// of one feature, as the core (non-edge) endpoints serve them.
@@ -341,6 +336,43 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	default:
 		ts.Fatalf("unknown fake setting %q", args[0])
 	}
+}
+
+// scriptJSON decodes a fixture file the way the Go fixtures are written:
+// encoding/json makes every number a float64, but the fake compares ids and
+// counts against int, so a whole number decodes to int here.
+func scriptJSON(ts *testscript.TestScript, file string, into any) {
+	ts.Check(json.Unmarshal([]byte(ts.ReadFile(file)), into))
+}
+
+// wholeNumbersToInt rewrites float64 values that are whole numbers as int,
+// throughout a decoded document.
+func wholeNumbersToInt(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, item := range t {
+			t[k] = wholeNumbersToInt(item)
+		}
+	case []any:
+		for i, item := range t {
+			t[i] = wholeNumbersToInt(item)
+		}
+	case float64:
+		if t == float64(int(t)) {
+			return int(t)
+		}
+	}
+	return v
+}
+
+// scriptRows decodes a fixture file of API rows.
+func scriptRows(ts *testscript.TestScript, file string) []map[string]any {
+	var rows []map[string]any
+	scriptJSON(ts, file, &rows)
+	for _, row := range rows {
+		wholeNumbersToInt(row)
+	}
+	return rows
 }
 
 // scriptValue types a fixture value written in a script the way the API would
