@@ -1,0 +1,128 @@
+# Given: a flag with segment, identity and code-reference counts on it
+# When: it is fetched
+# Then: the detail view shows its state, value and each of those counts
+exec flagsmith flag get max_items
+cmp stdout expect-detail
+
+# Given: a flag with segment, identity and code-reference counts on it
+# When: it is fetched as JSON
+# Then: the curated fields sit at the top level, with no nested state left behind
+exec flagsmith flag get max_items --json --jq '.feature, .type, .enabled, .value, .segment_overrides, .identity_overrides, .code_references, has("environment_feature_state")'
+cmp stdout expect-json
+
+# Given: two flags whose names share a prefix, asked for in the wrong case
+# When: the shorter name is fetched
+# Then: the match is exact and case-insensitive, not a prefix of the longer one
+fake features prefixed.json
+exec flagsmith flag get CheckOut
+stdout 'checkout'
+! stdout 'checkout-v2'
+
+# Given: a name no flag in the environment has
+# When: it is fetched
+# Then: it fails, naming what was asked for
+! exec flagsmith flag get ghost
+stderr 'ghost'
+
+# Given: a flag whose identity-override count the API left null
+# When: it is fetched
+# Then: the count reads 0 rather than nothing at all
+fake features null-counts.json
+exec flagsmith flag get edgeflag
+cmp stdout expect-null-counts
+
+# Given: a flag overridden for segment 12
+# When: that override is fetched
+# Then: the override's own state and value are shown, not the environment default
+fake segment-override on
+exec flagsmith flag get max_items --segment 12
+stdout 'special'
+stdout 'on'
+dump requests requests.txt
+grep 'GET /api/v1/projects/101/features/.*segment=12' requests.txt
+
+# Given: a flag with no override for segment 99
+# When: that override is fetched
+# Then: it fails, naming the segment that has none
+fake segment-override off
+! exec flagsmith flag get max_items --segment 99
+stderr 'segment 99'
+
+# Given: a segment override whose priority and segment name the API knows
+# When: it is fetched
+# Then: the view carries the priority and names the segment
+fake segment-override on
+fake feature-segments 2 override-meta.json
+exec flagsmith flag get max_items --segment 12
+stdout 'Priority'
+stdout 'powerusers \(12\)'
+
+# Given: a segment override whose priority and segment name the API knows
+# When: it is fetched as JSON
+# Then: the segment is an object of id and name, alongside the priority
+fake segment-override on
+fake feature-segments 2 override-meta.json
+exec flagsmith flag get max_items --segment 12 --json --jq '.segment.id, .segment.name, .priority'
+cmp stdout expect-segment-meta
+
+# Given: a segment override the API has no priority metadata for
+# When: it is fetched
+# Then: the view degrades to the bare id rather than inventing a name
+fake segment-override on
+fake feature-segments 2 no-meta.json
+exec flagsmith flag get max_items --segment 12
+stdout '12'
+! stdout '\(12\)'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- prefixed.json --
+[
+  {"id": 1, "name": "checkout", "type": "STANDARD",
+   "environment_feature_state": {"enabled": true, "feature_state_value": "a"}},
+  {"id": 2, "name": "checkout-v2", "type": "STANDARD",
+   "environment_feature_state": {"enabled": false, "feature_state_value": "b"}}
+]
+-- null-counts.json --
+[
+  {"id": 1, "name": "edgeflag", "type": "STANDARD",
+   "num_segment_overrides": 0, "num_identity_overrides": null,
+   "environment_feature_state": {"enabled": true, "feature_state_value": "x"}}
+]
+-- override-meta.json --
+[{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1}]
+-- no-meta.json --
+[]
+-- expect-detail --
+Feature              max_items
+Description          
+Type                 standard
+State                off
+Value                25
+Segment overrides    1
+Identity overrides   2
+Code references      3
+Lifecycle stage      -
+-- expect-json --
+max_items
+standard
+false
+25
+1
+2
+3
+false
+-- expect-null-counts --
+Feature              edgeflag
+Description          
+Type                 standard
+State                on
+Value                x
+Segment overrides    0
+Identity overrides   0
+Code references      0
+Lifecycle stage      -
+-- expect-segment-meta --
+12
+powerusers
+1

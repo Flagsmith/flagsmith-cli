@@ -1,0 +1,34 @@
+# A feature can be named by its id wherever it can be named by name, and the
+# canonical name is what travels and what is printed back.
+
+# Given: a flag named max_items with id 2
+# When: it is fetched by that id
+# Then: the flag is resolved and shown by name
+exec flagsmith flag get 2
+stdout 'max_items'
+
+# Given: a flag named max_items with id 2
+# When: it is enabled by that id
+# Then: the canonical name goes to the wire and comes back in the confirmation
+exec flagsmith flag update 2 --enable --yes
+stderr 'Enabled max_items'
+dump requests requests.txt
+grep '"feature":\{"name":"max_items"\}' requests.txt
+
+# Given: a flag with an override for segment 12, named by id
+# When: that override is deleted
+# Then: the feature is targeted by id on the wire
+exec flagsmith flag delete 2 --segment 12 --yes
+dump requests requests.txt
+grep '"feature":\{"id":2\}' requests.txt
+
+# Given: a flag overridden for two segments, named by id
+# When: those overrides are reordered
+# Then: the canonical name goes to the wire
+fake feature-overrides
+exec flagsmith flag reorder 2 us-adults beta-optin --yes
+dump requests requests.txt
+grep '"feature":\{"name":"max_items"\}' requests.txt
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
