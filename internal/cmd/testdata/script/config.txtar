@@ -1,0 +1,131 @@
+# `config` reads no API, so these run against the real defaults rather than the
+# fake: the point of the command is which source a setting came from.
+env FLAGSMITH_API_URL=
+
+# Given: a repository with no flagsmith.json in it
+# When: the configuration is shown
+# Then: the URLs come from their defaults, and nothing is configured
+exec flagsmith config --json
+cmp stdout expect-defaults
+
+# Given: a config file, an environment variable and a flag each setting something, and a cache of names
+# When: the configuration is shown
+# Then: each setting names the source it came from, and ids carry their cached names
+cache -url=https://acme.example organisations 3=Acme
+cache -url=https://acme.example projects 12345=my-app
+cache -url=https://acme.example environments StagingKey123=Staging
+env FLAGSMITH_ENVIRONMENT=StagingKey123
+exec flagsmith config --json -c layered.json --sdk-api-url https://flags.example
+cmp stdout expect-layered
+
+# Given: a repository with no flagsmith.json in it
+# When: only --api-url is set
+# Then: the SDK API URL follows it, still as a default rather than a setting of its own
+env FLAGSMITH_ENVIRONMENT=
+exec flagsmith config --json --api-url https://self.example
+stdout '"sdkApiUrl": .\n *"value": "https://self.example",\n *"source": "default"'
+stdout '"apiUrl": .\n *"value": "https://self.example",\n *"source": "cli"'
+
+# Given: a config file outside the current repository
+# When: it is named with --config-path
+# Then: that path is the config, sourced from the command line
+exec flagsmith config --json -c elsewhere/flagsmith.json
+stdout '"configPath": .\n *"value": ".*elsewhere/flagsmith.json",\n *"source": "cli"'
+stdout '"project": .\n *"value": 7'
+
+# Given: a config file setting a project
+# When: the configuration is shown without --json
+# Then: values and their sources are laid out for a human
+exec flagsmith config -c layered.json
+stdout '12345'
+stdout 'config'
+stdout 'default'
+
+# Given: a config file with a misspelled field
+# When: the configuration is shown
+# Then: the unknown field is called out rather than silently ignored
+exec flagsmith config -c typo.json
+stderr 'unknown field'
+
+# Given: FLAGSMITH_PROJECT set to something that is not an id
+# When: the configuration is shown
+# Then: it is carried through as a name
+env FLAGSMITH_PROJECT=my-app
+exec flagsmith config --json
+stdout '"project": .\n *"value": "my-app",\n *"source": "env"'
+
+# Given: a server-side key offered as the environment
+# When: it is passed with -e
+# Then: it is refused, pointing at the variable meant for secrets
+env FLAGSMITH_PROJECT=
+! exec flagsmith config -e ser.AbCd
+stderr 'FLAGSMITH_ENVIRONMENT_KEY'
+
+-- layered.json --
+{
+  "project": 12345,
+  "organisation": 3,
+  "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ",
+  "apiUrl": "https://acme.example"
+}
+-- elsewhere/flagsmith.json --
+{"project": 7}
+-- typo.json --
+{"project": 1, "enviroment": "typo"}
+-- expect-defaults --
+{
+  "configPath": {
+    "value": null,
+    "source": "default"
+  },
+  "project": {
+    "value": null,
+    "source": "default"
+  },
+  "organisation": {
+    "value": null,
+    "source": "default"
+  },
+  "environment": {
+    "value": null,
+    "source": "default"
+  },
+  "apiUrl": {
+    "value": "https://api.flagsmith.com",
+    "source": "default"
+  },
+  "sdkApiUrl": {
+    "value": "https://edge.api.flagsmith.com",
+    "source": "default"
+  }
+}
+-- expect-layered --
+{
+  "configPath": {
+    "value": "layered.json",
+    "source": "cli"
+  },
+  "project": {
+    "value": 12345,
+    "name": "my-app",
+    "source": "config"
+  },
+  "organisation": {
+    "value": 3,
+    "name": "Acme",
+    "source": "config"
+  },
+  "environment": {
+    "value": "StagingKey123",
+    "name": "Staging",
+    "source": "env"
+  },
+  "apiUrl": {
+    "value": "https://acme.example",
+    "source": "config"
+  },
+  "sdkApiUrl": {
+    "value": "https://flags.example",
+    "source": "cli"
+  }
+}

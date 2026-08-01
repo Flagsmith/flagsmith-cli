@@ -257,10 +257,14 @@ func scriptValue(s string) any {
 //
 //	cache environments K2mVsGdXhZ8kQqZ9pJmNbJ=Production
 func cmdCache(ts *testscript.TestScript, neg bool, args []string) {
-	if neg || len(args) < 2 || args[0] != "environments" {
-		ts.Fatalf("usage: cache environments <key>=<name>...")
+	if neg || len(args) < 2 {
+		ts.Fatalf("usage: cache [-url=<instance>] <organisations|projects|environments|segments> <key>=<name>...")
 	}
-	f := ts.Value("fake").(*fakeInstance)
+	instance := ts.Value("fake").(*fakeInstance).srv.URL
+	if strings.HasPrefix(args[0], "-url=") {
+		instance = strings.TrimPrefix(args[0], "-url=")
+		args = args[1:]
+	}
 	names := map[string]string{}
 	for _, pair := range args[1:] {
 		k, v, ok := strings.Cut(pair, "=")
@@ -269,11 +273,31 @@ func cmdCache(ts *testscript.TestScript, neg bool, args []string) {
 		}
 		names[k] = v
 	}
-	body, err := json.Marshal(map[string]*cache.Names{
-		strings.TrimRight(f.srv.URL, "/"): {Environments: names},
-	})
-	ts.Check(err)
+
+	// Merge, so a case can seed more than one kind of name.
 	path := scriptCachePath(ts)
+	all := map[string]*cache.Names{}
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &all)
+	}
+	key := strings.TrimRight(instance, "/")
+	if all[key] == nil {
+		all[key] = &cache.Names{}
+	}
+	switch args[0] {
+	case "organisations":
+		all[key].Organisations = names
+	case "projects":
+		all[key].Projects = names
+	case "environments":
+		all[key].Environments = names
+	case "segments":
+		all[key].Segments = names
+	default:
+		ts.Fatalf("unknown cache kind %q", args[0])
+	}
+	body, err := json.Marshal(all)
+	ts.Check(err)
 	ts.Check(os.MkdirAll(filepath.Dir(path), 0o755))
 	ts.Check(os.WriteFile(path, body, 0o600))
 }
