@@ -1,0 +1,40 @@
+# Given: max_items, an integer flag set to 25 and turned off
+# When: it is enabled
+# Then: the value is preserved and the flag reprinted, with no refetch after the write
+exec flagsmith flag update max_items --enable --yes
+cmp stdout expect-detail
+cmp stderr expect-confirmation
+dump requests requests.txt
+cmpenv requests.txt expect-requests
+
+# Given: onboarding_banner, a flag with no value
+# When: it is set to the literal 42
+# Then: the type is inferred as integer, and the message says so unquoted
+exec flagsmith flag update onboarding_banner --value 42 --yes
+stdout 'Value +42'
+stderr 'Set onboarding_banner to 42'
+
+# Given: max_items, and a value that looks like a number
+# When: --type string forces the type
+# Then: the literal stays a string, and the message quotes it to show that
+exec flagsmith flag update max_items --value 25 --type string --yes
+stderr 'Set max_items to "25"'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-detail --
+Feature              max_items
+Description          
+Type                 standard
+State                on
+Value                25
+Segment overrides    1
+Identity overrides   2
+Code references      3
+Lifecycle stage      -
+-- expect-confirmation --
+✓ Enabled max_items in environment Development (WqXhZk8sVY3dGgTqZ9pJmN)
+-- expect-requests --
+GET /api/v1/environments/?project=101&page_size=999 [master-key]
+GET /api/v1/projects/101/features/?environment=1&search=max_items&page_size=999 [master-key]
+POST /api/experiments/environments/WqXhZk8sVY3dGgTqZ9pJmN/update-flag-v2/ [master-key] {"feature":{"name":"max_items"},"environment_default":{"enabled":true,"value":{"type":"integer","value":"25"}}}

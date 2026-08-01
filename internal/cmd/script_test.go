@@ -154,6 +154,10 @@ func setupScript(env *testscript.Env) error {
 	env.Setenv("MASTER_KEY", masterKey)
 	env.Setenv("HOME", env.WorkDir)
 	env.Setenv("XDG_CONFIG_HOME", filepath.Join(env.WorkDir, ".config"))
+
+	// $CACHE is the name cache the CLI will use, so a script can read it
+	// without spelling out a per-platform path.
+	env.Setenv("CACHE", cachePathFor(env.WorkDir, ""))
 	return nil
 }
 
@@ -169,7 +173,7 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 		ts.Fatalf("usage: fake <sdk-status|sdk-delay|sdk-flags|environments> [value...]")
 	}
 	valueless := []string{"environments", "orgs", "feature-overrides", "workflow-gated",
-		"segment-override-missing", "edge-identities"}
+		"segment-override-missing", "edge-identities", "forget-requests", "features-default"}
 	if len(args) < 2 && !slices.Contains(valueless, args[0]) {
 		ts.Fatalf("fake %s needs a value", args[0])
 	}
@@ -271,6 +275,13 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 				}
 			}
 		})
+	case "features-default":
+		// The project's usual two features, as newFake starts with.
+		set(func() { f.features["101"] = defaultFeatures() })
+	case "forget-requests":
+		// The request log runs the length of a script, so a case that counts
+		// calls says where its own counting starts.
+		set(func() { f.reqLog = nil })
 	case "workflow-gated":
 		withWorkflowGating(f)
 	case "segment-override-missing":
@@ -397,18 +408,22 @@ func cmdCache(ts *testscript.TestScript, neg bool, args []string) {
 	ts.Check(os.WriteFile(path, body, 0o600))
 }
 
-// scriptCachePath is where the CLI under test keeps its name cache: what
+// cachePathFor is where the CLI under test keeps its name cache: what
 // os.UserCacheDir resolves to for the script's HOME, not for this process's.
 // Writing it via cache.Merge would target the developer's own cache directory.
-func scriptCachePath(ts *testscript.TestScript) string {
-	dir := filepath.Join(ts.Getenv("HOME"), ".cache")
+func cachePathFor(home, xdg string) string {
+	dir := filepath.Join(home, ".cache")
 	switch {
 	case runtime.GOOS == "darwin":
-		dir = filepath.Join(ts.Getenv("HOME"), "Library", "Caches")
-	case ts.Getenv("XDG_CACHE_HOME") != "":
-		dir = ts.Getenv("XDG_CACHE_HOME")
+		dir = filepath.Join(home, "Library", "Caches")
+	case xdg != "":
+		dir = xdg
 	}
 	return filepath.Join(dir, "flagsmith", "cache.json")
+}
+
+func scriptCachePath(ts *testscript.TestScript) string {
+	return cachePathFor(ts.Getenv("HOME"), ts.Getenv("XDG_CACHE_HOME"))
 }
 
 // cmdDump writes a slice of what the fake observed to a file, so a script can

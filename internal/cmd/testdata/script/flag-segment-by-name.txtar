@@ -1,0 +1,62 @@
+# A segment can be named wherever it can be numbered. The project has segments
+# 42 "us-adults" and 57 "beta-optin".
+
+# Given: a segment named us-adults with id 42
+# When: the flags are listed for it by name
+# Then: the name is resolved to its id before the features are asked for
+fake segment-override on
+exec flagsmith flag list --segment us-adults
+dump requests requests.txt
+grep 'GET /api/v1/projects/101/features/.*segment=42' requests.txt
+
+# Given: a segment named us-adults with id 42
+# When: a flag's override is fetched for it by name
+# Then: the name is resolved to its id before the features are asked for
+fake segment-override on
+fake forget-requests
+exec flagsmith flag get max_items --segment us-adults
+dump requests requests.txt
+grep 'GET /api/v1/projects/101/features/.*segment=42' requests.txt
+
+# Given: a segment named beta-optin with id 57
+# When: a flag's override is enabled for it by name
+# Then: the resolved id is what the write carries
+fake segment-override on
+exec flagsmith flag update max_items --segment beta-optin --enable --yes
+dump requests requests.txt
+grep '"segment_overrides":\[\{"segment_id":57' requests.txt
+
+# Given: a segment named us-adults with id 42
+# When: a flag's override is disabled for it by name
+# Then: the resolved id is what the write carries, turned off
+fake segment-override on
+exec flagsmith flag disable max_items --segment us-adults --yes
+dump requests requests.txt
+grep '"segment_overrides":\[\{"segment_id":42,"enabled":false' requests.txt
+
+# Given: a segment named us-adults with id 42
+# When: a flag's override is deleted for it by name
+# Then: the resolved id is what the delete carries, and the message names the segment
+fake segment-override on
+exec flagsmith flag delete max_items --segment us-adults --yes
+stderr 'Deleted max_items override for segment us-adults \(42\) in environment'
+dump requests requests.txt
+grep '"segment":\{"id":42' requests.txt
+
+# Given: a segment name that has to be looked up, and a cold name cache
+# When: the flags are listed for it by name
+# Then: every segment the lookup saw is remembered, not just the one asked for
+fake segment-override on
+exec flagsmith flag list --segment us-adults
+grep '"42":"us-adults"' $CACHE
+grep '"57":"beta-optin"' $CACHE
+
+# Given: a segment name the project does not have
+# When: the flags are listed for it
+# Then: it fails, offering the listing that would show the real names
+! exec flagsmith flag list --segment ghost
+stderr 'ghost'
+stderr 'Run `flagsmith segment list`'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}

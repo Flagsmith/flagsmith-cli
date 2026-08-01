@@ -1,0 +1,44 @@
+# Given: max_items, an integer flag set to 25 and turned off
+# When: `flag enable` turns it on
+# Then: the value is carried into the write, and the new state is rendered from that one fetch
+fake forget-requests
+exec flagsmith flag enable max_items --yes
+stderr 'Enabled max_items'
+stdout 'on'
+stdout '25'
+dump requests requests.txt
+grep -count=1 'GET /api/v1/projects/101/features/' requests.txt
+grep '"environment_default":\{"enabled":true,"value":\{"type":"integer","value":"25"\}\}' requests.txt
+
+# Given: max_items, an integer flag set to 25 and turned on
+# When: `flag disable` turns it off
+# Then: the write says so, and so does the confirmation
+exec flagsmith flag disable max_items --yes
+stderr 'Disabled max_items'
+dump requests requests.txt
+grep '"environment_default":\{"enabled":false' requests.txt
+
+# Given: a flag with no override for segment 7
+# When: `flag enable` targets that segment
+# Then: the write carries a segment override for 7, turned on
+fake segment-override off
+exec flagsmith flag enable max_items --segment 7 --yes
+dump requests requests.txt
+grep '"segment_overrides":\[\{"segment_id":7,"enabled":true' requests.txt
+
+# Given: a flag, a segment and an identity named at once
+# When: both --segment and --identifier are passed
+# Then: it is a usage error — an override belongs to one or the other
+! exec flagsmith flag enable max_items --segment 7 --identifier u1 --yes
+stderr 'Usage:'
+
+# Given: an environment whose updates go through change-request workflows
+# When: a flag is enabled
+# Then: it fails saying so, pointing at the documentation for it
+fake workflow-gated
+! exec flagsmith flag update max_items --enable --yes
+stderr 'change-request workflows'
+stderr 'docs.flagsmith.com/advanced-use/change-requests'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}

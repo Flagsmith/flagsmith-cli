@@ -1,0 +1,36 @@
+# Given: max_items, an existing flag
+# When: --enable and --disable are passed together
+# Then: it is a usage error, and nothing is written
+! exec flagsmith flag update max_items --enable --disable --yes
+stderr 'mutually exclusive'
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: max_items, an existing flag
+# When: no change is asked for
+# Then: it is a usage error naming what could have been passed, and nothing is written
+! exec flagsmith flag update max_items --yes
+stderr 'nothing to update'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a name no feature has
+# When: an update is attempted
+# Then: it fails after the lookup, pointing at the listing, and nothing is written
+! exec flagsmith flag update ghost --enable --yes
+stderr 'feature "ghost" not found'
+stderr 'Run `flagsmith flag list`'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: max_items, an existing flag, and no interactive terminal to confirm on
+# When: an update is attempted without --yes
+# Then: it is a usage error saying how to confirm, and nothing is written
+! exec flagsmith flag update max_items --enable
+stderr 'pass --yes to confirm'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
