@@ -2667,60 +2667,6 @@ func TestProject(t *testing.T) {
 
 }
 
-func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	root := tempRepo(t)
-	writeConfig(t, root, `{"project": 1, "apiUrl": "`+f.srv.URL+`"}`)
-	setMasterKey(t, f.srv.URL)
-
-	// When
-	out, err := run("", "auth", "status")
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	if !strings.Contains(out, "Acme") {
-		t.Errorf("output = %q, want the config-file apiUrl to have been used", out)
-	}
-}
-
-func TestEnvMasterKey(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	setMasterKey(t, f.srv.URL)
-
-	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	for _, want := range []string{"Master API key", "Acme", "$FLAGSMITH_API_KEY"} {
-		if !strings.Contains(statusOut, want) {
-			t.Errorf("auth status output = %q, want it to contain %q", statusOut, want)
-		}
-	}
-
-	// When
-	tokenOut, err := run("", "auth", "token", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth token: %v", err)
-	}
-	if strings.TrimSpace(tokenOut) != masterKey {
-		t.Errorf("auth token output = %q, want the master key", tokenOut)
-	}
-}
-
-// A discovered flagsmith.json can name any apiUrl, so an unscoped credential
-// — which names no host — must not follow it there. The scoped form is how a
-// self-hosted user opts in.
 func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 	setup := func(t *testing.T) *fakeInstance {
 		t.Helper()
@@ -2848,100 +2794,6 @@ func TestSDKKeyScopesToSDKSurface(t *testing.T) {
 	})
 }
 
-func TestEnvAccessToken(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	setEnvCred(t, envAccessToken, f.srv.URL, bearerToken)
-
-	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	for _, want := range []string{"kim@example.com", "$" + scopedEnvName(envAccessToken, f.srv.URL)} {
-		if !strings.Contains(statusOut, want) {
-			t.Errorf("auth status output = %q, want it to contain %q", statusOut, want)
-		}
-	}
-}
-
-func TestEnvMasterKeyRejectsAccessToken(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	setEnvCred(t, envAPIKey, f.srv.URL, bearerToken)
-
-	// When
-	_, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ACCESS_TOKEN") {
-		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ACCESS_TOKEN", err, hintFor(err))
-	}
-}
-
-func TestEnvMasterKeyBeatsAccessToken(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	setMasterKey(t, f.srv.URL)
-	setEnvCred(t, envAccessToken, f.srv.URL, bearerToken)
-
-	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	if !strings.Contains(statusOut, "$FLAGSMITH_API_KEY") {
-		t.Errorf("auth status output = %q, want FLAGSMITH_API_KEY to win", statusOut)
-	}
-}
-
-func TestEnvServerKeyRejected(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	setEnvCred(t, envAPIKey, f.srv.URL, "ser.AbCdEf1234")
-
-	// When
-	_, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
-		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
-	}
-}
-
-func TestEnvBeatsKeychain(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	if err := auth.Save(&auth.Credentials{
-		Kind: auth.KindOAuth, APIURL: f.srv.URL,
-		AccessToken: oauthAccess, RefreshToken: "cmd-refresh",
-		ExpiresAt: time.Now().Add(10 * time.Minute),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	setMasterKey(t, f.srv.URL)
-
-	// When
-	statusOut, err := run("", "auth", "status", "--api", f.srv.URL)
-
-	// Then
-	if err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-	if !strings.Contains(statusOut, "$FLAGSMITH_API_KEY") {
-		t.Errorf("auth status output = %q, want the env source to win over the keychain", statusOut)
-	}
-}
-
 func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	// Given
 	isolateStorage(t)
@@ -2960,32 +2812,5 @@ func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	}
 	if strings.Contains(out, "oauth/authorize") {
 		t.Errorf("output = %q — the OAuth flow started despite no keychain", out)
-	}
-}
-
-func TestRefreshPersistsToKeychain(t *testing.T) {
-	// Given
-	isolateStorage(t)
-	f := newFakeInstance(t)
-	if err := auth.Save(&auth.Credentials{
-		Kind: auth.KindOAuth, APIURL: f.srv.URL,
-		AccessToken: "stale-access", RefreshToken: "cmd-refresh",
-		ExpiresAt: time.Now().Add(-time.Minute),
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// When
-	if _, err := run("", "auth", "status", "--api-url", f.srv.URL); err != nil {
-		t.Fatalf("auth status: %v", err)
-	}
-
-	// Then
-	creds, err := auth.Load(f.srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if creds.AccessToken != oauthAccess {
-		t.Errorf("AccessToken = %q, want the refreshed token persisted", creds.AccessToken)
 	}
 }

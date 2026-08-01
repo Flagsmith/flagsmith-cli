@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
 	"github.com/rogpeppe/go-internal/testscript"
 	"github.com/zalando/go-keyring"
@@ -40,9 +41,86 @@ func TestMain(m *testing.M) {
 			// process, so without it the CLI would read and write the
 			// developer's real OS keychain.
 			keyring.MockInit()
+
+			// The mock lives only as long as this process, so a script's
+			// keychain travels between invocations as a file. Execute returns
+			// on success and exits on failure, so what a failed invocation
+			// wrote is not carried forward.
+			loadScriptKeychain()
 			Execute()
+			saveScriptKeychain()
 		},
 	})
+}
+
+// $KEYCHAIN names the file a script's keychain lives in. A script seeds it as
+// an ordinary txtar file, and reads it back to see what a command stored:
+//
+//	-- keychain.json --
+//	[{"api_url": "$API", "kind": "oauth", "access_token": "stale"}]
+const keychainEnv = "KEYCHAIN"
+
+// scriptKeychainURLs are the instances whose credentials travel between
+// invocations: the fake, plus whatever a script seeded. The keychain is keyed
+// by instance URL and offers no way to enumerate, so the set is tracked here.
+var scriptKeychainURLs []string
+
+// loadScriptKeychain puts the credentials a script seeded into the mock.
+func loadScriptKeychain() {
+	if api := os.Getenv("API"); api != "" {
+		scriptKeychainURLs = append(scriptKeychainURLs, api)
+	}
+	raw, err := os.ReadFile(os.Getenv(keychainEnv))
+	if err != nil {
+		return
+	}
+	// txtar file bodies are not environment-substituted, so a seed names the
+	// fake as $API and it is expanded here.
+	raw = []byte(strings.ReplaceAll(string(raw), "$API", os.Getenv("API")))
+	var creds []auth.Credentials
+	if err := json.Unmarshal(raw, &creds); err != nil {
+		fmt.Fprintln(os.Stderr, "seeding the keychain:", err)
+		os.Exit(1)
+	}
+	for _, c := range creds {
+		if err := auth.Save(&c); err != nil {
+			fmt.Fprintln(os.Stderr, "seeding the keychain:", err)
+			os.Exit(1)
+		}
+		scriptKeychainURLs = append(scriptKeychainURLs, c.APIURL)
+	}
+}
+
+// saveScriptKeychain writes back what the invocation left in the keychain, for
+// the next invocation and for the script to assert on.
+func saveScriptKeychain() {
+	path := os.Getenv(keychainEnv)
+	if path == "" {
+		return
+	}
+	var creds []auth.Credentials
+	seen := map[string]bool{}
+	for _, url := range scriptKeychainURLs {
+		if seen[url] {
+			continue
+		}
+		seen[url] = true
+		if c, err := auth.Load(url); err == nil && c != nil {
+			creds = append(creds, *c)
+		}
+	}
+	if len(creds) == 0 {
+		_ = os.Remove(path)
+		return
+	}
+	body, err := json.Marshal(creds)
+	if err == nil {
+		err = os.WriteFile(path, body, 0o600)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "saving the keychain:", err)
+		os.Exit(1)
+	}
 }
 
 func TestScripts(t *testing.T) {
@@ -57,6 +135,7 @@ func TestScripts(t *testing.T) {
 			"fake":  cmdFake,
 			"dump":  cmdDump,
 			"cache": cmdCache,
+			"subst": cmdSubst,
 		},
 	})
 }
@@ -147,17 +226,20 @@ func setupScript(env *testscript.Env) error {
 	//	env $SDK_KEY_VAR=ser.serverSideSecret
 	env.Setenv("SDK_KEY_VAR", scopedEnvName(envEnvironmentKey, f.srv.URL))
 	env.Setenv("API_KEY_VAR", scopedEnvName(envAPIKey, f.srv.URL))
+	env.Setenv("TOKEN_VAR", scopedEnvName(envAccessToken, f.srv.URL))
 
 	// An `env` in a script lasts to the end of that script, so a case that
 	// clears the credential changes what its neighbours start from. $MASTER_KEY
 	// lets a case put it back rather than depend on what ran before it.
 	env.Setenv("MASTER_KEY", masterKey)
+	env.Setenv("BEARER_TOKEN", bearerToken)
 	env.Setenv("HOME", env.WorkDir)
 	env.Setenv("XDG_CONFIG_HOME", filepath.Join(env.WorkDir, ".config"))
 
 	// $CACHE is the name cache the CLI will use, so a script can read it
 	// without spelling out a per-platform path.
 	env.Setenv("CACHE", cachePathFor(env.WorkDir, ""))
+	env.Setenv(keychainEnv, filepath.Join(env.WorkDir, "keychain.json"))
 	return nil
 }
 
@@ -397,6 +479,24 @@ func scriptValue(s string) any {
 		return n
 	}
 	return s
+}
+
+// cmdSubst expands environment variables in a file, in place. txtar bodies are
+// copied out verbatim, so a fixture that has to name the fake writes $API and
+// says so:
+//
+//	subst config.json
+func cmdSubst(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) == 0 {
+		ts.Fatalf("usage: subst <file>...")
+	}
+	for _, name := range args {
+		path := ts.MkAbs(name)
+		body, err := os.ReadFile(path)
+		ts.Check(err)
+		expanded := os.Expand(string(body), func(k string) string { return ts.Getenv(k) })
+		ts.Check(os.WriteFile(path, []byte(expanded), 0o644))
+	}
 }
 
 // cmdCache seeds the local name cache, for the cases that turn on what the CLI
