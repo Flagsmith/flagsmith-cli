@@ -235,6 +235,9 @@ func setupScript(env *testscript.Env) error {
 	env.Setenv("BEARER_TOKEN", bearerToken)
 	env.Setenv("HOME", env.WorkDir)
 	env.Setenv("XDG_CONFIG_HOME", filepath.Join(env.WorkDir, ".config"))
+	// os.UserCacheDir and os.UserConfigDir read these on Windows.
+	env.Setenv("LocalAppData", filepath.Join(env.WorkDir, "AppData", "Local"))
+	env.Setenv("AppData", filepath.Join(env.WorkDir, "AppData", "Roaming"))
 
 	// $CACHE is the name cache the CLI will use, so a script can read it
 	// without spelling out a per-platform path.
@@ -562,6 +565,10 @@ func cachePathFor(home, xdg string) string {
 	switch {
 	case runtime.GOOS == "darwin":
 		dir = filepath.Join(home, "Library", "Caches")
+	case runtime.GOOS == "windows":
+		// os.UserCacheDir reads %LocalAppData% here, which Setup points at the
+		// script's own directory.
+		dir = filepath.Join(home, "AppData", "Local")
 	case xdg != "":
 		dir = xdg
 	}

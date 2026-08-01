@@ -95,7 +95,7 @@ stdout '12'
 []
 -- expect-detail --
 Feature              max_items
-Description
+Description          
 Type                 standard
 State                off
 Value                25
@@ -114,7 +114,7 @@ false
 false
 -- expect-null-counts --
 Feature              edgeflag
-Description
+Description          
 Type                 standard
 State                on
 Value                x

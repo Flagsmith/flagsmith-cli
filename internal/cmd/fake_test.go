@@ -913,10 +913,6 @@ func (f *fakeInstance) mountFlags(mux *http.ServeMux) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		f.mu.Lock()
-		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
 }

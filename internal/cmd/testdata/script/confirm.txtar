@@ -1,5 +1,7 @@
 # Confirmations need a terminal to ask on, so these run under ttyin.
 
+[!unix] skip 'ttyin needs a pty, which testscript provides on unix only'
+
 # Given: FLAGSMITH_NO_INPUT set to a falsey value, and a terminal to prompt on
 # When: a destructive command runs and the confirmation is declined
 # Then: the prompt still ran — a falsey value switches the behaviour off rather than merely being set

@@ -1,6 +1,8 @@
 # `init` with a terminal.
 # Interactive prompts tested via bubbletea's accessible mode.
 
+[!unix] skip 'ttyin needs a pty, which testscript provides on unix only'
+
 # Given: a user in two organisations, the second holding a project with an environment
 # When: init is answered by picking the second of each
 # Then: the picked organisation, project and environment are what get written

@@ -24,7 +24,7 @@ stderr 'Set max_items to "25"'
 {"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
 -- expect-detail --
 Feature              max_items
-Description
+Description          
 Type                 standard
 State                on
 Value                25
