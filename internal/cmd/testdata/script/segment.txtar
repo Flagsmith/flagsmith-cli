@@ -1,0 +1,113 @@
+# Given: a project with two ordinary segments and one tied to a feature
+# When: the segments are listed
+# Then: only the ordinary ones are shown — a feature-specific segment is not a project segment
+exec flagsmith segment list
+cmp stdout expect-list
+! stdout 'beta-cohort'
+
+# Given: a project with two ordinary segments and one tied to a feature
+# When: they are listed with --include-feature-specific
+# Then: the feature-specific one is shown too
+exec flagsmith segment list --include-feature-specific
+stdout 'beta-cohort'
+stdout '3 segments'
+
+# Given: a project with two ordinary segments and one tied to a feature
+# When: they are listed as JSON
+# Then: it is an array of the curated segments, without the feature-specific one
+exec flagsmith segment list --json --jq 'length'
+stdout '^2$'
+
+# Given: a segment named us-adults with a two-level rule tree
+# When: it is fetched by name
+# Then: the tree is rendered, ending in a nudge towards the flags it overrides
+exec flagsmith segment get us-adults
+cmp stdout expect-get
+stderr 'flag list --segment 42'
+
+# Given: a segment whose rule tree has an IN condition
+# When: it is fetched by id as JSON
+# Then: the rules carry a $schema, and IN decodes to an array rather than a packed string
+exec flagsmith segment get 42 --json --jq '.rules["$schema"]'
+stdout 'SegmentRule'
+exec flagsmith segment get 42 --json --jq '.rules.rules[0].conditions[0].value | type'
+stdout '^array$'
+exec flagsmith segment get 42 --json --jq '.rules.rules[0].conditions[0].value | join(",")'
+stdout '^US,CA$'
+
+# Given: a rule tree with an IN condition, written as an array
+# When: a segment is created from it
+# Then: the creation is confirmed, and IN goes to the wire as the packed string the API wants
+exec flagsmith segment create newseg --rules '{"type":"ALL","rules":[{"type":"ANY","conditions":[{"property":"country","operator":"IN","value":["US","CA"]}]}]}'
+stderr 'Created segment newseg'
+dump requests requests.txt
+grep '"value":"\[\\"US\\",\\"CA\\"\]"' requests.txt
+
+# Given: a segment named only, with no rules to give it
+# When: creation is attempted
+# Then: it is a usage error naming the flag that is missing
+! exec flagsmith segment create x
+stderr '--rules'
+stderr 'Usage:'
+
+# Given: a feature named rather than numbered
+# When: a feature-specific segment is created against it
+# Then: the name is resolved to its id on the wire
+exec flagsmith segment create fs --rules '{"type":"ALL","conditions":[{"property":"beta","operator":"IS_SET"}]}' --feature max_items
+dump requests requests.txt
+grep '"feature":2' requests.txt
+
+# Given: a rule tree nested one level deeper than the API allows
+# When: a segment is created from it
+# Then: it is a usage error saying how deep a tree may be
+! exec flagsmith segment create deep --rules '{"type":"ALL","rules":[{"type":"ANY","rules":[{"type":"ALL","conditions":[]}]}]}'
+stderr 'two levels'
+stderr 'Usage:'
+
+# Given: a segment named us-adults
+# When: an update asks for no change at all
+# Then: it is a usage error, and the segment is never PUT
+! exec flagsmith segment update us-adults
+stderr 'nothing to update'
+dump requests requests.txt
+! grep 'PUT /api/v1/projects/101/segments/' requests.txt
+
+# Given: a segment named us-adults with a rule tree
+# When: only its description is changed
+# Then: the description is updated and the rules travel with it, unchanged
+exec flagsmith segment update us-adults --description 'new desc'
+dump requests requests.txt
+grep '"description":"new desc"' requests.txt
+grep '"rules":\[' requests.txt
+
+# Given: a segment with an existing rule tree
+# When: --rules gives it a new one
+# Then: the replacement is what goes to the wire
+exec flagsmith segment update 42 --rules '{"type":"ALL","conditions":[{"property":"x","operator":"EQUAL","value":"1"}]}'
+dump requests requests.txt
+grep '"property":"x"' requests.txt
+
+# Given: a segment named us-adults with id 42
+# When: it is deleted
+# Then: the deletion is confirmed and the segment is gone
+exec flagsmith segment delete us-adults --yes
+stderr 'Deleted segment us-adults \(42\)'
+exec flagsmith segment list
+! stdout 'us-adults'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-list --
+NAME         ID   CONDITIONS   DESCRIPTION
+us-adults    42   2            Users in the US aged 18+
+beta-optin   57   1            Opted into the beta
+
+2 segments
+-- expect-get --
+Segment       us-adults (42)
+Description   Users in the US aged 18+
+
+All of the below:
+  Any of the below:
+    country  IN                      US, CA
+    age      GREATER_THAN_INCLUSIVE  18
