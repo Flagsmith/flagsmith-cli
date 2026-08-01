@@ -273,6 +273,10 @@ func cmdFake(ts *testscript.TestScript, neg bool, args []string) {
 	case "features-default":
 		// The project's usual two features, as newFake starts with.
 		set(func() { f.features["101"] = defaultFeatures() })
+	case "projects":
+		// fake projects 3 acme.json — the projects an organisation holds.
+		rows := scriptRows(ts, args[2])
+		set(func() { f.projects[args[1]] = rows })
 	case "server-keys":
 		// fake server-keys K2mVsGdXhZ8kQqZ9pJmNbJ keys.json — the server-side
 		// keys an environment already has.
