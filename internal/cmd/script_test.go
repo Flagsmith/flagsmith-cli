@@ -157,6 +157,9 @@ func TestEveryScriptCaseIsGivenWhenThen(t *testing.T) {
 		t.Fatal("no scripts found — the scan is broken")
 	}
 	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
 		t.Run(e.Name(), func(t *testing.T) {
 			body, err := os.ReadFile(filepath.Join(dir, e.Name()))
 			if err != nil {
