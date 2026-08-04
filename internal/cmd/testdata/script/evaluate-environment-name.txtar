@@ -1,0 +1,44 @@
+fake sdk-flags WqXhZk8sVY3dGgTqZ9pJmN unknown
+fake sdk-flags K2mVsGdXhZ8kQqZ9pJmNbJ
+
+# Given: a config naming an environment by name, no Admin credential, and a cache that knows that name
+# When: it is evaluated
+# Then: the name resolves from the cache, costing no Admin call at all
+cache environments K2mVsGdXhZ8kQqZ9pJmNbJ=Production
+env $API_KEY_VAR=
+exec flagsmith evaluate
+stdout '2 flags'
+dump sdk-keys keys.txt
+cmp keys.txt expect-production-key
+dump env-lists lists.txt
+cmp lists.txt expect-no-lists
+
+# Given: a config naming an environment by key, no Admin credential, and a cache that knows another name
+# When: -e names that other environment
+# Then: -e wins over the config, and still costs no Admin call
+cache environments K2mVsGdXhZ8kQqZ9pJmNbJ=Production
+env $API_KEY_VAR=
+exec flagsmith evaluate -c by-key.json -e Production
+dump sdk-keys keys.txt
+grep 'K2mVsGdXhZ8kQqZ9pJmNbJ' keys.txt
+dump env-lists lists.txt
+cmp lists.txt expect-no-lists
+
+# Given: a config naming an environment by key the cache has never seen, and no credentials at all
+# When: it is evaluated
+# Then: a key is used as-is — never resolved, so no Admin call and no login needed
+exec flagsmith evaluate -c by-production-key.json
+stdout '2 flags'
+dump env-lists lists.txt
+cmp lists.txt expect-no-lists
+
+-- flagsmith.json --
+{"project": 101, "environment": "Production"}
+-- by-key.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- by-production-key.json --
+{"project": 101, "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ"}
+-- expect-production-key --
+K2mVsGdXhZ8kQqZ9pJmNbJ
+-- expect-no-lists --
+0 environment list calls

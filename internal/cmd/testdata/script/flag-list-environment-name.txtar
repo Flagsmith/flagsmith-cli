@@ -1,0 +1,46 @@
+# Given: a config naming its environment by name
+# When: the flags are listed
+# Then: the name is resolved to its id before the features are asked for
+exec flagsmith flag list
+dump requests requests.txt
+grep 'features/\?environment=1' requests.txt
+
+# Given: a config naming its environment by key
+# When: the flags are listed
+# Then: that environment's id is the one the features are asked for
+exec flagsmith flag list -c by-production-key.json
+dump requests requests.txt
+grep 'features/\?environment=2' requests.txt
+
+# Given: a config naming its environment by name, and no credentials
+# When: the flags are listed
+# Then: it fails saying so — a name cannot be resolved without one
+env $API_KEY_VAR=
+! exec flagsmith flag list
+stderr 'not logged in'
+stderr 'Run `flagsmith login`'
+
+# Given: two environments in one project sharing a name, and no terminal to choose on
+# When: the flags are listed for that name
+# Then: it is a usage error, offering the key as the way to say which
+env $API_KEY_VAR=$MASTER_KEY
+fake environments-named Staging=stagingKeyA0000000000 Staging=stagingKeyB0000000000
+! exec flagsmith flag list -c by-staging.json
+stderr 'use its key instead'
+stderr 'Usage:'
+
+# Given: a config naming an environment the project does not have
+# When: the flags are listed
+# Then: it fails, offering the command that would list the real ones
+fake environments
+! exec flagsmith flag list -c by-unknown.json
+stderr 'flagsmith environment list'
+
+-- flagsmith.json --
+{"project": 101, "environment": "Development"}
+-- by-production-key.json --
+{"project": 101, "environment": "K2mVsGdXhZ8kQqZ9pJmNbJ"}
+-- by-staging.json --
+{"project": 101, "environment": "Staging"}
+-- by-unknown.json --
+{"project": 101, "environment": "Nope"}

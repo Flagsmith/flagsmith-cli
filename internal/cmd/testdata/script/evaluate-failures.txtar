@@ -1,0 +1,10 @@
+# Given: an SDK API answering 500
+# When: evaluation is attempted
+# Then: the failure carries the status, in the CLI's own words with no SDK prefixes
+fake sdk-status 500
+! exec flagsmith evaluate
+stderr '500'
+! stderr 'flagsmith:'
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}

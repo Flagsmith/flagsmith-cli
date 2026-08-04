@@ -1,0 +1,10 @@
+# Given: an SDK API slower than the timeout the user asked for
+# When: evaluation is attempted
+# Then: the invocation deadline bounds it, rather than the SDK's own default
+fake sdk-delay 1200ms
+env FLAGSMITH_TIMEOUT=1
+! exec flagsmith evaluate
+stderr 'deadline exceeded'
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}

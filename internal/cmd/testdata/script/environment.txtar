@@ -1,0 +1,97 @@
+fake environments
+
+# Given: a project with two environments
+# When: they are listed
+# Then: each is shown with its client-side key and description, and counted
+exec flagsmith environment list
+cmp stdout expect-list
+
+# Given: a project with two environments
+# When: the command is spelled `env`
+# Then: it is an alias for environment
+exec flagsmith env list
+stdout 'Development'
+
+# Given: an environment named Production, and a cache that knows the project's name
+# When: it is fetched
+# Then: the list row and the cached name are enough — neither the environment nor the project is retrieved
+cache projects 101=acme-api
+exec flagsmith environment get Production
+cmp stdout expect-get
+dump requests requests.txt
+! grep 'GET /api/v1/environments/K2mVsGdXhZ8kQqZ9pJmNbJ/ ' requests.txt
+! grep 'GET /api/v1/projects/101/ ' requests.txt
+
+# Given: an environment named Production, and a cache that does not know the project's name
+# When: it is fetched
+# Then: the view degrades to the bare project id rather than inventing a name
+cache projects
+exec flagsmith environment get Production
+stdout '101'
+! stdout 'acme-api'
+
+# Given: an environment named Production
+# When: it is fetched through --jq
+# Then: --jq implies JSON, which retrieves the environment for the richer payload
+exec flagsmith environment get Production --jq .project
+stdout '^101$'
+dump requests requests.txt
+grep -count=1 'GET /api/v1/environments/K2mVsGdXhZ8kQqZ9pJmNbJ/ ' requests.txt
+
+# Given: an environment whose retrieve payload is richer than its list row
+# When: it is fetched as JSON
+# Then: the retrieve is what answers, so the raw API fields are all present
+fake forget-requests
+exec flagsmith environment get Production --json --jq '.use_v2_feature_versioning, .api_key'
+cmp stdout expect-json
+dump requests requests.txt
+grep -count=1 'GET /api/v1/environments/K2mVsGdXhZ8kQqZ9pJmNbJ/ ' requests.txt
+
+# Given: a project taken from the configuration
+# When: an environment is created in it
+# Then: the project comes from context, and the creation is confirmed
+exec flagsmith environment create Staging
+stderr 'Created environment Staging'
+dump requests requests.txt
+grep '"name":"Staging","project":101' requests.txt
+
+# Given: an environment named Production
+# When: its description is changed
+# Then: the new description reaches the request body
+exec flagsmith environment update Production --description 'prod live'
+dump requests requests.txt
+grep '"description":"prod live"' requests.txt
+
+# Given: an environment named Development
+# When: it is deleted
+# Then: the deletion is confirmed and the environment is gone
+exec flagsmith environment delete Development --yes
+stderr 'Deleted environment Development'
+exec flagsmith environment list
+! stdout 'Development'
+
+# Given: an environment named Production
+# When: it is cloned under a new name
+# Then: the clone is confirmed and the new name reaches the request body
+fake environments
+exec flagsmith environment clone Production 'Production Copy'
+stderr 'Cloned Production into Production Copy'
+dump requests requests.txt
+grep '"name":"Production Copy"' requests.txt
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-list --
+NAME          KEY                      DESCRIPTION
+Development   WqXhZk8sVY3dGgTqZ9pJmN   Local dev
+Production    K2mVsGdXhZ8kQqZ9pJmNbJ   Live
+
+2 environments
+-- expect-get --
+Environment   Production (K2mVsGdXhZ8kQqZ9pJmNbJ)
+Project       acme-api (101)
+Description   Live
+Versioning    v2
+-- expect-json --
+true
+K2mVsGdXhZ8kQqZ9pJmNbJ

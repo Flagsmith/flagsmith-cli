@@ -1,0 +1,46 @@
+# Given: a flag overridden on at "special" for segment 12, sitting at priority 1
+# When: it is moved to priority 0
+# Then: the move is confirmed by segment name, and the override's current state rides along unchanged
+fake segment-override on
+fake feature-segments 2 override-meta.json
+exec flagsmith flag update max_items --segment 12 --priority 0 --yes
+stderr 'Set max_items priority to 0 for segment powerusers \(12\) in environment'
+stdout 'Priority'
+dump requests requests.txt
+grep '"segment_overrides":\[\{"segment_id":12,"enabled":true,"value":\{"type":"string","value":"special"\},"priority":0\}\]' requests.txt
+
+# Given: a flag overridden on for segment 12, sitting at priority 1
+# When: it is disabled and moved in one invocation
+# Then: both changes travel in one request
+fake segment-override on
+fake feature-segments 2 override-meta.json
+exec flagsmith flag update max_items --segment 12 --disable --priority 0 --yes
+dump requests requests.txt
+grep '"segment_id":12,"enabled":false,.*"priority":0' requests.txt
+
+# Given: a flag and a priority, but no segment to apply it to
+# When: --priority is passed on its own
+# Then: it is a usage error naming --segment, and nothing is written
+fake forget-requests
+! exec flagsmith flag update max_items --priority 0 --yes
+stderr '--segment'
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a flag with one override, so the only valid priority is 0
+# When: a priority beyond that is asked for
+# Then: it is a usage error naming --priority, refused before any write
+fake segment-override on
+fake feature-segments 2 override-meta.json
+fake forget-requests
+! exec flagsmith flag update max_items --segment 12 --priority 5 --yes
+stderr '--priority'
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- override-meta.json --
+[{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1}]

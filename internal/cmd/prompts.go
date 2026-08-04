@@ -16,10 +16,10 @@ var stdinIsTTY = func() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
-// rawTerminal gates the arrow-key selector, which puts the real stdin in
-// raw mode — never stubbed, so tests exercise the line-based fallback.
+// rawTerminal gates the arrow-key selector, which puts the real stdin in raw
+// mode and draws over stderr.
 var rawTerminal = func() bool {
-	return term.IsTerminal(int(os.Stdin.Fd()))
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
 }
 
 // noInput reports the non-interactive switch: --no-input or FLAGSMITH_NO_INPUT.

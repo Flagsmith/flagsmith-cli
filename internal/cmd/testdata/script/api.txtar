@@ -1,0 +1,81 @@
+# /api/v1/echo/ reflects the request back, so what the CLI sent is what these
+# cases read on stdout.
+
+# Given: an instance reachable with an Admin credential
+# When: a path is fetched with no other arguments
+# Then: it is a GET, and the Admin credential is applied without being asked for
+exec flagsmith api api/v1/echo/
+stdout '"method":"GET"'
+stdout '"authorization":"Api-Key '$MASTER_KEY'"'
+
+# Given: an instance with one organisation
+# When: a response is filtered with --jq
+# Then: only the filtered value is printed
+exec flagsmith api api/v1/organisations/ --jq .results[].name
+stdout '^Acme$'
+
+# Given: a request with one typed field and one raw field
+# When: it is sent
+# Then: a field implies POST with a JSON body, -F typing its value and -f leaving it a string
+exec flagsmith api api/v1/echo/ -F n=3 -f s=3
+stdout '"method":"POST"'
+stdout '"content_type":"application/json"'
+stdout '\\"n\\":3'
+stdout '\\"s\\":\\"3\\"'
+
+# Given: a request with a field and an explicit GET
+# When: it is sent
+# Then: the field becomes a query parameter rather than a body
+exec flagsmith api api/v1/echo/ -X GET -F a=1
+stdout '"method":"GET"'
+stdout '"query":"a=1"'
+
+# Given: a path that already carries a query string
+# When: a field is added to it
+# Then: the field joins the existing query rather than replacing it
+exec flagsmith api 'api/v1/echo/?organisation=3' -X GET -F page=2 --jq .query
+stdout '^organisation=3&page=2$'
+
+# Given: a raw body on stdin
+# When: it is sent with --input -
+# Then: the body travels verbatim
+stdin body.json
+exec flagsmith api api/v1/echo/ -X POST --input - --jq .body
+stdout '^\{"x":1\}$'
+
+# Given: a request carrying a header of the caller's own
+# When: it is sent
+# Then: the header reaches the server
+exec flagsmith api api/v1/echo/ -H 'X-Custom: hi'
+stdout '"custom":"hi"'
+
+# Given: a request whose status the caller wants to see
+# When: -i is passed
+# Then: the status line is printed before the body
+exec flagsmith api api/v1/echo/ -i
+stdout 'HTTP/1.1 200'
+
+# Given: a path the instance does not serve
+# When: it is fetched
+# Then: the invocation fails, carrying the status
+! exec flagsmith api api/v1/nope/
+stderr '404'
+
+# Given: an environment key alongside the Admin credential
+# When: --sdk is passed
+# Then: the environment key is sent and the Admin credential is not
+env $SDK_KEY_VAR=someClientKey
+exec flagsmith api api/v1/echo/ --sdk
+stdout '"envkey":"someClientKey"'
+stdout '"authorization":""'
+
+# Given: a raw body and a field, which describe the body two different ways
+# When: both are passed
+# Then: it is a usage error
+! exec flagsmith api api/v1/echo/ --input - -F a=1
+stderr 'Usage:'
+
+-- flagsmith.json --
+{"project": 101}
+-- body.json --
+{"x":1}

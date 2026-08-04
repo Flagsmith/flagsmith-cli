@@ -1,0 +1,69 @@
+# Given: a multivariate feature with two variants
+# When: they are listed
+# Then: each variant's value, weight, key and id are shown
+fake features catalogue.json
+exec flagsmith feature variant list banner-copy
+cmp stdout expect-list
+
+# Given: a multivariate feature, and a string variant to add to it
+# When: it is added
+# Then: the value is typed as a string, carrying its weight, key and feature, and the addition is confirmed
+fake features catalogue.json
+exec flagsmith feature variant add banner-copy --value cta --weight 20 --key button
+stderr 'Added variant cta'
+dump requests requests.txt
+grep '"type":"unicode","string_value":"cta","default_percentage_allocation":20,"key":"button","feature":91' requests.txt
+
+# Given: a multivariate feature, and a variant whose value looks like a number
+# When: it is added
+# Then: the value is typed as an integer
+fake features catalogue.json
+exec flagsmith feature variant add banner-copy --value 42 --weight 10
+dump requests requests.txt
+grep '"type":"int","integer_value":42' requests.txt
+
+# Given: a variant identified by its key
+# When: only its weight is changed
+# Then: the weight is sent and the value left alone
+fake features catalogue.json
+fake forget-requests
+exec flagsmith feature variant update banner-copy hero --weight 40
+dump requests requests.txt
+grep '"default_percentage_allocation":40' requests.txt
+! grep '"string_value"' requests.txt
+
+# Given: a variant identified by its id
+# When: it is deleted
+# Then: the deletion is confirmed and the variant is gone
+fake features catalogue.json
+exec flagsmith feature variant delete banner-copy 201 --yes
+stderr 'Deleted variant'
+exec flagsmith feature variant list banner-copy
+! stdout 'headline'
+stdout 'subhead'
+
+# Given: a variant reference the feature does not have
+# When: it is deleted
+# Then: it fails, naming what was asked for
+fake features catalogue.json
+! exec flagsmith feature variant delete banner-copy nope --yes
+stderr 'nope'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- catalogue.json --
+[
+  {"id": 88, "name": "checkout-v2", "type": "STANDARD", "description": "New checkout flow",
+   "initial_value": "green", "default_enabled": true, "is_archived": false,
+   "multivariate_options": []},
+  {"id": 91, "name": "banner-copy", "type": "MULTIVARIATE", "description": "A/B banner text",
+   "initial_value": "hello", "default_enabled": false, "is_archived": false,
+   "multivariate_options": [
+     {"id": 201, "type": "unicode", "string_value": "headline", "default_percentage_allocation": 30, "key": "hero"},
+     {"id": 202, "type": "unicode", "string_value": "subhead", "default_percentage_allocation": 70, "key": "sub"}
+   ]}
+]
+-- expect-list --
+VALUE      WEIGHT   KEY    ID
+headline   30       hero   201
+subhead    70       sub    202

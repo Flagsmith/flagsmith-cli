@@ -8,6 +8,7 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/itchyny/gojq v0.12.19
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
+	github.com/rogpeppe/go-internal v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/zalando/go-keyring v0.2.8
@@ -53,4 +54,5 @@ require (
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/tools v0.35.0 // indirect
 )

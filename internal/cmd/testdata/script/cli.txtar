@@ -1,0 +1,57 @@
+# Given: a build carrying a version
+# When: --version is asked for
+# Then: that version is printed
+exec flagsmith --version
+stdout 'dev'
+
+# Given: a directory with no flagsmith.json in it, and no credentials
+# When: the CLI is invoked bare
+# Then: it nudges towards the command that would set both up
+mkdir bare
+cd bare
+env $API_KEY_VAR=
+exec flagsmith
+stdout 'flagsmith init'
+cd $WORK
+env $API_KEY_VAR=$MASTER_KEY
+
+# Given: a config file with a misspelled field
+# When: the configuration is read
+# Then: the warning goes to stderr, leaving stdout clean for the document itself
+exec flagsmith config -c typo.json
+! stdout 'unknown field'
+stderr 'unknown field'
+
+# Given: FLAGSMITH_JSON_OUTPUT set
+# When: a command that has both shapes runs
+# Then: the machine-readable one is chosen without --json being passed
+env FLAGSMITH_JSON_OUTPUT=1
+exec flagsmith config
+stdout '^\{'
+env FLAGSMITH_JSON_OUTPUT=
+
+# Given: a Master API key in a host-scoped variable
+# When: the credential is described as JSON
+# Then: it names the kind, the organisations it reaches and the exact variable it came from
+exec flagsmith auth status --json --jq '.kind, .organisations[0].name, .credentialSource'
+stdout '^master$'
+stdout '^Acme$'
+stdout '^\$'$API_KEY_VAR'$'
+
+# Given: a Master API key in a host-scoped variable
+# When: the token is asked for as JSON
+# Then: the key itself is what comes back
+exec flagsmith auth token --json --jq .token
+stdout '^'$MASTER_KEY'$'
+
+# Given: a cold name cache and a credential that can see one organisation
+# When: the credential is described
+# Then: the organisation's name is remembered for later commands
+cache organisations
+exec flagsmith auth status
+grep '"3":"Acme"' $CACHE
+
+-- flagsmith.json --
+{"project": 101}
+-- typo.json --
+{"project": 1, "enviroment": "typo"}

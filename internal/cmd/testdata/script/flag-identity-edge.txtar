@@ -1,0 +1,49 @@
+# The same overrides on a project that keeps its identities at the edge, where
+# they are addressed by identifier rather than by a core identity id.
+fake edge-identities
+
+# Given: an edge project and an identity with no override on a flag
+# When: an override is set for it
+# Then: the edge endpoint carries it, the core endpoint is untouched, and both changes are confirmed
+exec flagsmith flag update max_items --identifier edge-user --enable --value 7 --yes
+stderr 'Set max_items to 7 for identifier edge-user'
+stderr 'Enabled max_items for identifier edge-user'
+dump requests requests.txt
+grep '"enabled":true,"feature":2,"feature_state_value":7,"identifier":"edge-user"' requests.txt
+! grep 'identities/501/featurestates' requests.txt
+
+# Given: an edge project and an identity whose override on a flag is off at "e"
+# When: that override is fetched
+# Then: the uuid is resolved and the override's own state shown
+fake edge-overrides edge-user-off.json
+exec flagsmith flag get max_items --identifier edge-user
+stdout 'Identifier'
+stdout 'edge-user'
+stdout 'e'
+stdout 'off'
+
+# Given: an edge project and an identity whose override on a flag is on at "e"
+# When: that override is deleted
+# Then: the delete names the identifier and feature, and the override is gone
+fake edge-overrides edge-user-on.json
+exec flagsmith flag delete max_items --identifier edge-user --yes
+stderr 'Deleted max_items override for identifier edge-user'
+dump requests requests.txt
+grep '"feature":2,"identifier":"edge-user"' requests.txt
+
+# Given: an edge project and an identity whose override on a flag is off at "e"
+# When: it is enabled
+# Then: the uuid is resolved once, and the updated detail is reprinted
+fake edge-overrides edge-user-off.json
+fake forget-requests
+exec flagsmith flag update max_items --identifier edge-user --enable --yes
+stdout 'on'
+dump requests requests.txt
+grep -count=1 'GET /api/v1/environments/WqXhZk8sVY3dGgTqZ9pJmN/edge-identities/\?q=' requests.txt
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- edge-user-off.json --
+[{"identifier": "edge-user", "feature": 2, "enabled": false, "value": "e"}]
+-- edge-user-on.json --
+[{"identifier": "edge-user", "feature": 2, "enabled": true, "value": "e"}]

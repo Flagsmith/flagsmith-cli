@@ -1,0 +1,20 @@
+# Given: a config naming no environment, and no environment key in the setting
+# When: evaluation is attempted
+# Then: the error names the way in, rather than just failing to resolve
+! exec flagsmith evaluate
+stderr 'FLAGSMITH_ENVIRONMENT_KEY'
+
+# Given: a server-side key as the only environment reference, as it is in CI
+# When: evaluation is attempted
+# Then: it resolves, sending that key and nothing else to the SDK API
+fake sdk-flags ser.serverSideSecret
+env $SDK_KEY_VAR=ser.serverSideSecret
+exec flagsmith evaluate
+stdout '2 flags'
+dump sdk-keys keys.txt
+cmp keys.txt expect-keys
+
+-- flagsmith.json --
+{}
+-- expect-keys --
+ser.serverSideSecret

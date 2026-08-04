@@ -1,0 +1,22 @@
+# Given: a CLI whose root command takes a subcommand
+# When: its help is shown
+# Then: the use line is the single-line form, not the two-line one cobra defaults to
+exec flagsmith --help
+stdout 'flagsmith \[command\] \[flags\]'
+! stdout 'flagsmith \[flags\]\n'
+
+# Given: a leaf command
+# When: its help is shown
+# Then: it has a use line of its own
+exec flagsmith flag list --help
+stdout 'flagsmith flag list \[flags\]'
+
+# Given: `flag create`, which is a redirect towards `feature create` rather than a command
+# When: it is invoked
+# Then: it nudges towards the real command, without a usage block for one that does not exist
+! exec flagsmith flag create brand-new
+stderr 'feature create brand-new'
+! stderr 'Usage:'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}

@@ -1,0 +1,99 @@
+# Given: a project to add a feature to
+# When: one is created with a default value, description and --enabled
+# Then: each reaches the request body, and the creation is confirmed
+fake features catalogue.json
+exec flagsmith feature create checkout-3 --value blue --description d --enabled
+stderr 'Created feature checkout-3'
+dump requests requests.txt
+grep '"name":"checkout-3","description":"d","initial_value":"blue","default_enabled":true' requests.txt
+
+# Given: a project to add a feature to
+# When: its default is given as --default-value rather than --value
+# Then: it is set as the feature's initial value, as --value would
+fake features catalogue.json
+exec flagsmith feature create aliased --default-value teal
+dump requests requests.txt
+grep '"initial_value":"teal"' requests.txt
+
+# Given: variants written inline, one a string and one a number
+# When: a multivariate feature is created from them
+# Then: each variant is typed by its JSON value, carrying its weight
+fake features catalogue.json
+exec flagsmith feature create banner-2 --value hello --variants '[{"value":"a","weight":30},{"value":42,"weight":70}]'
+dump requests requests.txt
+grep '"type":"unicode","string_value":"a","default_percentage_allocation":30' requests.txt
+grep '"type":"int","integer_value":42,"default_percentage_allocation":70' requests.txt
+
+# Given: an existing feature
+# When: its description is changed
+# Then: the new description reaches the request body
+fake features catalogue.json
+exec flagsmith feature update checkout-v2 --description redesign
+dump requests requests.txt
+grep '"description":"redesign"' requests.txt
+
+# Given: a live feature and an archived one
+# When: one is archived and the other unarchived
+# Then: each write carries the archive flag it was asked for
+fake features catalogue.json
+fake forget-requests
+exec flagsmith feature update checkout-v2 --archive
+exec flagsmith feature update legacy-copy --unarchive
+dump requests requests.txt
+grep '"is_archived":true' requests.txt
+grep '"is_archived":false' requests.txt
+
+# Given: a feature to be archived and unarchived at once
+# When: both flags are passed
+# Then: it is a usage error
+! exec flagsmith feature update checkout-v2 --archive --unarchive
+stderr 'Usage:'
+
+# Given: a feature named checkout-v2 with id 88
+# When: it is deleted with --yes
+# Then: the deletion is confirmed and the feature is gone
+fake features catalogue.json
+exec flagsmith feature delete checkout-v2 --yes
+stderr 'Deleted feature checkout-v2 \(88\)'
+exec flagsmith feature list
+! stdout 'checkout-v2'
+
+# Given: a feature, and FLAGSMITH_NO_INPUT set
+# When: it is deleted without --yes
+# Then: it is refused naming --yes, and the feature survives
+fake features catalogue.json
+env FLAGSMITH_NO_INPUT=1
+! exec flagsmith feature delete checkout-v2
+stderr '--yes'
+stderr 'Usage:'
+exec flagsmith feature list
+stdout 'checkout-v2'
+
+# Given: a feature, and --no-input on the command line
+# When: it is deleted without --yes
+# Then: it is refused naming --yes, and the feature survives
+fake features catalogue.json
+env FLAGSMITH_NO_INPUT=
+! exec flagsmith feature delete checkout-v2 --no-input
+stderr '--yes'
+stderr 'Usage:'
+exec flagsmith feature list
+stdout 'checkout-v2'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- catalogue.json --
+[
+  {"id": 88, "name": "checkout-v2", "type": "STANDARD", "description": "New checkout flow",
+   "initial_value": "green", "default_enabled": true, "is_archived": false,
+   "multivariate_options": []},
+  {"id": 91, "name": "banner-copy", "type": "MULTIVARIATE", "description": "A/B banner text",
+   "initial_value": "hello", "default_enabled": false, "is_archived": false,
+   "multivariate_options": [
+     {"id": 201, "type": "unicode", "string_value": "headline", "default_percentage_allocation": 30, "key": "hero"},
+     {"id": 202, "type": "unicode", "string_value": "subhead", "default_percentage_allocation": 70, "key": "sub"}
+   ]},
+  {"id": 40, "name": "legacy-copy", "type": "STANDARD", "description": "Retired",
+   "initial_value": "old", "default_enabled": false, "is_archived": true,
+   "multivariate_options": []}
+]

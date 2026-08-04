@@ -1,0 +1,94 @@
+# Given: an environment resolving two flags, addressed by its client-side key
+# When: evaluated with no arguments
+# Then: a table is printed from one SDK API call carrying the CLI's User-Agent, and stderr stays empty
+exec flagsmith evaluate
+cmp stdout expect-table
+! stderr .
+dump requests requests.txt
+cmpenv requests.txt expect-requests
+dump sdk-agents agents.txt
+grep '^flagsmith-cli/' agents.txt
+
+# Given: an environment resolving two flags
+# When: the command is spelled `eval`
+# Then: it is an alias for evaluate, resolving the environment's two flags
+exec flagsmith eval
+stdout '2 flags'
+
+# Given: an environment resolving two flags
+# When: evaluated with --json
+# Then: an EvaluationResult, with reason, variant and segments omitted rather than invented
+exec flagsmith evaluate --json
+cmp stdout expect-json
+! stdout 'reason'
+! stdout 'variant'
+! stdout 'segments'
+
+# Given: an environment resolving two flags
+# When: evaluated with --js
+# Then: the frontend SDK's hydration state, keyed by name, with no $schema
+exec flagsmith evaluate --js
+cmpenv stdout expect-js
+! stdout '\$schema'
+
+# Given: an environment resolving two flags
+# When: both --js and --json are passed
+# Then: it is a usage error — they are different shapes
+! exec flagsmith evaluate --json --js
+stderr 'different shapes'
+stderr 'Usage:'
+
+# Given: an environment resolving two flags
+# When: --js is passed alongside a named feature
+# Then: it is a usage error — a one-flag state is a dud
+! exec flagsmith evaluate max_items --js
+stderr 'Usage:'
+
+# Given: an environment resolving two flags
+# When: --jq is applied to either shape
+# Then: it filters whichever shape was asked for
+exec flagsmith evaluate --js --jq .flags.max_items.value
+stdout '^25$'
+exec flagsmith evaluate --jq .flags.max_items.name
+stdout '^max_items$'
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-table --
+FEATURE             ENABLED   VALUE
+onboarding_banner   on        -
+max_items           off       25
+
+2 flags
+-- expect-requests --
+GET /api/v1/flags/ [environment-key]
+-- expect-json --
+{
+  "$schema": "https://raw.githubusercontent.com/Flagsmith/flagsmith/main/sdk/evaluation-result.json",
+  "flags": {
+    "max_items": {
+      "name": "max_items",
+      "enabled": false,
+      "value": 25
+    },
+    "onboarding_banner": {
+      "name": "onboarding_banner",
+      "enabled": true,
+      "value": null
+    }
+  }
+}
+-- expect-js --
+{
+  "api": "$API/api/v1/",
+  "flags": {
+    "max_items": {
+      "enabled": false,
+      "value": 25
+    },
+    "onboarding_banner": {
+      "enabled": true,
+      "value": null
+    }
+  }
+}

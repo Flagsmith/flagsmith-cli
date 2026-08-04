@@ -1,0 +1,34 @@
+fake environments
+
+# Given: an environment with one server-side key on it
+# When: its keys are listed
+# Then: each key's name, id and whether it is active are shown
+fake server-keys K2mVsGdXhZ8kQqZ9pJmNbJ existing-key.json
+exec flagsmith environment key list Production
+cmp stdout expect-list
+
+# Given: an environment to mint a server-side key for
+# When: one is created
+# Then: the creation is confirmed and the secret is printed, this being the only time it can be
+exec flagsmith environment key create Production --name backend
+stderr 'Created server-side key backend'
+stdout 'ser.mintedKey000000000'
+dump requests requests.txt
+grep '"name":"backend"' requests.txt
+
+# Given: an environment with a server-side key on it
+# When: that key is deleted
+# Then: the deletion is confirmed and the key is gone
+fake server-keys K2mVsGdXhZ8kQqZ9pJmNbJ existing-key.json
+exec flagsmith environment key delete Production 14 --yes
+stderr 'Deleted server-side key 14'
+exec flagsmith environment key list Production
+! stdout 'CI key'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- existing-key.json --
+[{"id": 14, "name": "CI key", "active": true, "key": "ser.existing", "created_at": "2026-07-01T00:00:00Z"}]
+-- expect-list --
+NAME     ID   ACTIVE   CREATED                EXPIRES AT
+CI key   14   true     2026-07-01T00:00:00Z   -

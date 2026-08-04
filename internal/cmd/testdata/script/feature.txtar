@@ -1,0 +1,96 @@
+# Given: a project with two live features and one archived
+# When: the features are listed
+# Then: the archived one is filtered out server-side, and the rest are shown with their defaults
+fake features catalogue.json
+exec flagsmith feature list
+cmp stdout expect-list
+dump requests requests.txt
+grep 'features/.*is_archived=false' requests.txt
+
+# Given: a project with two live features and one archived
+# When: they are listed with --include-archived
+# Then: no archive filter is sent, and the archived one appears
+fake features catalogue.json
+fake forget-requests
+exec flagsmith feature list --include-archived
+stdout 'legacy-copy'
+stdout '3 features'
+dump requests requests.txt
+! grep 'is_archived=' requests.txt
+
+# Given: a feature whose default value is longer than a column
+# When: the features are listed
+# Then: the value is truncated rather than wrapped
+fake features long-value.json
+exec flagsmith feature list
+stdout '…'
+! stdout 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+
+# Given: a multivariate feature with two variants
+# When: it is fetched by name
+# Then: the detail shows its type, default and each variant's value, weight and key
+fake features catalogue.json
+exec flagsmith feature get banner-copy
+cmp stdout expect-get
+
+# Given: a multivariate feature with two variants
+# When: it is fetched by id as JSON
+# Then: the curated shape names the type, default value and the variants
+fake features catalogue.json
+exec flagsmith feature get 91 --json --jq '.type, .default_value, .variants[0].value, .variants[0].weight, .variants[0].key'
+cmp stdout expect-get-json
+
+# Given: a standard feature, which has no variants at all
+# When: its variants are listed as JSON
+# Then: the empty list renders as [] rather than null, so --jq can iterate it
+fake features catalogue.json
+exec flagsmith feature variant list checkout-v2 --json
+stdout '^\[\]$'
+exec flagsmith feature variant list checkout-v2 --jq .[]
+! stdout .
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- catalogue.json --
+[
+  {"id": 88, "name": "checkout-v2", "type": "STANDARD", "description": "New checkout flow",
+   "initial_value": "green", "default_enabled": true, "is_archived": false,
+   "multivariate_options": []},
+  {"id": 91, "name": "banner-copy", "type": "MULTIVARIATE", "description": "A/B banner text",
+   "initial_value": "hello", "default_enabled": false, "is_archived": false,
+   "multivariate_options": [
+     {"id": 201, "type": "unicode", "string_value": "headline", "default_percentage_allocation": 30, "key": "hero"},
+     {"id": 202, "type": "unicode", "string_value": "subhead", "default_percentage_allocation": 70, "key": "sub"}
+   ]},
+  {"id": 40, "name": "legacy-copy", "type": "STANDARD", "description": "Retired",
+   "initial_value": "old", "default_enabled": false, "is_archived": true,
+   "multivariate_options": []}
+]
+-- long-value.json --
+[
+  {"id": 1, "name": "blob", "type": "STANDARD", "is_archived": false, "multivariate_options": [],
+   "initial_value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+]
+-- expect-list --
+NAME          ID   TYPE           DEFAULT VALUE   DESCRIPTION
+checkout-v2   88   standard       green           New checkout flow
+banner-copy   91   multivariate   hello           A/B banner text
+
+2 features
+-- expect-get --
+Feature         banner-copy (91)
+Description     A/B banner text
+Type            multivariate
+Default value   hello
+Enabled         false
+
+Variants
+  VALUE     WEIGHT  KEY   ID
+  headline  30      hero  201
+  subhead   70      sub   202
+-- expect-get-json --
+multivariate
+hello
+headline
+30
+hero

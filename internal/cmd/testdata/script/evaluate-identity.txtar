@@ -1,0 +1,71 @@
+fake sdk-identity user-123
+
+# Given: an identity whose flags differ from the environment's defaults
+# When: it is evaluated with --identity
+# Then: the identity's own values are resolved, and it is identified transiently
+exec flagsmith evaluate --identity user-123
+stdout '99'
+dump requests requests.txt
+cmp requests.txt expect-identify
+
+# Given: an identity whose flags differ from the environment's defaults
+# When: it is addressed as --identifier, the spelling the flag commands use
+# Then: user-123's own values are resolved — both spellings name the identity
+exec flagsmith evaluate --identifier user-123
+stdout '99'
+
+# Given: an identity whose flags differ from the environment's defaults
+# When: it is addressed as -i
+# Then: user-123's own values are resolved — the shorthand names the identity too
+exec flagsmith evaluate -i user-123
+stdout '99'
+
+# Given: an identity and four traits whose values look like different types
+# When: it is evaluated with those traits
+# Then: each trait is typed by inference — string, integer, float and boolean
+exec flagsmith evaluate --identity typed --trait plan=premium --trait age=42 --trait score=1.5 --trait beta=true
+dump requests requests.txt
+grep '"trait_key":"plan","trait_value":"premium"' requests.txt
+grep '"trait_key":"age","trait_value":42' requests.txt
+grep '"trait_key":"score","trait_value":1.5' requests.txt
+grep '"trait_key":"beta","trait_value":true' requests.txt
+
+# Given: an identity and a trait
+# When: --persist is passed
+# Then: the identity is no longer transient
+exec flagsmith eval --identity user-123 --trait plan=premium --persist
+dump requests requests.txt
+grep '"transient":false' requests.txt
+
+# Given: an anonymous identity that resolves its own flags
+# When: traits are passed with no identity
+# Then: an anonymous transient identity is evaluated
+fake sdk-identity ''
+exec flagsmith evaluate --trait country=US
+stdout '99'
+dump requests requests.txt
+grep '"identifier":"","traits":\[.*\],"transient":true' requests.txt
+
+# Given: an identity and a trait whose value is empty
+# When: it is evaluated
+# Then: the trait is sent set to the empty string — a what-if worth asking
+exec flagsmith evaluate --identity user-123 --trait plan=
+dump requests requests.txt
+grep '"trait_key":"plan","trait_value":""' requests.txt
+
+# Given: an identity whose flags differ from the environment's defaults
+# When: one feature is named alongside --json
+# Then: the flag is printed on its own, with no EvaluationResult around it
+exec flagsmith evaluate max_items --identity user-123 --json
+cmp stdout expect-one-flag
+
+-- flagsmith.json --
+{"environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- expect-identify --
+POST /api/v1/identities/ [environment-key] {"identifier":"user-123","transient":true}
+-- expect-one-flag --
+{
+  "name": "max_items",
+  "enabled": true,
+  "value": 99
+}

@@ -1,0 +1,27 @@
+fake sdk-flags WqXhZk8sVY3dGgTqZ9pJmN unknown
+fake sdk-flags K2mVsGdXhZ8kQqZ9pJmNbJ
+
+# Given: a config naming an environment by name, a cold cache, and no credentials
+# When: it is evaluated
+# Then: it says how to authenticate — a name cannot be resolved without a credential
+env $API_KEY_VAR=
+! exec flagsmith evaluate
+stderr 'Run `flagsmith login`'
+
+# Given: a cache where two projects' environments share the name being asked for
+# When: it is evaluated with an Admin credential
+# Then: the ambiguity defers to the Admin API, which scopes the name to this project
+cache environments WqXhZk8sVY3dGgTqZ9pJmN=Development OtherProjectDevKey1234=Development
+env $API_KEY_VAR=$MASTER_KEY
+fake environments
+fake sdk-flags WqXhZk8sVY3dGgTqZ9pJmN
+exec flagsmith evaluate -c by-development.json
+dump sdk-keys keys.txt
+cmp keys.txt expect-development-key
+
+-- flagsmith.json --
+{"project": 101, "environment": "Production"}
+-- by-development.json --
+{"project": 101, "environment": "Development"}
+-- expect-development-key --
+WqXhZk8sVY3dGgTqZ9pJmN

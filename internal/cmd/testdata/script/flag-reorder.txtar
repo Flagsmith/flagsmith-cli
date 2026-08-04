@@ -1,0 +1,104 @@
+# max_items has overrides beta-optin (57, priority 0, "blue", on) and
+# us-adults (42, priority 1, 25, off). The environment default is off at 25.
+
+# Given: a flag whose overrides are listed in a new order
+# When: they are reordered
+# Then: every override is re-permuted in one request, each echoing its current state, with the environment default carried along
+fake feature-overrides
+fake forget-requests
+exec flagsmith flag reorder max_items us-adults beta-optin --yes
+stderr 'Reordered 2 segment overrides for max_items'
+cmp stdout expect-reordered
+dump requests requests.txt
+grep -count=1 'update-flag-v2' requests.txt
+grep '"segment_overrides":\[\{"segment_id":42,"enabled":false,"value":\{"type":"integer","value":"25"\},"priority":0\},\{"segment_id":57,"enabled":true,"value":\{"type":"string","value":"blue"\},"priority":1\}\]' requests.txt
+grep '"environment_default":\{"enabled":false' requests.txt
+
+# Given: a flag whose overrides carry their segments' names already
+# When: they are reordered
+# Then: the names need no segment listing, and the rows behind them are read once each
+fake feature-overrides
+fake forget-requests
+exec flagsmith flag reorder max_items us-adults beta-optin --yes
+dump requests requests.txt
+! grep 'GET /api/v1/projects/101/segments/' requests.txt
+grep -count=1 'GET /api/v1/features/feature-segments/' requests.txt
+grep -count=1 'GET /api/v1/features/featurestates/' requests.txt
+
+# Given: an override whose state row has gone missing, as a concurrent delete would leave it
+# When: a reorder is attempted
+# Then: it refuses, naming the segment, rather than echoing a zero state over the override
+fake feature-overrides
+fake feature-states 2 missing-row.json
+fake forget-requests
+! exec flagsmith flag reorder max_items us-adults beta-optin --yes
+stderr '42'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a reorder naming a segment the project does not have
+# When: it is attempted
+# Then: it fails naming that segment, and nothing is written
+fake feature-overrides
+fake forget-requests
+! exec flagsmith flag reorder max_items beta-optin nope --yes
+stderr 'segment "nope" not found'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a reorder listing only some of the flag's overrides
+# When: it is attempted
+# Then: it is a usage error naming the one left out, and nothing is written
+fake feature-overrides
+fake forget-requests
+! exec flagsmith flag reorder max_items beta-optin --yes
+stderr 'us-adults'
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a reorder naming a segment the flag has no override for
+# When: it is attempted
+# Then: it is a usage error naming that segment, and nothing is written
+fake feature-overrides
+fake forget-requests
+! exec flagsmith flag reorder max_items beta-optin us-adults beta-cohort --yes
+stderr 'beta-cohort'
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a reorder naming one segment twice
+# When: it is attempted
+# Then: it is a usage error naming the duplicate, and nothing is written
+fake feature-overrides
+fake forget-requests
+! exec flagsmith flag reorder max_items beta-optin beta-optin --yes
+stderr 'beta-optin'
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+# Given: a reorder and no interactive terminal to confirm on
+# When: it is attempted without --yes
+# Then: it is a usage error, and nothing is written
+fake feature-overrides
+fake forget-requests
+! exec flagsmith flag reorder max_items us-adults beta-optin
+stderr 'Usage:'
+dump requests requests.txt
+! grep update-flag-v2 requests.txt
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- missing-row.json --
+[
+  {"id": 9000, "feature_segment": null, "enabled": false, "feature_state_value": {"type": "unicode", "string_value": "default"}},
+  {"id": 9001, "feature_segment": 1200, "enabled": true, "feature_state_value": {"type": "unicode", "string_value": "blue"}}
+]
+-- expect-reordered --
+PRIORITY   SEGMENT           STATE   VALUE
+0          us-adults (42)    off     25
+1          beta-optin (57)   on      blue
+
+2 overrides

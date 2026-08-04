@@ -1,0 +1,162 @@
+# Given: an organisation holding two projects
+# When: they are listed
+# Then: each is shown with its id and its organisation's name, and counted
+fake orgs Acme=3
+fake projects 3 acme.json
+exec flagsmith project list
+cmp stdout expect-list
+
+# Given: a directory pinned to one organisation, and a project in another
+# When: the projects are listed
+# Then: only the pinned organisation's projects are shown, as `project get` would resolve
+fake orgs Acme=3 Other=4
+fake projects 3 acme.json
+fake projects 4 other.json
+exec flagsmith project list -c pinned.json
+stdout 'acme-api'
+! stdout 'other-api'
+
+# Given: a project named acme-api with id 101
+# When: it is fetched by name
+# Then: it is shown by name and id
+fake orgs Acme=3
+fake projects 3 acme.json
+exec flagsmith project get acme-api
+stdout 'acme-api \(101\)'
+
+# Given: an organisation named rather than numbered
+# When: its projects are listed
+# Then: the one organisation fetch that resolved the name also labels the rows
+fake orgs Acme=3
+fake projects 3 acme.json
+fake forget-requests
+exec flagsmith project list --organisation Acme
+stdout 'Acme \(3\)'
+dump requests requests.txt
+grep -count=1 'GET /api/v1/organisations/' requests.txt
+
+# Given: two organisations, one holding a project named site
+# When: that name is looked up scoped to the organisation without it
+# Then: it is not found, and the error says which organisation was searched
+fake orgs Acme=3 Beta=7
+fake projects 7 beta.json
+! exec flagsmith project get site --organisation Acme
+stderr '"site" not found in organisation 3'
+
+# Given: two organisations, one holding a project named site
+# When: that name is looked up scoped to the organisation with it
+# Then: it resolves
+fake orgs Acme=3 Beta=7
+fake projects 7 beta.json
+exec flagsmith project get site --organisation Beta
+stdout 'site \(701\)'
+
+# Given: two organisations, one holding a project named site
+# When: that name is looked up with no organisation scope at all
+# Then: it still resolves, across organisations
+fake orgs Acme=3 Beta=7
+fake projects 7 beta.json
+exec flagsmith project get site
+stdout 'site \(701\)'
+
+# Given: a project named by its id
+# When: it is deleted
+# Then: the message carries the bare id, not an id labelled with itself
+fake orgs Acme=3
+fake projects 3 acme.json
+cache projects
+exec flagsmith project delete 101 --yes
+stderr 'Deleted project 101'
+! stderr '101 \(101\)'
+
+# Given: a project named acme-api with id 101
+# When: it is deleted by name
+# Then: the message carries both the name and the id, and the project is gone
+fake orgs Acme=3
+fake projects 3 acme.json
+exec flagsmith project delete acme-api --yes
+stderr 'Deleted project acme-api \(101\)'
+exec flagsmith project list
+! stdout 'acme-api'
+
+# Given: a name cache warmed by a project listing
+# When: a project is fetched
+# Then: the organisation is labelled from the cache, with no organisation fetch at all
+fake orgs Acme=3
+fake projects 3 acme.json
+exec flagsmith project list --organisation Acme
+fake forget-requests
+exec flagsmith project get acme-api
+stdout 'Acme \(3\)'
+dump requests requests.txt
+! grep 'GET /api/v1/organisations/' requests.txt
+
+# Given: a project carrying API fields the CLI has no opinion about
+# When: it is fetched as JSON
+# Then: those fields are passed through untouched
+fake orgs Acme=3
+fake projects 3 rich.json
+exec flagsmith project get 101 --json --jq .hide_disabled_flags
+stdout '^true$'
+
+# Given: an organisation to create a project in
+# When: one is created
+# Then: the organisation is resolved onto the request body, and the creation is confirmed
+fake orgs Acme=3
+fake projects 3 acme.json
+exec flagsmith project create acme-mobile --organisation Acme
+stderr 'Created project acme-mobile'
+dump requests requests.txt
+grep '"name":"acme-mobile","organisation":3' requests.txt
+
+# Given: an existing project
+# When: one of its settings is changed
+# Then: the setting reaches the request body
+fake orgs Acme=3
+fake projects 3 acme.json
+exec flagsmith project update acme-api --hide-disabled-flags
+dump requests requests.txt
+grep '"hide_disabled_flags":true' requests.txt
+
+# Given: a configuration naming its project by name and its environment by name
+# When: the flags are listed
+# Then: the project name resolves far enough to look the environment up by name too
+fake orgs Acme=3
+fake projects 3 acme.json
+fake environments
+fake forget-requests
+exec flagsmith flag list -c by-name.json
+dump requests requests.txt
+grep 'features/\?environment=1' requests.txt
+
+# Given: a configuration naming a project the instance does not have
+# When: the flags are listed
+# Then: it fails, naming the project that could not be resolved
+! exec flagsmith flag list -c ghost.json
+stderr 'ghost'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- ghost.json --
+{"project": "ghost", "environment": "Development"}
+-- pinned.json --
+{"organisation": 3, "project": 101}
+-- by-name.json --
+{"project": "acme-api", "environment": "Development"}
+-- acme.json --
+[
+  {"id": 101, "name": "acme-api", "organisation": 3},
+  {"id": 102, "name": "acme-web", "organisation": 3}
+]
+-- other.json --
+[{"id": 201, "name": "other-api", "organisation": 4}]
+-- beta.json --
+[{"id": 701, "name": "site", "organisation": 7}]
+-- rich.json --
+[{"id": 101, "name": "acme-api", "organisation": 3, "hide_disabled_flags": true}]
+-- expect-list --
+NAME       ID    ORGANISATION
+acme-api   101   Acme (3)
+acme-web   102   Acme (3)
+
+2 projects

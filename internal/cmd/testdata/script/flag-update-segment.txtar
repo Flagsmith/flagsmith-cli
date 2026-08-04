@@ -1,0 +1,66 @@
+# Given: a flag turned off at 25, overridden on for segment 12
+# When: that override is given a new value
+# Then: the override changes and the environment default travels alongside it, unchanged
+fake segment-override on
+exec flagsmith flag update max_items --segment 12 --value new --yes
+stderr 'Set max_items to "new" for segment 12 in environment'
+dump requests requests.txt
+grep '"environment_default":\{"enabled":false,"value":\{"type":"integer","value":"25"\}\}' requests.txt
+grep '"segment_overrides":\[\{"segment_id":12,"enabled":true,"value":\{"type":"string","value":"new"\}' requests.txt
+
+# Given: a flag turned on, with no override for segment 7
+# When: an override is created for that segment
+# Then: it inherits the environment default's state
+fake features-default
+exec flagsmith flag update onboarding_banner --segment 7 --value yo --yes
+dump requests requests.txt
+grep '"segment_overrides":\[\{"segment_id":7,"enabled":true' requests.txt
+
+# Given: a flag at 25, with no override for segment 7
+# When: an override is created for that segment with only --enable
+# Then: it inherits the environment default's value as well as being turned on
+fake segment-override off
+exec flagsmith flag update max_items --segment 7 --enable --yes
+dump requests requests.txt
+grep '"segment_overrides":\[\{"segment_id":7,"enabled":true,"value":\{"type":"integer","value":"25"\}' requests.txt
+
+# Given: a flag overridden for segment 12, whose priority and name the API knows
+# When: that override is given a new value
+# Then: the reprinted detail carries the priority and segment name, read once each
+fake segment-override on
+fake feature-segments 2 override-meta.json
+fake forget-requests
+exec flagsmith flag update max_items --segment 12 --value new --yes
+stdout 'Priority'
+stdout 'powerusers \(12\)'
+stdout 'new'
+dump requests requests.txt
+grep -count=1 'GET /api/v1/projects/101/features/' requests.txt
+grep -count=1 'GET /api/v1/features/feature-segments/' requests.txt
+
+# Given: a flag with overrides for two segments, at priorities 0 and 1
+# When: the second is moved to priority 0
+# Then: the reprinted detail shows it at its new priority
+fake segment-override on
+fake feature-segments 2 two-priorities.json
+exec flagsmith flag update max_items --segment 12 --priority 0 --yes
+stdout 'Priority'
+stdout '0'
+
+# Given: a flag with one override, and a segment that has none
+# When: an override is created for that segment
+# Then: the reprinted detail reports the priority it was appended at
+fake segment-override off
+exec flagsmith flag update max_items --segment 7 --enable --yes
+stdout 'Priority'
+stdout '1'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- override-meta.json --
+[{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1}]
+-- two-priorities.json --
+[
+  {"id": 1199, "segment": 9, "segment_name": "beta", "priority": 0, "environment": 1},
+  {"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1}
+]

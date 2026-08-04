@@ -1,0 +1,65 @@
+# Single-feature commands narrow the features fetch server-side with a search
+# filter — a contains match on the name — and keep the exact match client-side.
+
+# Given: two features whose names share a prefix
+# When: the shorter one's flag is fetched by name
+# Then: the fetch is narrowed by that name, and the exact one is what comes back
+fake features prefixed.json
+exec flagsmith flag get checkout
+stdout 'checkout'
+! stdout 'checkout_v2'
+dump requests requests.txt
+grep 'features/.*search=checkout&' requests.txt
+
+# Given: a flag named by its id rather than by name
+# When: it is fetched
+# Then: no search is sent — an id cannot match a name search
+fake features-default
+fake forget-requests
+exec flagsmith flag get 2
+dump requests requests.txt
+! grep 'search=' requests.txt
+
+# Given: a feature named rather than numbered
+# When: it is fetched
+# Then: the fetch is narrowed by that name
+fake features catalogue.json
+fake forget-requests
+exec flagsmith feature get banner-copy
+dump requests requests.txt
+grep 'search=banner-copy' requests.txt
+
+# Given: a flag named rather than numbered
+# When: it is enabled
+# Then: the fetch behind the write is narrowed by that name
+fake features-default
+fake forget-requests
+exec flagsmith flag enable max_items --yes
+dump requests requests.txt
+grep 'search=max_items' requests.txt
+
+# Given: FLAGSMITH_JSON_OUTPUT set to a falsey value
+# When: a listing runs
+# Then: the human table is printed — a falsey value switches the behaviour off rather than merely being set
+env FLAGSMITH_JSON_OUTPUT=0
+exec flagsmith organisation list
+stdout 'NAME'
+! stdout '^\['
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- prefixed.json --
+[
+  {"id": 7, "name": "checkout", "type": "STANDARD",
+   "num_segment_overrides": 0, "num_identity_overrides": 0, "code_references_counts": [],
+   "environment_feature_state": {"enabled": true, "feature_state_value": null}},
+  {"id": 8, "name": "checkout_v2", "type": "STANDARD",
+   "num_segment_overrides": 0, "num_identity_overrides": 0, "code_references_counts": [],
+   "environment_feature_state": {"enabled": false, "feature_state_value": null}}
+]
+-- catalogue.json --
+[
+  {"id": 91, "name": "banner-copy", "type": "MULTIVARIATE", "description": "A/B banner text",
+   "initial_value": "hello", "default_enabled": false, "is_archived": false,
+   "multivariate_options": []}
+]

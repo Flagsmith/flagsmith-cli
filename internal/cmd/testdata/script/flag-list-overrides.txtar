@@ -1,0 +1,154 @@
+# Given: a segment with one flag overridden for it
+# When: the flags are listed for that segment
+# Then: only the overridden flag is shown, with the override's own value and no lifecycle column
+fake segment-override on
+exec flagsmith flag list --segment 12
+cmp stdout expect-segment-list
+dump requests requests.txt
+grep 'features/\?environment=1&segment=12' requests.txt
+
+# Given: a segment override carrying its priority and the segment's name
+# When: the flags are listed for that segment as JSON
+# Then: the segment is an object of id and name, alongside the priority
+fake segment-override on
+fake feature-segments 2 one-override.json
+exec flagsmith flag list --segment 12 --json --jq '.[0] | .feature, .enabled, .segment.id, .segment.name, .priority'
+cmp stdout expect-segment-json
+
+# Given: a segment nothing is overridden for
+# When: the flags are listed for it
+# Then: that is said plainly
+fake segment-override off
+exec flagsmith flag list --segment 99
+stdout 'No segment overrides'
+
+# Given: a flag overridden for two segments, at priorities 0 and 1
+# When: its overrides are listed
+# Then: they are shown in priority order, and the environment default is not one of them
+fake feature-overrides
+exec flagsmith flag list --feature max_items
+cmp stdout expect-feature-overrides
+
+# Given: a flag overridden for two segments, one holding a string and one an integer
+# When: its overrides are listed as JSON
+# Then: each carries its segment and priority, and the typed values arrive as scalars
+fake feature-overrides
+exec flagsmith flag list --feature max_items --json --jq '.[0] | .feature, .priority, .segment.id, .segment.name, .enabled, .value'
+cmp stdout expect-first-override
+exec flagsmith flag list --feature max_items --json --jq '.[1] | .enabled, .value'
+cmp stdout expect-second-override
+
+# Given: a flag overridden for two segments
+# When: --feature names it by id rather than by name
+# Then: its two segment overrides are listed
+fake feature-overrides
+exec flagsmith flag list --feature 2
+stdout 'beta-optin'
+
+# Given: a flag with no segment overrides at all
+# When: its overrides are listed
+# Then: that is said plainly
+fake segment-override on
+fake feature-segments 2 no-overrides.json
+exec flagsmith flag list --feature max_items
+stdout 'No segment overrides'
+
+# Given: a listing asked to narrow by a feature and by a segment at once
+# When: both are passed
+# Then: it is a usage error — they are different listings
+! exec flagsmith flag list --feature max_items --segment 12
+stderr 'mutually exclusive'
+stderr 'Usage:'
+
+# Given: a feature name the project does not have
+# When: its overrides are listed
+# Then: it fails, offering the listing that would show the real names
+! exec flagsmith flag list --feature ghost
+stderr 'ghost'
+stderr 'Run `flagsmith flag list`'
+
+# Given: a flag overridden for two identities
+# When: its identity overrides are listed
+# Then: each identifier is shown with the value it resolves
+fake segment-override on
+fake identity-overrides two-identities.json
+exec flagsmith flag list --feature max_items --identities
+cmp stdout expect-identity-list
+
+# Given: a flag overridden for one identity
+# When: its identity overrides are listed as JSON
+# Then: the entry names the identifier, the feature and the resolved state
+fake segment-override on
+fake identity-overrides one-identity.json
+exec flagsmith flag list --feature max_items --identities --json --jq '.[0] | .identifier, .feature, .enabled, .value'
+cmp stdout expect-identity-json
+
+# Given: a project that keeps its identities at the edge
+# When: a flag's identity overrides are listed
+# Then: the edge endpoint answers, and its override is listed
+fake segment-override on
+fake edge-overrides edge-identity.json
+exec flagsmith flag list --feature max_items --identities
+stdout 'edge-user'
+stdout '1 override'
+
+# Given: a request for identity overrides that names no feature
+# When: --identities is passed on its own
+# Then: it is a usage error naming the flag that is missing
+! exec flagsmith flag list --identities
+stderr '--feature'
+stderr 'Usage:'
+
+-- flagsmith.json --
+{"project": 101, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- no-overrides.json --
+[]
+-- one-override.json --
+[{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1}]
+-- two-identities.json --
+[
+  {"identifier": "id-123", "id": 501, "feature": 2, "enabled": true, "value": "hero"},
+  {"identifier": "id-456", "id": 502, "feature": 2, "enabled": false, "value": "hello"}
+]
+-- one-identity.json --
+[{"identifier": "id-123", "id": 501, "feature": 2, "enabled": true, "value": "hero"}]
+-- edge-identity.json --
+[{"identifier": "edge-user", "feature": 2, "enabled": true, "value": "x"}]
+-- expect-segment-list --
+NAME        TYPE       STATE   VALUE
+max_items   standard   on      special
+
+1 flag
+-- expect-segment-json --
+max_items
+true
+12
+powerusers
+1
+-- expect-feature-overrides --
+PRIORITY   SEGMENT           STATE   VALUE
+0          beta-optin (57)   on      blue
+1          us-adults (42)    off     25
+
+2 overrides
+-- expect-first-override --
+max_items
+0
+57
+beta-optin
+true
+blue
+-- expect-second-override --
+false
+25
+-- expect-identity-list --
+IDENTIFIER   STATE   VALUE
+id-123       on      hero
+id-456       off     hello
+
+2 overrides
+-- expect-identity-json --
+id-123
+max_items
+true
+hero

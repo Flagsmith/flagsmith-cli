@@ -1,0 +1,161 @@
+# `init` with a terminal.
+# Interactive prompts tested via bubbletea's accessible mode.
+
+[!unix] skip 'ttyin needs a pty, which testscript provides on unix only'
+
+# Given: a user in two organisations, the second holding a project with an environment
+# When: init is answered by picking the second of each
+# Then: the picked organisation, project and environment are what get written
+mkdir multiorg
+cd multiorg
+fake orgs Acme=3 Beta=7
+fake projects 7 $WORK/beta-projects.json
+fake project-environments 202 $WORK/beta-envs.json
+ttyin -stdin $WORK/pick-2-1-1
+exec flagsmith init
+stderr 'Organisation'
+stderr 'Project'
+stderr 'environment'
+stderr 'Wrote flagsmith.json'
+exec flagsmith config --json --jq '.organisation.value, .project.value, .environment.value'
+cmp stdout $WORK/expect-beta
+cd $WORK
+
+# Given: a user in two organisations, the second holding a project with an environment
+# When: init is answered from a terminal
+# Then: every prompt goes to stderr, leaving stdout empty for data
+mkdir streams
+cd streams
+fake orgs Acme=3 Beta=7
+fake projects 7 $WORK/beta-projects.json
+fake project-environments 202 $WORK/beta-envs.json
+ttyin -stdin $WORK/pick-2-1-1
+exec flagsmith init
+! stdout .
+stderr 'Organisation'
+stderr 'Project'
+stderr 'Default environment'
+cd $WORK
+
+# Given: a user in one organisation with no project chosen yet
+# When: the project picker is answered with "create", and the defaults accepted
+# Then: a project named after the directory is created, with a Development environment
+mkdir createproject
+cd createproject
+fake orgs Acme=3
+fake forget-requests
+ttyin -stdin $WORK/pick-2-then-defaults
+exec flagsmith init
+stderr 'Created project'
+dump requests requests.txt
+grep 'POST /api/v1/projects/.*"name":"createproject"' requests.txt
+grep 'POST /api/v1/environments/.*"name":"Development"' requests.txt
+exec flagsmith config --json --jq '.project.value, .environment.value'
+cmp stdout $WORK/expect-created
+cd $WORK
+
+# Given: a project with no environments in it, and a terminal to ask on
+# When: init is answered by accepting the offer to create one
+# Then: a Development environment is created and written
+mkdir emptyproject
+cd emptyproject
+fake environments-named
+fake forget-requests
+ttyin -stdin $WORK/pick-1-then-default
+exec flagsmith init
+stderr 'environment'
+dump requests requests.txt
+grep 'POST /api/v1/environments/.*"name":"Development"' requests.txt
+exec flagsmith config --json --jq .environment.value
+stdout '^createdEnvKey00000000$'
+fake environments
+cd $WORK
+
+# Given: a config that already records an organisation, and a user in two of them
+# When: init is re-run and the pre-selected organisation accepted
+# Then: the picker is re-offered, and the current organisation is what it defaults to
+mkdir reinit
+cd reinit
+fake orgs Beta=7 Acme=3
+fake projects 7 $WORK/beta-projects.json
+fake project-environments 202 $WORK/beta-envs.json
+cp $WORK/with-organisation.json flagsmith.json
+ttyin -stdin $WORK/pick-default-1-1
+exec flagsmith init
+stderr 'Organisation'
+exec flagsmith config --json --jq .organisation.value
+stdout '^3$'
+cd $WORK
+
+# Given: a picker answered with a number outside its range
+# When: init runs
+# Then: it says what the range is and re-asks rather than failing
+mkdir reprompt
+cd reprompt
+fake orgs Acme=3
+fake environments
+ttyin -stdin $WORK/pick-99-1-1
+exec flagsmith init
+stderr 'between 1 and'
+exec flagsmith config --json --jq .project.value
+stdout '^101$'
+cd $WORK
+
+# Given: a config recording a project that init is about to change
+# When: init is re-run and the change confirmed
+# Then: the difference is shown as a diff, and confirmed before anything is written
+mkdir diff
+cd diff
+cp $WORK/with-project-12345.json flagsmith.json
+ttyin -stdin $WORK/pick-1-2-yes
+exec flagsmith init
+stdout '- "project": 12345'
+stdout '\+ "project": 101'
+stderr 'Write changes\?'
+exec flagsmith config --json --jq '.project.value, .environment.value'
+cmp stdout $WORK/expect-changed
+cd $WORK
+
+-- flagsmith.json --
+{"project": 101}
+-- beta-projects.json --
+[{"id": 202, "name": "beta-app", "organisation": 7}]
+-- beta-envs.json --
+[{"id": 9, "name": "Development", "api_key": "BetaDevKey00000000000"}]
+-- with-organisation.json --
+{"project": 101, "organisation": 3, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- with-project-12345.json --
+{"project": 12345, "environment": "WqXhZk8sVY3dGgTqZ9pJmN"}
+-- pick-2-1-1 --
+2
+1
+1
+-- pick-2-then-defaults --
+2
+
+
+-- pick-1-then-default --
+1
+
+-- pick-default-1-1 --
+
+1
+1
+-- pick-99-1-1 --
+99
+1
+1
+-- pick-1-2-yes --
+1
+2
+y
+-- expect-beta --
+7
+202
+BetaDevKey00000000000
+-- expect-created --
+999
+createdEnvKey00000000
+-- expect-changed --
+101
+K2mVsGdXhZ8kQqZ9pJmNbJ

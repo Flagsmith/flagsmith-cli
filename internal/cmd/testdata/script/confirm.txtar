@@ -1,0 +1,19 @@
+# Confirmations need a terminal to ask on, so these run under ttyin.
+
+[!unix] skip 'ttyin needs a pty, which testscript provides on unix only'
+
+# Given: FLAGSMITH_NO_INPUT set to a falsey value, and a terminal to prompt on
+# When: a destructive command runs and the confirmation is declined
+# Then: the prompt still ran, and declining it deleted nothing — a falsey value switches the behaviour off rather than merely being set
+env FLAGSMITH_NO_INPUT=false
+ttyin -stdin decline
+exec flagsmith project delete 101
+stderr 'Aborted; nothing deleted\.'
+dump requests requests.txt
+! grep 'DELETE /api/v1/projects/101/' requests.txt
+env FLAGSMITH_NO_INPUT=
+
+-- flagsmith.json --
+{"project": 101}
+-- decline --
+n
