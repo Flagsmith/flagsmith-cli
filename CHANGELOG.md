@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0-beta.2](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.1...v2.0.0-beta.2) (2026-07-31)
+
+
+### Features
+
+* `flagsmith eval` ([#53](https://github.com/Flagsmith/flagsmith-cli/issues/53)) ([00feae6](https://github.com/Flagsmith/flagsmith-cli/commit/00feae65e312b4350560d5fea8a0dff1cf19cfed))
+
 ## [2.0.0-beta.1](https://github.com/Flagsmith/flagsmith-cli/compare/v1.1.0...v2.0.0-beta.1) (2026-07-30)
 
 
