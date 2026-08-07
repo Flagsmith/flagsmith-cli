@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "security:only-security-updates",
+    ":semanticCommitTypeAll(deps)"
+  ],
+  "semanticCommitScope": "",
+  "packageRules": [
+    {
+      "description": "Eagerly bump flagsmith-go-client on every version release",
+      "matchPackageNames": ["flagsmith-go-client"],
+      "enabled": true,
+      "rangeStrategy": "bump",
+      "matchUpdateTypes": ["minor", "major"]
+    },
+    {
+      "matchManagers": ["go"],
+      "addLabels": ["cli", "dependencies"]
+    }
+  ]
+}
