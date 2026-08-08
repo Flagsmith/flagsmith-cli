@@ -1,5 +1,5 @@
-github.com/Flagsmith/flagsmith-go-client/v5 v5.1.1-0.20260807113230-bc111cdba75a h1:u/v/5yCC+SaFeEip8lVMRS3w9yZrlNrrOLW/qmAGAqU=
-github.com/Flagsmith/flagsmith-go-client/v5 v5.1.1-0.20260807113230-bc111cdba75a/go.mod h1:CjTs0XAIJXG+08lf4h51W9cjvrNaK92TLVYtjPrnI3w=
+github.com/Flagsmith/flagsmith-go-client/v5 v5.2.0 h1:Mqs3nEceWQixRcnIdqnju1Kqo5HvTlhcR9HTdiOsjc4=
+github.com/Flagsmith/flagsmith-go-client/v5 v5.2.0/go.mod h1:CjTs0XAIJXG+08lf4h51W9cjvrNaK92TLVYtjPrnI3w=
 github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
