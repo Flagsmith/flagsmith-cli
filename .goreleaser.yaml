@@ -54,6 +54,32 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.licenses: MIT
 
+homebrew_casks:
+  - name: flagsmith
+    repository:
+      owner: Flagsmith
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+    homepage: https://github.com/Flagsmith/flagsmith-cli
+    description: The Flagsmith command-line interface
+    binaries:
+      - flagsmith
+    generate_completions_from_executable:
+      executable: flagsmith
+      args: [completion]
+      shell_parameter_format: cobra
+      shells: [bash, zsh, fish]
+    hooks:
+      post:
+        # Homebrew quarantines what it downloads;
+        # Unqarantine manually until we start notarising the Mac binaries.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/flagsmith"]
+          end
+
 # changelog handled by release-please.
 changelog:
   disable: true

@@ -5,6 +5,12 @@ The next-generation Flagsmith command-line interface (work in progress).
 ## Install
 
 ```sh
+brew install Flagsmith/tap/flagsmith
+```
+
+Or:
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh
 ```
 
