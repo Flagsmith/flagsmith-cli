@@ -7218,8 +7218,16 @@ func TestAPI(t *testing.T) {
 	t.Run("raw body from stdin", func(t *testing.T) {
 		flagUpdateEnv(t)
 		e := echoJSON(t, `{"x":1}`, "-X", "POST", "--input", "-")
-		if e["body"] != `{"x":1}` {
-			t.Errorf("body = %q", e["body"])
+		if e["body"] != `{"x":1}` || e["content_type"] != "application/json" {
+			t.Errorf("echo = %+v, want the raw body sent as JSON", e)
+		}
+	})
+
+	t.Run("-H overrides the default content type", func(t *testing.T) {
+		flagUpdateEnv(t)
+		e := echoJSON(t, "x=1", "-X", "POST", "--input", "-", "-H", "Content-Type: application/x-www-form-urlencoded")
+		if e["content_type"] != "application/x-www-form-urlencoded" {
+			t.Errorf("content_type = %q, want the -H value", e["content_type"])
 		}
 	})
 

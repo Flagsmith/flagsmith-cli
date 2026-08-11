@@ -63,7 +63,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	body, contentType, query, method, err := apiRequestBody(cmd)
+	body, query, method, err := apiRequestBody(cmd)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		full += sep + query.Encode()
 	}
 
-	resp, respBody, err := apiDo(cmd.Context(), method, full, body, contentType, headers, applyAuth)
+	resp, respBody, err := apiDo(cmd.Context(), method, full, body, headers, applyAuth)
 	if err != nil {
 		return err
 	}
@@ -113,11 +113,11 @@ func apiTarget(cmd *cobra.Command, pc *projectContext) (string, func(*http.Reque
 
 // apiRequestBody builds the request body (or query params) and resolves the
 // method: explicit --method, else POST when a body/field is present, else GET.
-func apiRequestBody(cmd *cobra.Command) (body []byte, contentType string, query url.Values, method string, err error) {
+func apiRequestBody(cmd *cobra.Command) (body []byte, query url.Values, method string, err error) {
 	hasFields := len(apiFieldFlags)+len(apiRawFields) > 0
 	hasInput := cmd.Flags().Changed("input")
 	if hasFields && hasInput {
-		return nil, "", nil, "", usageErrorf("--input cannot be combined with -F/-f")
+		return nil, nil, "", usageErrorf("--input cannot be combined with -F/-f")
 	}
 
 	method = http.MethodGet
@@ -132,12 +132,12 @@ func apiRequestBody(cmd *cobra.Command) (body []byte, contentType string, query 
 	case hasInput:
 		body, err = readInput(cmd, apiInputFlag)
 		if err != nil {
-			return nil, "", nil, "", err
+			return nil, nil, "", err
 		}
 	case hasFields && method == http.MethodGet:
 		fields, ferr := parseFields()
 		if ferr != nil {
-			return nil, "", nil, "", ferr
+			return nil, nil, "", ferr
 		}
 		query = url.Values{}
 		for k, v := range fields {
@@ -146,15 +146,14 @@ func apiRequestBody(cmd *cobra.Command) (body []byte, contentType string, query 
 	case hasFields:
 		fields, ferr := parseFields()
 		if ferr != nil {
-			return nil, "", nil, "", ferr
+			return nil, nil, "", ferr
 		}
 		body, err = json.Marshal(fields)
 		if err != nil {
-			return nil, "", nil, "", err
+			return nil, nil, "", err
 		}
-		contentType = "application/json"
 	}
-	return body, contentType, query, method, nil
+	return body, query, method, nil
 }
 
 // parseFields merges typed (-F) and raw (-f) fields into one object.
@@ -217,7 +216,7 @@ func readInput(cmd *cobra.Command, path string) ([]byte, error) {
 }
 
 // apiDo issues one request and reads the full response body.
-func apiDo(ctx context.Context, method, u string, body []byte, contentType string, headers http.Header, applyAuth func(*http.Request)) (*http.Response, []byte, error) {
+func apiDo(ctx context.Context, method, u string, body []byte, headers http.Header, applyAuth func(*http.Request)) (*http.Response, []byte, error) {
 	var r io.Reader
 	if body != nil {
 		r = bytes.NewReader(body)
@@ -226,8 +225,9 @@ func apiDo(ctx context.Context, method, u string, body []byte, contentType strin
 	if err != nil {
 		return nil, nil, err
 	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
+	// The API speaks JSON, including for a body read verbatim from --input.
+	if body != nil && headers.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	for name, values := range headers {
 		for _, v := range values {
