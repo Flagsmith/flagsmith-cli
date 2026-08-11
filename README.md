@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/instal
 
 To pin the installer itself, fetch it at a commit you trust: `raw.githubusercontent.com/Flagsmith/flagsmith-cli/<sha>/install.sh`.
 
-Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.2` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
+Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.3` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
 
 On Windows:
 
