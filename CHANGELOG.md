@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0-beta.3](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.2...v2.0.0-beta.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **api:** send a default JSON content type ([#80](https://github.com/Flagsmith/flagsmith-cli/issues/80)) ([21ea585](https://github.com/Flagsmith/flagsmith-cli/commit/21ea585b35698df5d21f746231a193b360d9c89c))
+
 ## [2.0.0-beta.2](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.1...v2.0.0-beta.2) (2026-07-31)
 
 

@@ -8,7 +8,7 @@
 # the version as a flag or export it first.
 set -eu
 
-DEFAULT_VERSION="v2.0.0-beta.2" # x-release-please-version
+DEFAULT_VERSION="v2.0.0-beta.3" # x-release-please-version
 
 REPO="Flagsmith/flagsmith-cli"
 BIN_NAME="flagsmith"
