@@ -44,6 +44,10 @@ func initPrompts(cmd *cobra.Command) {
 }
 
 func promptIO(cmd *cobra.Command) prompt.IO {
+	// A prompt takes over the terminal, and in raw mode writes to it directly
+	// rather than through cobra, so it cannot be trusted to clear a standing flag
+	// on its own.
+	releaseLine()
 	return prompt.IO{In: promptIn, ErrOut: cmd.ErrOrStderr(), RawTTY: rawTerminal()}
 }
 

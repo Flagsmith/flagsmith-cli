@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -7632,4 +7633,234 @@ func TestRefreshPersistsToKeychain(t *testing.T) {
 	if creds.AccessToken != oauthAccess {
 		t.Errorf("AccessToken = %q, want the refreshed token persisted", creds.AccessToken)
 	}
+}
+
+// fakeStderrTTY makes the animation think it has a terminal to draw on.
+func fakeStderrTTY(t *testing.T, on bool) {
+	t.Helper()
+	orig := stderrIsTTY
+	stderrIsTTY = func() bool { return on }
+	t.Cleanup(func() { stderrIsTTY = orig })
+}
+
+// cacheSelfFlag writes the CLI's own flag cache as selfflags reads it, standing
+// in for a refresh that already happened. The shape is pinned in that package.
+func cacheSelfFlag(t *testing.T, name string, enabled bool) {
+	t.Helper()
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, ".cache"))
+	t.Setenv("LocalAppData", tmp)
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "flagsmith"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"flags":{%q:%t},"fetchedAt":%q}`, name, enabled, time.Now().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(dir, "flagsmith", "selfflags.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAnimationDecision(t *testing.T) {
+	t.Run("without a terminal there is nothing to draw and nothing to ask", func(t *testing.T) {
+		// Given
+		cacheSelfFlag(t, "loading_animation", true)
+		fakeStderrTTY(t, false)
+
+		// When
+		draw, ask := animation()
+
+		// Then a piped or CI run neither animates nor evaluates
+		if draw || ask {
+			t.Errorf("animation() = (%t, %t), want (false, false)", draw, ask)
+		}
+	})
+
+	t.Run("FLAGSMITH_DEBUG keeps stderr to itself", func(t *testing.T) {
+		// Given
+		cacheSelfFlag(t, "loading_animation", true)
+		fakeStderrTTY(t, true)
+		t.Setenv("FLAGSMITH_DEBUG", "1")
+
+		// When
+		draw, ask := animation()
+
+		// Then the trace is not fighting a repainting line
+		if draw || ask {
+			t.Errorf("animation() = (%t, %t), want (false, false)", draw, ask)
+		}
+	})
+
+	t.Run("FLAGSMITH_ANIMATION=1 draws without asking", func(t *testing.T) {
+		// Given no cached evaluation at all
+		cacheSelfFlag(t, "something_else", true)
+		fakeStderrTTY(t, true)
+		t.Setenv("FLAGSMITH_ANIMATION", "1")
+
+		// When
+		draw, ask := animation()
+
+		// Then the local answer stands on its own
+		if !draw || ask {
+			t.Errorf("animation() = (%t, %t), want (true, false)", draw, ask)
+		}
+	})
+
+	t.Run("FLAGSMITH_ANIMATION=0 is the opt-out", func(t *testing.T) {
+		// Given the flag is on for this CLI
+		cacheSelfFlag(t, "loading_animation", true)
+		fakeStderrTTY(t, true)
+		t.Setenv("FLAGSMITH_ANIMATION", "0")
+
+		// When
+		draw, ask := animation()
+
+		// Then it neither draws nor phones home again to check
+		if draw || ask {
+			t.Errorf("animation() = (%t, %t), want (false, false)", draw, ask)
+		}
+	})
+
+	t.Run("otherwise the CLI's own flag decides", func(t *testing.T) {
+		// Given loading_animation is on in the cached evaluation
+		cacheSelfFlag(t, "loading_animation", true)
+		fakeStderrTTY(t, true)
+
+		// When
+		draw, ask := animation()
+
+		// Then it draws, and keeps the evaluation current
+		if !draw || !ask {
+			t.Errorf("animation() = (%t, %t), want (true, true)", draw, ask)
+		}
+	})
+
+	t.Run("a cold cache draws nothing but asks", func(t *testing.T) {
+		// Given a machine that has never evaluated the flag
+		tmp := t.TempDir()
+		t.Setenv("HOME", tmp)
+		t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, ".cache"))
+		t.Setenv("LocalAppData", tmp)
+		fakeStderrTTY(t, true)
+
+		// When
+		draw, ask := animation()
+
+		// Then the first run is plain, and the next one need not be
+		if draw {
+			t.Error("animation() drew on a cold cache")
+		}
+		if !ask {
+			t.Error("animation() did not ask on a cold cache")
+		}
+	})
+}
+
+// TestAnimationOwnsTheTerminalLine covers the wiring rather than the animation:
+// the flag stands between requests, so something must take the line back before
+// the command prints. A build where startAnimation ran but its writers were not
+// installed left the flag stuck in front of the output.
+func TestAnimationOwnsTheTerminalLine(t *testing.T) {
+	// Given an invocation that animates
+	cacheSelfFlag(t, "loading_animation", true)
+	fakeStderrTTY(t, true)
+	drawn := &bytes.Buffer{}
+	restoreAnimation(t, drawn)
+
+	// When the animation is started
+	startAnimation()
+
+	// Then a flag exists to be raised
+	if activeFlag == nil {
+		t.Fatal("startAnimation drew no flag with the flag enabled and a terminal")
+	}
+	// And neither of the command's writers is the bare stream any more: a flag
+	// standing on the line would never be cleared if either were
+	if got := rootCmd.OutOrStdout(); got == os.Stdout {
+		t.Error("command output writes straight to stdout, past the flag")
+	}
+	if got := rootCmd.ErrOrStderr(); got == os.Stderr {
+		t.Error("command errors write straight to stderr, past the flag")
+	}
+	// And output written through them still arrives
+	if _, err := fmt.Fprint(rootCmd.OutOrStdout(), ""); err != nil {
+		t.Errorf("writing through the guarded writer: %v", err)
+	}
+}
+
+func TestAnimationLeavesWritersAloneWhenOff(t *testing.T) {
+	// Given a terminal but the flag turned off locally
+	cacheSelfFlag(t, "loading_animation", true)
+	fakeStderrTTY(t, true)
+	t.Setenv("FLAGSMITH_ANIMATION", "0")
+	drawn := &bytes.Buffer{}
+	restoreAnimation(t, drawn)
+
+	// When the animation is started
+	startAnimation()
+
+	// Then nothing was wrapped, and releasing the line is a no-op rather than a
+	// nil dereference
+	if activeFlag != nil {
+		t.Error("startAnimation drew a flag with the animation switched off")
+	}
+	releaseLine()
+	if got := drawn.String(); got != "" {
+		t.Errorf("wrote %q to the terminal with the animation off", got)
+	}
+}
+
+// restoreAnimation points the flag at w and puts the package's animation state —
+// and cobra's writers, which startAnimation replaces — back afterwards.
+func restoreAnimation(t *testing.T, w io.Writer) {
+	t.Helper()
+	origOut, origWant, origFlag := animationOut, refreshWant, activeFlag
+	animationOut = w
+	t.Cleanup(func() {
+		animationOut, refreshWant, activeFlag = origOut, origWant, origFlag
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+	})
+}
+
+func TestNoteAudience(t *testing.T) {
+	restore := selfAudience
+	t.Cleanup(func() { selfAudience = restore })
+
+	t.Run("a self-hosted instance and an organisation id", func(t *testing.T) {
+		// Given a context pointed at someone's own instance
+		pc := &projectContext{
+			APIURL:       resolved{Value: "https://flagsmith.corp.example"},
+			Organisation: resolved{Value: 13},
+		}
+
+		// When it settles
+		noteAudience(pc)
+
+		// Then both facts are available to target: the organisation, and that this
+		// is not Flagsmith's own instance
+		if got := selfAudience; got.Organisation != "13" || got.IsSaas {
+			t.Errorf("selfAudience = %+v, want organisation 13 and not SaaS", got)
+		}
+	})
+
+	t.Run("an organisation named rather than numbered is not sent", func(t *testing.T) {
+		// Given a context naming its organisation
+		pc := &projectContext{
+			APIURL:       resolved{Value: defaultAPIURL},
+			Organisation: resolved{Value: "Acme Corp"},
+		}
+
+		// When it settles
+		noteAudience(pc)
+
+		// Then the name is left behind — resolving it costs a request, and it is
+		// the company's name. The default instance is Flagsmith's own.
+		if got := selfAudience; got.Organisation != "" || !got.IsSaas {
+			t.Errorf("selfAudience = %+v, want no organisation and SaaS", got)
+		}
+	})
 }
