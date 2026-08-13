@@ -30,7 +30,6 @@ repos:
     hooks:
       - id: renovate-config-validator
         args: [--no-global]
-        stages: [pre-push]
 
   - repo: local
     hooks:
@@ -49,4 +48,4 @@ repos:
         stages: [pre-push]
 
 ci:
-  skip: [golangci-lint-full, golangci-lint-config-verify, go-mod-tidy, go-test, renovate-config-validator]
+  skip: [golangci-lint-full, golangci-lint-config-verify, go-mod-tidy, go-test]
