@@ -88,5 +88,5 @@ flagsmith flag list    # list the flags in the current environment
 ## Conventions
 
 - `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
-- Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK).
+- Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK). Must be host-scoped against a self-hosted instance: `FLAGSMITH_API_KEY_flagsmith_example_com` for `https://flagsmith.example.com`.
 - Self-hosted: `--api-url` or `FLAGSMITH_API_URL`.
