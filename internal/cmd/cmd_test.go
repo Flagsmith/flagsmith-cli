@@ -2161,6 +2161,27 @@ func TestConfigCommand(t *testing.T) {
 		}
 	})
 
+	// A bad config file fails resolveContext before it can publish either
+	// surface URL, so the hint has no instance to scope a name to. Every test
+	// in this process shares those globals, so clear them to model a real run,
+	// which is one command in a process of its own.
+	t.Run("a config that fails to load still names a usable variable", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		writeConfig(t, tempRepo(t), `{"environment": "ser.SuperSecret123"}`)
+		defer func(a, s string) { apiURL, sdkAPIURL = a, s }(apiURL, sdkAPIURL)
+		apiURL, sdkAPIURL = "", ""
+
+		// When
+		_, err := run("", "config")
+
+		// Then
+		hint := hintFor(err)
+		if err == nil || !strings.Contains(hint, envEnvironmentKey+" ") {
+			t.Errorf("err = %v (hint %q), want the plain %s named", err, hint, envEnvironmentKey)
+		}
+	})
+
 	// The SDK credential is scoped to the SDK surface, so the variable to set
 	// is only knowable once that URL is resolved.
 	t.Run("server-side key rejection names the scoped variable", func(t *testing.T) {

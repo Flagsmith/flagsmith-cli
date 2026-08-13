@@ -68,9 +68,12 @@ func envCredential(base, rawURL, defaultURL string) (name, value string) {
 
 // envVarFor names the variable a user should set to reach an instance — the
 // one envCredential will actually read, which off the default host is only ever
-// the host-scoped form.
+// the host-scoped form. An instance that is not resolved yet gets the unscoped
+// name: a hint can be rendered from an error raised before the surface URLs are
+// known, and a scope suffixed to nothing names nothing.
 func envVarFor(base, rawURL, defaultURL string) string {
-	if urlHost(rawURL) == urlHost(defaultURL) {
+	host := urlHost(rawURL)
+	if host == "" || host == urlHost(defaultURL) {
 		return base
 	}
 	return scopedEnvName(base, rawURL)

@@ -37,6 +37,11 @@ func TestEnvVarFor(t *testing.T) {
 		"https://API.Flagsmith.com":     envAPIKey,
 		"https://flagsmith.example.com": "FLAGSMITH_API_KEY_flagsmith_example_com",
 		"http://localhost:8000":         "FLAGSMITH_API_KEY_localhost_8000",
+		// No instance resolved yet: a scoped name would be a bare suffix that
+		// names nothing and cannot be set.
+		"":    envAPIKey,
+		"/":   envAPIKey,
+		"///": envAPIKey,
 	}
 	for in, want := range cases {
 		if got := envVarFor(envAPIKey, in, defaultAPIURL); got != want {
