@@ -21,18 +21,20 @@ func TestHintFor(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"not logged in", auth.ErrNotLoggedIn, hintLogin},
+		{"not logged in", auth.ErrNotLoggedIn, hintLogin()},
+		{"no discovery document", auth.ErrNoDiscovery, hintAPIURL},
+		{"no discovery document wrapped", fmt.Errorf("%s returned 404: %w", "https://x/.well-known", auth.ErrNoDiscovery), hintAPIURL},
 		{"plan gated", api.ErrPlanGated, hintPricing},
 		{"plan gated wrapped", fmt.Errorf("create project: %w", api.ErrPlanGated), hintPricing},
 		{"quota exceeded", api.ErrQuotaExceeded, hintQuota},
 		{"quota exceeded wrapped", fmt.Errorf("create segment: %w", api.ErrQuotaExceeded), hintQuota},
 		{"workflow gated", api.ErrWorkflowGated, docsHint("advanced-use/change-requests")},
-		{"keychain unavailable", auth.ErrKeychainUnavailable, hintMasterKey},
+		{"keychain unavailable", auth.ErrKeychainUnavailable, hintMasterKey()},
 		{"session refresh failed wrapped", fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom")), hintRelogin},
-		{"server-side key in FLAGSMITH_API_KEY", auth.ErrServerSideKey, hintServerSideKey},
+		{"server-side key in FLAGSMITH_API_KEY", auth.ErrServerSideKey, hintServerSideKey()},
 		{"legacy authtoken", auth.ErrLegacyAuthtoken, hintMasterKeyOrLogin},
-		{"not a master key", auth.ErrNotMasterKey, hintAccessToken},
-		{"server-side key in config file", fmt.Errorf("flagsmith.json: %w", config.ErrServerSideKey), hintServerSideKey},
+		{"not a master key", auth.ErrNotMasterKey, hintAccessToken()},
+		{"server-side key in config file", fmt.Errorf("flagsmith.json: %w", config.ErrServerSideKey), hintServerSideKey()},
 		{"marked unexpected", bug.Mark(errors.New("boom")), hintReportIssue},
 		{"specific hint beats report-issue", bug.Mark(fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom"))), hintRelogin},
 		{"explicit hint wins over automatic", withHint(api.ErrPlanGated, "custom"), "custom"},
@@ -46,6 +48,49 @@ func TestHintFor(t *testing.T) {
 				t.Errorf("hintFor = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Unscoped credential variables are read only for the default host, so a hint
+// that names one off it sends a self-hosted user to set something that will be
+// ignored.
+func TestCredentialHintsNameTheVariableThatIsRead(t *testing.T) {
+	defer func(a, s string) { apiURL, sdkAPIURL = a, s }(apiURL, sdkAPIURL)
+
+	// The SDK credential scopes to the SDK surface, which is its own host.
+	sdkAPIURL = "https://sdk.example.com"
+	for name, got := range map[string]string{
+		"hintServerSideKey":  hintServerSideKey(),
+		"hintEnvironmentKey": hintEnvironmentKey(),
+	} {
+		if want := "FLAGSMITH_ENVIRONMENT_KEY_sdk_example_com"; !strings.Contains(got, want) {
+			t.Errorf("%s() = %q, want it to name %s", name, got, want)
+		}
+	}
+	sdkAPIURL = defaultSDKAPIURL
+	if got := hintEnvironmentKey(); !strings.Contains(got, envEnvironmentKey+",") {
+		t.Errorf("hintEnvironmentKey() on the default SDK host = %q, want the unscoped variable", got)
+	}
+
+	apiURL = "https://flagsmith.example.com"
+	scoped := map[string]string{
+		"hintLogin":       hintLogin(),
+		"hintMasterKey":   hintMasterKey(),
+		"hintAccessToken": hintAccessToken(),
+	}
+	for name, got := range scoped {
+		want := "FLAGSMITH_API_KEY_flagsmith_example_com"
+		if name == "hintAccessToken" {
+			want = "FLAGSMITH_ACCESS_TOKEN_flagsmith_example_com"
+		}
+		if !strings.Contains(got, want) {
+			t.Errorf("%s() = %q, want it to name %s", name, got, want)
+		}
+	}
+
+	apiURL = defaultAPIURL
+	if got := hintLogin(); !strings.Contains(got, envAPIKey+" ") {
+		t.Errorf("hintLogin() on the default host = %q, want the unscoped variable", got)
 	}
 }
 

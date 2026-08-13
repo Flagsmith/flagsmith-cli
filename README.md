@@ -88,5 +88,5 @@ flagsmith flag list    # list the flags in the current environment
 ## Conventions
 
 - `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
-- Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK).
+- Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK). When self-hosting Flagsmith, append the host and port, doubling `-` and writing `.` and `:` as `_`: `https://flagsmith-staging.com:8000` reads `FLAGSMITH_API_KEY_flagsmith__staging_com_8000`.
 - Self-hosted: `--api-url` or `FLAGSMITH_API_URL`.

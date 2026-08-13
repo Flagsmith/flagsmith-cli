@@ -82,13 +82,14 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 		// The SDK credential doubles as an environment reference, host-scoped
 		// to the SDK surface.
 		sdkURL, _ := pc.SDKAPIURL.Value.(string)
-		_, ref = envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL)
+		name, r := envCredential(envEnvironmentKey, sdkURL, defaultSDKAPIURL)
+		ref = r
 		// Server-side keys belong in that variable but can never resolve an
 		// environment over the Admin API. Name the variable, never its value:
 		// it is a secret and must stay out of stderr and CI logs.
 		if strings.HasPrefix(ref, "ser.") {
 			return api.Environment{}, withHint(
-				errors.New("FLAGSMITH_ENVIRONMENT_KEY holds a server-side key, which cannot identify an environment for Admin commands"),
+				fmt.Errorf("%s holds a server-side key, which cannot identify an environment for Admin commands", name),
 				"Pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`.")
 		}
 	}
@@ -126,8 +127,8 @@ func sdkEnvironmentKey(cmd *cobra.Command, pc *projectContext) (string, error) {
 	}
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
-		return "", withHint(errors.New("no environment key"),
-			"Set FLAGSMITH_ENVIRONMENT_KEY, or pass -e.")
+		return "", hintf(errors.New("no environment key"),
+			"Set %s, or pass -e.", environmentKeyVar())
 	}
 	names := cache.Load(pc.apiURL()).Environments
 	if _, cached := names[ref]; cached {
@@ -165,7 +166,7 @@ func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID
 	if strings.HasPrefix(ref, "ser.") {
 		return nil, withHint(
 			errors.New("the environment reference takes a client-side key, not a server-side one"),
-			hintServerSideKey)
+			hintServerSideKey())
 	}
 	envs, err := cred.client().Environments(cmd.Context(), projectID)
 	if err != nil {

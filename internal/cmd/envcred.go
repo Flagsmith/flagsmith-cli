@@ -28,9 +28,12 @@ func envBool(name string) bool {
 
 // scopedEnvName is the host-scoped form of a credential variable for an
 // instance URL: the host and port with `-` written `__` and `.` and `:`
-// written `_`. The scheme is not part of the scope.
+// written `_`. The scheme is not part of the scope. The brackets around an
+// IPv6 literal are dropped rather than encoded — they are URL syntax, and a
+// name carrying them is one no shell can export.
 func scopedEnvName(base, rawURL string) string {
 	host := urlHost(rawURL)
+	host = strings.NewReplacer("[", "", "]", "").Replace(host)
 	host = strings.ReplaceAll(host, "-", "__")
 	host = strings.ReplaceAll(host, ".", "_")
 	host = strings.ReplaceAll(host, ":", "_")
@@ -62,6 +65,43 @@ func envCredential(base, rawURL, defaultURL string) (name, value string) {
 	}
 	return "", ""
 }
+
+// envVarFor names the variable a user should set to reach an instance — the
+// one envCredential will actually read, which off the default host is only ever
+// the host-scoped form. An instance that is not resolved yet gets the unscoped
+// name: a hint can be rendered from an error raised before the surface URLs are
+// known, and a scope suffixed to nothing names nothing.
+func envVarFor(base, rawURL, defaultURL string) string {
+	host := urlHost(rawURL)
+	if host == "" || host == urlHost(defaultURL) {
+		return base
+	}
+	return scopedEnvName(base, rawURL)
+}
+
+// ignoredUnscopedCredential names an unscoped credential variable that is set
+// but cannot be read for this instance, together with the variable that would
+// be. Both are "" when nothing is being ignored. It is only meaningful once
+// scoped lookups have missed, which is the only place it is called from.
+func ignoredUnscopedCredential() (set, use string) {
+	if urlHost(apiURL) == urlHost(defaultAPIURL) {
+		return "", ""
+	}
+	for _, base := range []string{envAPIKey, envAccessToken} {
+		if os.Getenv(base) != "" {
+			return base, scopedEnvName(base, apiURL)
+		}
+	}
+	return "", ""
+}
+
+// apiKeyVar and accessTokenVar name the Admin API credential variables for the
+// instance this invocation is talking to; environmentKeyVar names the SDK one,
+// which scopes to the SDK surface — a host of its own, and by default not even
+// the same one.
+func apiKeyVar() string         { return envVarFor(envAPIKey, apiURL, defaultAPIURL) }
+func accessTokenVar() string    { return envVarFor(envAccessToken, apiURL, defaultAPIURL) }
+func environmentKeyVar() string { return envVarFor(envEnvironmentKey, sdkAPIURL, defaultSDKAPIURL) }
 
 // lookupEnvFold finds an environment variable by case-insensitive name,
 // returning the name as actually set. Host-scoped variable names embed a

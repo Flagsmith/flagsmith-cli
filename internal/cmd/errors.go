@@ -19,16 +19,12 @@ import (
 const (
 	hintPricing = "This isn't available on your current plan — see https://flagsmith.com/pricing"
 	hintQuota   = "Enterprise plans can raise this limit — get in touch: https://docs.flagsmith.com/support#getting-in-touch"
-	hintLogin   = "Run `flagsmith login`, or set FLAGSMITH_API_KEY for non-interactive use."
 
-	hintMasterKey        = "Set FLAGSMITH_API_KEY to use a Master API key instead."
 	hintMasterKeyOrLogin = "Use a Master API key, or run `flagsmith login`."
 	hintRelogin          = "Run `flagsmith login` to re-authenticate."
-	hintAccessToken      = "For an OAuth access token, set FLAGSMITH_ACCESS_TOKEN instead."
-	hintServerSideKey    = "Server-side keys are secrets — provide them via FLAGSMITH_ENVIRONMENT_KEY instead."
 
-	hintEnvironmentKey = "Check FLAGSMITH_ENVIRONMENT_KEY, or the environment name/key passed with -e."
-	hintSDKAPIURL      = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
+	hintSDKAPIURL = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
+	hintAPIURL    = "Check --api-url (or `apiUrl`) — it must point at a Flagsmith API."
 
 	hintEnvironmentList  = "Run `flagsmith environment list` to see the environments in this project."
 	hintProjectList      = "Run `flagsmith project list` to see the projects you can access."
@@ -41,6 +37,28 @@ const (
 	hintWrongAccount = "Check `flagsmith auth status` — you may be logged in to the wrong account or instance."
 	hintReportIssue  = "Think this shouldn't happen? Tell us: https://github.com/Flagsmith/flagsmith-cli/issues/new"
 )
+
+// Hints that name a credential variable are functions of the instance in play,
+// because the name is: the unscoped form is read only for the default host.
+func hintLogin() string {
+	return fmt.Sprintf("Run `flagsmith login`, or set %s for non-interactive use.", apiKeyVar())
+}
+
+func hintMasterKey() string {
+	return fmt.Sprintf("Set %s to use a Master API key instead.", apiKeyVar())
+}
+
+func hintAccessToken() string {
+	return fmt.Sprintf("For an OAuth access token, set %s instead.", accessTokenVar())
+}
+
+func hintServerSideKey() string {
+	return fmt.Sprintf("Server-side keys are secrets — provide them via %s instead.", environmentKeyVar())
+}
+
+func hintEnvironmentKey() string {
+	return fmt.Sprintf("Check %s, or the environment name/key passed with -e.", environmentKeyVar())
+}
 
 // docsHint points at a page under docs.flagsmith.com.
 func docsHint(path string) string {
@@ -80,17 +98,19 @@ func hintFor(err error) string {
 	}
 	switch {
 	case errors.Is(err, auth.ErrNotLoggedIn):
-		return hintLogin
+		return hintLogin()
+	case errors.Is(err, auth.ErrNoDiscovery):
+		return hintAPIURL
 	case errors.Is(err, auth.ErrRefreshFailed):
 		return hintRelogin
 	case errors.Is(err, auth.ErrKeychainUnavailable):
-		return hintMasterKey
+		return hintMasterKey()
 	case errors.Is(err, auth.ErrLegacyAuthtoken):
 		return hintMasterKeyOrLogin
 	case errors.Is(err, auth.ErrNotMasterKey):
-		return hintAccessToken
+		return hintAccessToken()
 	case errors.Is(err, auth.ErrServerSideKey), errors.Is(err, config.ErrServerSideKey):
-		return hintServerSideKey
+		return hintServerSideKey()
 	case errors.Is(err, api.ErrQuotaExceeded):
 		return hintQuota
 	case errors.Is(err, api.ErrPlanGated):

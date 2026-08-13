@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 )
 
 // fakeAuthServer implements just enough of the Flagsmith OAuth 2.1 surface
@@ -416,8 +418,31 @@ func TestDiscover(t *testing.T) {
 		_, err := Discover(context.Background(), http.DefaultClient, srv.URL)
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "is this a Flagsmith API URL?") {
-			t.Errorf("err = %v, want a helpful not-Flagsmith hint", err)
+		if !errors.Is(err, ErrNoDiscovery) {
+			t.Errorf("err = %v, want ErrNoDiscovery", err)
+		}
+	})
+
+	// Only a 404 says the document is absent. A server that is failing or
+	// refusing has one, and callers act on the difference.
+	t.Run("a failing endpoint is not an absent one", func(t *testing.T) {
+		for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusInternalServerError} {
+			// Given
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+
+			// When
+			_, err := Discover(context.Background(), http.DefaultClient, srv.URL)
+			srv.Close()
+
+			// Then
+			if err == nil || errors.Is(err, ErrNoDiscovery) {
+				t.Errorf("%d: err = %v, want an error that is not ErrNoDiscovery", status, err)
+			}
+			if !errors.Is(err, bug.ErrUnexpected) {
+				t.Errorf("%d: err = %v, want it marked reportable", status, err)
+			}
 		}
 	})
 
