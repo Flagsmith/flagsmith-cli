@@ -23,6 +23,23 @@ func TestScopedEnvName(t *testing.T) {
 	}
 }
 
+// The variable a user should set is the one that will actually be read: the
+// unscoped form only where it is trusted, the host-scoped form everywhere else.
+func TestEnvVarFor(t *testing.T) {
+	cases := map[string]string{
+		"https://api.flagsmith.com":     envAPIKey,
+		"https://api.flagsmith.com/":    envAPIKey,
+		"https://API.Flagsmith.com":     envAPIKey,
+		"https://flagsmith.example.com": "FLAGSMITH_API_KEY_flagsmith_example_com",
+		"http://localhost:8000":         "FLAGSMITH_API_KEY_localhost_8000",
+	}
+	for in, want := range cases {
+		if got := envVarFor(envAPIKey, in, defaultAPIURL); got != want {
+			t.Errorf("envVarFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // Boolean switches read a value, not merely presence: FLAGSMITH_NO_INPUT=false
 // must not disable prompting.
 func TestEnvBool(t *testing.T) {

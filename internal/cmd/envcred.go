@@ -63,6 +63,21 @@ func envCredential(base, rawURL, defaultURL string) (name, value string) {
 	return "", ""
 }
 
+// envVarFor names the variable a user should set to reach an instance — the
+// one envCredential will actually read, which off the default host is only ever
+// the host-scoped form.
+func envVarFor(base, rawURL, defaultURL string) string {
+	if urlHost(rawURL) == urlHost(defaultURL) {
+		return base
+	}
+	return scopedEnvName(base, rawURL)
+}
+
+// apiKeyVar and accessTokenVar name the Admin API credential variables for the
+// instance this invocation is talking to.
+func apiKeyVar() string      { return envVarFor(envAPIKey, apiURL, defaultAPIURL) }
+func accessTokenVar() string { return envVarFor(envAccessToken, apiURL, defaultAPIURL) }
+
 // lookupEnvFold finds an environment variable by case-insensitive name,
 // returning the name as actually set. Host-scoped variable names embed a
 // hostname, which is itself case-insensitive.

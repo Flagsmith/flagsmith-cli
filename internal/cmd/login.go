@@ -43,13 +43,13 @@ func browserLogin(cmd *cobra.Command) error {
 	// authorization, not a liveness switch, so it does not block login.)
 	if noInput() {
 		return withHint(errors.New("browser login needs a terminal and cannot run with --no-input"),
-			hintMasterKey)
+			hintMasterKey())
 	}
 	// The session lives in the OS keychain; without one, minting tokens we
 	// can't store would strand a live session — fail closed toward the env var.
 	if !auth.KeychainAvailable() {
 		return withHint(errors.New("no OS keychain available to store the session"),
-			hintMasterKey)
+			hintMasterKey())
 	}
 	open := browser.OpenURL
 	if noBrowser || !stdinIsTTY() {
