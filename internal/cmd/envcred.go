@@ -73,6 +73,22 @@ func envVarFor(base, rawURL, defaultURL string) string {
 	return scopedEnvName(base, rawURL)
 }
 
+// ignoredUnscopedCredential names an unscoped credential variable that is set
+// but cannot be read for this instance, together with the variable that would
+// be. Both are "" when nothing is being ignored. It is only meaningful once
+// scoped lookups have missed, which is the only place it is called from.
+func ignoredUnscopedCredential() (set, use string) {
+	if urlHost(apiURL) == urlHost(defaultAPIURL) {
+		return "", ""
+	}
+	for _, base := range []string{envAPIKey, envAccessToken} {
+		if os.Getenv(base) != "" {
+			return base, scopedEnvName(base, apiURL)
+		}
+	}
+	return "", ""
+}
+
 // apiKeyVar and accessTokenVar name the Admin API credential variables for the
 // instance this invocation is talking to.
 func apiKeyVar() string      { return envVarFor(envAPIKey, apiURL, defaultAPIURL) }

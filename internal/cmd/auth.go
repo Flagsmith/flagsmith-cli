@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -100,6 +101,15 @@ func loadCredential(ctx context.Context) (*activeCredential, error) {
 	}
 
 	creds, err := auth.Load(apiURL)
+	if errors.Is(err, auth.ErrNotLoggedIn) {
+		// Reporting "not logged in" to someone who did set a credential sends
+		// them to do what they just did. Their key is fine; its name isn't.
+		if set, use := ignoredUnscopedCredential(); set != "" {
+			return nil, hintf(fmt.Errorf("%s is set, but ignored for %s", set, apiURL),
+				"Credentials are host-scoped away from %s — set %s instead.",
+				urlHost(defaultAPIURL), use)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

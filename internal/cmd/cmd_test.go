@@ -7385,8 +7385,8 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 		_, err := run("", "flag", "list")
 
 		// Then
-		if !errors.Is(err, auth.ErrNotLoggedIn) {
-			t.Errorf("err = %v, want ErrNotLoggedIn (credential withheld)", err)
+		if err == nil || !strings.Contains(err.Error(), envAPIKey) {
+			t.Errorf("err = %v, want the credential withheld and said to be", err)
 		}
 		if got := f.featuresCalls(); got != 0 {
 			t.Errorf("features calls = %d, want 0 — no request should carry the key", got)
@@ -7424,8 +7424,8 @@ func TestUnscopedAccessTokenNotSentToRedirectedHost(t *testing.T) {
 	_, err := run("", "auth", "status")
 
 	// Then
-	if !errors.Is(err, auth.ErrNotLoggedIn) {
-		t.Errorf("err = %v, want ErrNotLoggedIn (bearer withheld)", err)
+	if err == nil || !strings.Contains(err.Error(), envAccessToken) {
+		t.Errorf("err = %v, want the bearer withheld and said to be", err)
 	}
 	if got := f.organisationLists(); got != 0 {
 		t.Errorf("organisation calls = %d, want 0 — no request should carry the bearer", got)
@@ -7585,6 +7585,46 @@ func TestEnvBeatsKeychain(t *testing.T) {
 	if !strings.Contains(statusOut, "$FLAGSMITH_API_KEY") {
 		t.Errorf("auth status output = %q, want the env source to win over the keychain", statusOut)
 	}
+}
+
+// A credential set in the unscoped variable is ignored off the default host.
+// Reporting that as "not logged in" sends the user to do what they just did.
+func TestUnscopedCredentialIsReportedAsIgnored(t *testing.T) {
+	t.Run("names both the ignored variable and the one to set", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		t.Setenv(envAPIKey, masterKey)
+
+		// When
+		_, err := run("", "project", "list", "--api-url", f.srv.URL)
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want the ignored credential reported")
+		}
+		if !strings.Contains(err.Error(), envAPIKey) || strings.Contains(err.Error(), "not logged in") {
+			t.Errorf("err = %v, want it to name the ignored variable rather than report a login", err)
+		}
+		if want := scopedEnvName(envAPIKey, f.srv.URL); !strings.Contains(hintFor(err), want) {
+			t.Errorf("hint = %q, want it to name %s", hintFor(err), want)
+		}
+	})
+
+	t.Run("silent when the variable is scoped to this instance", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		setMasterKey(t, f.srv.URL)
+
+		// When
+		_, err := run("", "project", "list", "--api-url", f.srv.URL)
+
+		// Then
+		if err != nil {
+			t.Fatalf("project list: %v", err)
+		}
+	})
 }
 
 func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
