@@ -7577,6 +7577,11 @@ func TestEnvServerKeyRejected(t *testing.T) {
 	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
 		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 	}
+	// The rejection must name the variable the value was read from, which off
+	// the default host is never the unscoped one.
+	if want := scopedEnvName(envAPIKey, f.srv.URL); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want it to name %s", err, want)
+	}
 }
 
 func TestEnvBeatsKeychain(t *testing.T) {

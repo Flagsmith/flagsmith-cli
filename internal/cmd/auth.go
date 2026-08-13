@@ -87,7 +87,7 @@ func resolveCredential(ctx context.Context) (*activeCredential, error) {
 func loadCredential(ctx context.Context) (*activeCredential, error) {
 	if name, v := envCredential(envAPIKey, apiURL, defaultAPIURL); v != "" {
 		if err := auth.ValidateMasterKey(v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s %w", name, err)
 		}
 		cred := &activeCredential{kind: auth.KindMaster, token: v, source: "$" + name, auth: api.APIKey(v)}
 		cred.apiClient = newAPIClient(cred.auth)
