@@ -90,9 +90,12 @@ func ignoredUnscopedCredential() (set, use string) {
 }
 
 // apiKeyVar and accessTokenVar name the Admin API credential variables for the
-// instance this invocation is talking to.
-func apiKeyVar() string      { return envVarFor(envAPIKey, apiURL, defaultAPIURL) }
-func accessTokenVar() string { return envVarFor(envAccessToken, apiURL, defaultAPIURL) }
+// instance this invocation is talking to; environmentKeyVar names the SDK one,
+// which scopes to the SDK surface — a host of its own, and by default not even
+// the same one.
+func apiKeyVar() string         { return envVarFor(envAPIKey, apiURL, defaultAPIURL) }
+func accessTokenVar() string    { return envVarFor(envAccessToken, apiURL, defaultAPIURL) }
+func environmentKeyVar() string { return envVarFor(envEnvironmentKey, sdkAPIURL, defaultSDKAPIURL) }
 
 // lookupEnvFold finds an environment variable by case-insensitive name,
 // returning the name as actually set. Host-scoped variable names embed a

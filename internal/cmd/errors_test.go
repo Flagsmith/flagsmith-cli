@@ -31,10 +31,10 @@ func TestHintFor(t *testing.T) {
 		{"workflow gated", api.ErrWorkflowGated, docsHint("advanced-use/change-requests")},
 		{"keychain unavailable", auth.ErrKeychainUnavailable, hintMasterKey()},
 		{"session refresh failed wrapped", fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom")), hintRelogin},
-		{"server-side key in FLAGSMITH_API_KEY", auth.ErrServerSideKey, hintServerSideKey},
+		{"server-side key in FLAGSMITH_API_KEY", auth.ErrServerSideKey, hintServerSideKey()},
 		{"legacy authtoken", auth.ErrLegacyAuthtoken, hintMasterKeyOrLogin},
 		{"not a master key", auth.ErrNotMasterKey, hintAccessToken()},
-		{"server-side key in config file", fmt.Errorf("flagsmith.json: %w", config.ErrServerSideKey), hintServerSideKey},
+		{"server-side key in config file", fmt.Errorf("flagsmith.json: %w", config.ErrServerSideKey), hintServerSideKey()},
 		{"marked unexpected", bug.Mark(errors.New("boom")), hintReportIssue},
 		{"specific hint beats report-issue", bug.Mark(fmt.Errorf("%w: %w", auth.ErrRefreshFailed, errors.New("boom"))), hintRelogin},
 		{"explicit hint wins over automatic", withHint(api.ErrPlanGated, "custom"), "custom"},
@@ -55,7 +55,22 @@ func TestHintFor(t *testing.T) {
 // that names one off it sends a self-hosted user to set something that will be
 // ignored.
 func TestCredentialHintsNameTheVariableThatIsRead(t *testing.T) {
-	defer func(u string) { apiURL = u }(apiURL)
+	defer func(a, s string) { apiURL, sdkAPIURL = a, s }(apiURL, sdkAPIURL)
+
+	// The SDK credential scopes to the SDK surface, which is its own host.
+	sdkAPIURL = "https://sdk.example.com"
+	for name, got := range map[string]string{
+		"hintServerSideKey":  hintServerSideKey(),
+		"hintEnvironmentKey": hintEnvironmentKey(),
+	} {
+		if want := "FLAGSMITH_ENVIRONMENT_KEY_sdk_example_com"; !strings.Contains(got, want) {
+			t.Errorf("%s() = %q, want it to name %s", name, got, want)
+		}
+	}
+	sdkAPIURL = defaultSDKAPIURL
+	if got := hintEnvironmentKey(); !strings.Contains(got, envEnvironmentKey+",") {
+		t.Errorf("hintEnvironmentKey() on the default SDK host = %q, want the unscoped variable", got)
+	}
 
 	apiURL = "https://flagsmith.example.com"
 	scoped := map[string]string{

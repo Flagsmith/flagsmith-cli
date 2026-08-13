@@ -22,11 +22,9 @@ const (
 
 	hintMasterKeyOrLogin = "Use a Master API key, or run `flagsmith login`."
 	hintRelogin          = "Run `flagsmith login` to re-authenticate."
-	hintServerSideKey    = "Server-side keys are secrets — provide them via FLAGSMITH_ENVIRONMENT_KEY instead."
 
-	hintEnvironmentKey = "Check FLAGSMITH_ENVIRONMENT_KEY, or the environment name/key passed with -e."
-	hintSDKAPIURL      = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
-	hintAPIURL         = "Check --api-url (or `apiUrl`) — it must point at a Flagsmith API."
+	hintSDKAPIURL = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
+	hintAPIURL    = "Check --api-url (or `apiUrl`) — it must point at a Flagsmith API."
 
 	hintEnvironmentList  = "Run `flagsmith environment list` to see the environments in this project."
 	hintProjectList      = "Run `flagsmith project list` to see the projects you can access."
@@ -52,6 +50,14 @@ func hintMasterKey() string {
 
 func hintAccessToken() string {
 	return fmt.Sprintf("For an OAuth access token, set %s instead.", accessTokenVar())
+}
+
+func hintServerSideKey() string {
+	return fmt.Sprintf("Server-side keys are secrets — provide them via %s instead.", environmentKeyVar())
+}
+
+func hintEnvironmentKey() string {
+	return fmt.Sprintf("Check %s, or the environment name/key passed with -e.", environmentKeyVar())
 }
 
 // docsHint points at a page under docs.flagsmith.com.
@@ -104,7 +110,7 @@ func hintFor(err error) string {
 	case errors.Is(err, auth.ErrNotMasterKey):
 		return hintAccessToken()
 	case errors.Is(err, auth.ErrServerSideKey), errors.Is(err, config.ErrServerSideKey):
-		return hintServerSideKey
+		return hintServerSideKey()
 	case errors.Is(err, api.ErrQuotaExceeded):
 		return hintQuota
 	case errors.Is(err, api.ErrPlanGated):

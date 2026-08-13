@@ -2160,6 +2160,23 @@ func TestConfigCommand(t *testing.T) {
 			t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 		}
 	})
+
+	// The SDK credential is scoped to the SDK surface, so the variable to set
+	// is only knowable once that URL is resolved.
+	t.Run("server-side key rejection names the scoped variable", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+
+		// When
+		_, err := run("", "config", "-e", "ser.AbCd", "--sdk-api-url", "https://sdk.example.com")
+
+		// Then
+		want := "FLAGSMITH_ENVIRONMENT_KEY_sdk_example_com"
+		if err == nil || !strings.Contains(hintFor(err), want) {
+			t.Errorf("err = %v (hint %q), want a hint pointing at %s", err, hintFor(err), want)
+		}
+	})
 }
 
 // fakeTTY makes prompts believe stdin is a terminal for one test.

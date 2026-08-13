@@ -76,8 +76,12 @@ func singleLineUsage(template string) string {
 	return strings.Replace(template, defaultBlock, oneLine, 1)
 }
 
-// apiURL is the resolved instance URL for the current invocation.
-var apiURL string
+// apiURL and sdkAPIURL are the resolved Admin and SDK surface URLs for the
+// current invocation, set by resolveContext as soon as each is known.
+var (
+	apiURL    string
+	sdkAPIURL string
+)
 
 var (
 	apiURLFlag       string

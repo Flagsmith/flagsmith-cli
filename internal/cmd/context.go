@@ -143,14 +143,10 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 			return file.Organisation.Value(), true
 		}, nil)
 
-	// environment (client-side key; ser.* never belongs in context)
+	// environment (a client-side key; the ser.* guard is below, once the SDK
+	// surface is known and the variable to name with it)
 	pc.Environment = contextValue(cmd, "environment", environmentFlag, "FLAGSMITH_ENVIRONMENT", asString,
 		func() (any, bool) { return file.Environment, file.Environment != "" }, nil)
-	if key, ok := pc.Environment.Value.(string); ok && strings.HasPrefix(key, "ser.") {
-		return nil, withHint(
-			errors.New("the environment context takes a client-side key"),
-			hintServerSideKey)
-	}
 
 	pc.APIURL = contextValue(cmd, "api-url", apiURLFlag, "FLAGSMITH_API_URL", trimSlash,
 		func() (any, bool) { return strings.TrimRight(file.APIURL, "/"), file.APIURL != "" }, defaultAPIURL)
@@ -162,6 +158,18 @@ func resolveContext(cmd *cobra.Command) (*projectContext, error) {
 	}
 	pc.SDKAPIURL = contextValue(cmd, "sdk-api-url", sdkAPIURLFlag, "FLAGSMITH_SDK_API_URL", trimSlash,
 		func() (any, bool) { return strings.TrimRight(file.SDKAPIURL, "/"), file.SDKAPIURL != "" }, sdkDefault)
+
+	// Both surfaces are now known; the credential layer and every hint naming a
+	// host-scoped variable read them from here.
+	apiURL = pc.apiURL()
+	sdkAPIURL, _ = pc.SDKAPIURL.Value.(string)
+
+	// ser.* is a secret and never a context value.
+	if key, ok := pc.Environment.Value.(string); ok && strings.HasPrefix(key, "ser.") {
+		return nil, withHint(
+			errors.New("the environment context takes a client-side key"),
+			hintServerSideKey())
+	}
 
 	// Cosmetic name enrichment from the local cache — never the network.
 	names := cache.Load(pc.apiURL())
@@ -187,6 +195,5 @@ func applyContext(cmd *cobra.Command) (*projectContext, error) {
 	for _, w := range pc.Warnings {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", w)
 	}
-	apiURL = pc.apiURL()
 	return pc, nil
 }
