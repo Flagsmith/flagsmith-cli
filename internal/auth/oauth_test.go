@@ -416,8 +416,8 @@ func TestDiscover(t *testing.T) {
 		_, err := Discover(context.Background(), http.DefaultClient, srv.URL)
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "is this a Flagsmith API URL?") {
-			t.Errorf("err = %v, want a helpful not-Flagsmith hint", err)
+		if !errors.Is(err, ErrNoDiscovery) {
+			t.Errorf("err = %v, want ErrNoDiscovery", err)
 		}
 	})
 

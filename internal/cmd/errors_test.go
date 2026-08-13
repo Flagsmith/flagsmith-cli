@@ -22,6 +22,8 @@ func TestHintFor(t *testing.T) {
 		want string
 	}{
 		{"not logged in", auth.ErrNotLoggedIn, hintLogin},
+		{"no discovery document", auth.ErrNoDiscovery, hintAPIURL},
+		{"no discovery document wrapped", fmt.Errorf("%s returned 404: %w", "https://x/.well-known", auth.ErrNoDiscovery), hintAPIURL},
 		{"plan gated", api.ErrPlanGated, hintPricing},
 		{"plan gated wrapped", fmt.Errorf("create project: %w", api.ErrPlanGated), hintPricing},
 		{"quota exceeded", api.ErrQuotaExceeded, hintQuota},

@@ -29,6 +29,7 @@ const (
 
 	hintEnvironmentKey = "Check FLAGSMITH_ENVIRONMENT_KEY, or the environment name/key passed with -e."
 	hintSDKAPIURL      = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
+	hintAPIURL         = "Check --api-url (or `apiUrl`) — it must point at a Flagsmith API."
 
 	hintEnvironmentList  = "Run `flagsmith environment list` to see the environments in this project."
 	hintProjectList      = "Run `flagsmith project list` to see the projects you can access."
@@ -81,6 +82,8 @@ func hintFor(err error) string {
 	switch {
 	case errors.Is(err, auth.ErrNotLoggedIn):
 		return hintLogin
+	case errors.Is(err, auth.ErrNoDiscovery):
+		return hintAPIURL
 	case errors.Is(err, auth.ErrRefreshFailed):
 		return hintRelogin
 	case errors.Is(err, auth.ErrKeychainUnavailable):
