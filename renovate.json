@@ -5,7 +5,7 @@
     ":semanticCommitTypeAll(deps)"
   ],
   "semanticCommitScope": "",
-  "postUpdateOptions": ["gomodUpdateImportPaths"],
+  "postUpdateOptions": ["gomodUpdateImportPaths", "gomodTidy"],
   "packageRules": [
     {
       "description": "Eagerly bump flagsmith-go-client on every version release",
