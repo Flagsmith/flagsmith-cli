@@ -29,6 +29,7 @@ repos:
     rev: 44.28.0
     hooks:
       - id: renovate-config-validator
+        args: [--no-global]
         stages: [pre-push]
 
   - repo: local
