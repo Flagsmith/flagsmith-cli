@@ -8,7 +8,7 @@
   "packageRules": [
     {
       "description": "Eagerly bump flagsmith-go-client on every version release",
-      "matchPackageNames": ["flagsmith-go-client"],
+      "matchPackageNames": ["github.com/Flagsmith/flagsmith-go-client{,/**}"],
       "enabled": true,
       "rangeStrategy": "bump"
     },
