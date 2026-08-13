@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -7605,6 +7606,88 @@ func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	if strings.Contains(out, "oauth/authorize") {
 		t.Errorf("output = %q — the OAuth flow started despite no keychain", out)
 	}
+}
+
+// oldInstance serves a /version/ document reporting tag, and nothing else — in
+// particular no OAuth metadata, like a Flagsmith predating the browser login.
+// An empty tag serves no version endpoint at all.
+func oldInstance(t *testing.T, tag string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	if tag != "" {
+		mux.HandleFunc("GET /version/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"image_tag":%q}`, tag)
+		})
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A Flagsmith too old to serve OAuth metadata has a way forward — a Master API
+// key — that the bare 404 from the discovery endpoint does not mention.
+func TestLoginAgainstAnInstanceWithoutOAuth(t *testing.T) {
+	t.Run("old version names the version and the key variable to set", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		srv := oldInstance(t, "2.180.3")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		hint := hintFor(err)
+		if err == nil {
+			t.Fatal("err = nil, want a login failure")
+		}
+		for _, want := range []string{"2.180.3", minOAuthVersion, scopedEnvName(envAPIKey, srv.URL)} {
+			if !strings.Contains(hint, want) {
+				t.Errorf("hint = %q, want it to mention %q", hint, want)
+			}
+		}
+	})
+
+	t.Run("unparseable image tag falls back to the generic hint", func(t *testing.T) {
+		// Given: self-hosted images are routinely tagged like this
+		isolateStorage(t)
+		srv := oldInstance(t, "latest")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		if got := hintFor(err); got != hintAPIURL {
+			t.Errorf("hint = %q, want the generic %q", got, hintAPIURL)
+		}
+	})
+
+	t.Run("no version endpoint falls back to the generic hint", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		srv := oldInstance(t, "")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		if got := hintFor(err); got != hintAPIURL {
+			t.Errorf("hint = %q, want the generic %q", got, hintAPIURL)
+		}
+	})
+
+	t.Run("current version falls back to the generic hint", func(t *testing.T) {
+		// Given: new enough for OAuth, so a missing document is not about age
+		isolateStorage(t)
+		srv := oldInstance(t, "2.262.0")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		if got := hintFor(err); got != hintAPIURL {
+			t.Errorf("hint = %q, want the generic %q", got, hintAPIURL)
+		}
+	})
 }
 
 func TestRefreshPersistsToKeychain(t *testing.T) {
