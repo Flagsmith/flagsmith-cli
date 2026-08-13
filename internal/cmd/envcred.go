@@ -28,9 +28,12 @@ func envBool(name string) bool {
 
 // scopedEnvName is the host-scoped form of a credential variable for an
 // instance URL: the host and port with `-` written `__` and `.` and `:`
-// written `_`. The scheme is not part of the scope.
+// written `_`. The scheme is not part of the scope. The brackets around an
+// IPv6 literal are dropped rather than encoded — they are URL syntax, and a
+// name carrying them is one no shell can export.
 func scopedEnvName(base, rawURL string) string {
 	host := urlHost(rawURL)
+	host = strings.NewReplacer("[", "", "]", "").Replace(host)
 	host = strings.ReplaceAll(host, "-", "__")
 	host = strings.ReplaceAll(host, ".", "_")
 	host = strings.ReplaceAll(host, ":", "_")
