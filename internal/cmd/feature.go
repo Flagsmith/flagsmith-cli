@@ -86,9 +86,9 @@ func formatWeight(w float64) string {
 	return strconv.FormatFloat(w, 'f', -1, 64)
 }
 
-// weightPercent marks a weight as the percentage it is. Flag views use it: a
-// flag's distribution is one scope's share of traffic, unlike the variant's own
-// default weight the feature views show.
+// weightPercent marks a weight as the percentage it is. Every human view shows
+// weights this way; formatWeight stays bare for the places a weight is echoed
+// back as the user typed it, or read inside a sentence that carries its own %.
 func weightPercent(w float64) string {
 	return formatWeight(w) + "%"
 }
@@ -184,7 +184,7 @@ func renderFeature(cmd *cobra.Command, f *api.Feature) error {
 		}); err != nil {
 			return err
 		}
-		return writeVariants(w, view.Variants, formatWeight)
+		return writeVariants(w, view.Variants, weightPercent)
 	})
 }
 
@@ -432,7 +432,7 @@ var featureVariantListCmd = &cobra.Command{
 		return renderList(cmd, variants, "No variants.",
 			[]string{"VALUE", "WEIGHT", "KEY", "ID"},
 			func(_ int, v variantView) []string {
-				return []string{fmt.Sprint(v.Value), formatWeight(v.Weight), v.Key, strconv.Itoa(v.ID)}
+				return []string{fmt.Sprint(v.Value), weightPercent(v.Weight), v.Key, strconv.Itoa(v.ID)}
 			}, "", "")
 	},
 }

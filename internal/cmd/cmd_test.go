@@ -5961,7 +5961,8 @@ func TestFeatureGet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("feature get: %v\noutput: %s", err, out)
 		}
-		for _, want := range []string{"banner-copy (91)", "multivariate", "hello", "Variants", "headline", "30", "hero", "subhead"} {
+		// Human views mark every weight as the percentage it is.
+		for _, want := range []string{"banner-copy (91)", "multivariate", "hello", "Variants", "headline", "30%", "hero", "subhead", "70%"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want %q", out, want)
 			}
@@ -6284,7 +6285,7 @@ func TestFeatureVariant(t *testing.T) {
 		if err != nil {
 			t.Fatalf("variant list: %v\noutput: %s", err, out)
 		}
-		for _, want := range []string{"VALUE", "WEIGHT", "KEY", "ID", "headline", "30", "hero", "201", "subhead"} {
+		for _, want := range []string{"VALUE", "WEIGHT", "KEY", "ID", "headline", "30%", "hero", "201", "subhead", "70%"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want %q", out, want)
 			}
