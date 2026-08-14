@@ -9,7 +9,6 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
-	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
@@ -340,8 +339,8 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 }
 
 // scalarOfValue converts a typed value from an update-flag response into the
-// bare scalar the flag views render. A feature with no value at all reads as
-// unset rather than as an empty string.
+// bare scalar the flag views render. A flag with no value at all reads as unset
+// rather than as an empty string.
 func scalarOfValue(v *api.FeatureValue) (any, error) {
 	if v == nil {
 		return nil, nil
@@ -405,11 +404,9 @@ func deleteSegmentOverride(cmd *cobra.Command, cred *activeCredential, env api.E
 		survivors = append(survivors, fs)
 	}
 	if target == nil {
-		// The name cache (seeded by resolving a name ref) is all there is to go
-		// on for a segment with no override; the display degrades to the id.
-		missing := label(cache.Load(apiURL).Segments[strconv.Itoa(segmentID)], segmentID)
 		return withHint(
-			fmt.Errorf("%s has no override for segment %s in %s", feature.Name, missing, environmentLabel(env)),
+			fmt.Errorf("%s has no override for segment %s in %s",
+				feature.Name, label(cachedSegmentName(segmentID), segmentID), environmentLabel(env)),
 			fmt.Sprintf("Run `flagsmith flag list --feature %s` to see its segment overrides.", feature.Name))
 	}
 	segmentLabel := segmentRef{ID: segmentID, Name: target.SegmentName}.display()
@@ -464,8 +461,10 @@ func echoOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environme
 			Priority: &priority,
 			Variants: echoVariants(feature, state.Multivariate),
 		}
-		// An override with no value of its own is restated by omission: what a
-		// replacing write leaves out is reset, which is the null it already has.
+		// An override with no value of its own is restated by omission, since the
+		// wire form has no way to say "no value": a replacing write inherits the
+		// environment default for what it omits, which for a valueless flag is
+		// the same nothing.
 		if scalar := state.Value.Scalar(); scalar != nil {
 			value := featureValueFromScalar(scalar)
 			override.Value = &value

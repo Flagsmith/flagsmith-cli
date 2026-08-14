@@ -4215,6 +4215,27 @@ func TestFlagUpdateSegment(t *testing.T) {
 		}
 	})
 
+	// A new override has no feature-segment row to read a name from, so the
+	// name the user typed (cached when it was resolved) is what names it.
+	t.Run("a new override is still named, not shown as a bare id", func(t *testing.T) {
+		// Given
+		flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "update", "onboarding_banner", "--segment", "us-adults", "--value", "yo", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "for segment us-adults (42)") {
+			t.Errorf("output = %q, want the segment named in the confirmation", out)
+		}
+		if strings.Contains(out, "Segment    42\n") {
+			t.Errorf("output = %q, want the detail to name the segment too", out)
+		}
+	})
+
 	t.Run("a new override leaves the value to the server, which inherits it", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t) // max_items has 1 override, integer 25, off

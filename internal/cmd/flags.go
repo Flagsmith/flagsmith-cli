@@ -96,9 +96,10 @@ type overrideMeta struct {
 }
 
 // segmentOverrideMeta reads one segment override's metadata from the
-// feature-segments endpoint, seeding the name cache on the way. A missing row
-// (an override that doesn't exist, or one created a moment ago) degrades to the
-// bare id and priority 0 rather than failing.
+// feature-segments endpoint, seeding the name cache on the way. An override
+// with no row yet — one about to be created, or created a moment ago — has no
+// name to read there, so it falls back to the cache (warm whenever the segment
+// was named rather than given by id) and then to the bare id.
 func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environmentID, featureID, segmentID int) (overrideMeta, error) {
 	fss, err := cred.client().FeatureSegments(cmd.Context(), environmentID, featureID)
 	if err != nil {
@@ -118,7 +119,12 @@ func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environment
 			}, nil
 		}
 	}
-	return overrideMeta{segment: segmentRef{ID: segmentID}}, nil
+	return overrideMeta{segment: segmentRef{ID: segmentID, Name: cachedSegmentName(segmentID)}}, nil
+}
+
+// cachedSegmentName is a segment's name if the cache happens to hold it, or "".
+func cachedSegmentName(segmentID int) string {
+	return cache.Load(apiURL).Segments[strconv.Itoa(segmentID)]
 }
 
 // variantWeights maps a variant id to its weight in one scope.
