@@ -26,15 +26,16 @@ var flagCmd = &cobra.Command{
 // state hoisted to the top, with the metadata the human view shows, and none
 // of the raw features-endpoint noise. Human output and JSON stay in lockstep.
 type flagView struct {
-	Feature           string `json:"feature"`
-	Type              string `json:"type"`
-	Description       string `json:"description"`
-	Enabled           bool   `json:"enabled"`
-	Value             any    `json:"value"`
-	SegmentOverrides  int    `json:"segment_overrides"`
-	IdentityOverrides int    `json:"identity_overrides"`
-	CodeReferences    int    `json:"code_references"`
-	LifecycleStage    string `json:"lifecycle_stage"`
+	Feature           string        `json:"feature"`
+	Type              string        `json:"type"`
+	Description       string        `json:"description"`
+	Enabled           bool          `json:"enabled"`
+	Value             any           `json:"value"`
+	SegmentOverrides  int           `json:"segment_overrides"`
+	IdentityOverrides int           `json:"identity_overrides"`
+	CodeReferences    int           `json:"code_references"`
+	LifecycleStage    string        `json:"lifecycle_stage"`
+	Variants          []variantView `json:"variants,omitempty"`
 }
 
 func newFlagView(f *api.Feature) flagView {
@@ -65,12 +66,13 @@ func (s segmentRef) display() string {
 
 // segmentFlagView is the curated shape for a flag's state in one segment.
 type segmentFlagView struct {
-	Feature  string     `json:"feature"`
-	Type     string     `json:"type"`
-	Segment  segmentRef `json:"segment"`
-	Priority int        `json:"priority"`
-	Enabled  bool       `json:"enabled"`
-	Value    any        `json:"value"`
+	Feature  string        `json:"feature"`
+	Type     string        `json:"type"`
+	Segment  segmentRef    `json:"segment"`
+	Priority int           `json:"priority"`
+	Enabled  bool          `json:"enabled"`
+	Value    any           `json:"value"`
+	Variants []variantView `json:"variants,omitempty"`
 }
 
 func newSegmentFlagView(f *api.Feature, segment segmentRef, priority int) segmentFlagView {
@@ -84,14 +86,23 @@ func newSegmentFlagView(f *api.Feature, segment segmentRef, priority int) segmen
 	}
 }
 
-// segmentOverrideMeta reads the segment's name and the override's priority
-// from the feature-segments endpoint, seeding the name cache on the way. A
-// missing row (e.g. an override created a moment ago) degrades to the bare id
-// and priority 0 rather than failing.
-func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environmentID, featureID, segmentID int) (segmentRef, int, error) {
+// overrideMeta is what the feature-segments endpoint knows about one segment
+// override: the segment's name, the override's priority, and the id linking it
+// to its feature state. stateID is 0 when the override does not exist yet.
+type overrideMeta struct {
+	segment  segmentRef
+	priority int
+	stateID  int
+}
+
+// segmentOverrideMeta reads one segment override's metadata from the
+// feature-segments endpoint, seeding the name cache on the way. A missing row
+// (an override that doesn't exist, or one created a moment ago) degrades to the
+// bare id and priority 0 rather than failing.
+func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environmentID, featureID, segmentID int) (overrideMeta, error) {
 	fss, err := cred.client().FeatureSegments(cmd.Context(), environmentID, featureID)
 	if err != nil {
-		return segmentRef{}, 0, err
+		return overrideMeta{}, err
 	}
 	names := make(map[string]string, len(fss))
 	for _, fs := range fss {
@@ -100,10 +111,96 @@ func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environment
 	_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic
 	for _, fs := range fss {
 		if fs.Segment == segmentID {
-			return segmentRef{ID: segmentID, Name: fs.SegmentName}, fs.Priority, nil
+			return overrideMeta{
+				segment:  segmentRef{ID: segmentID, Name: fs.SegmentName},
+				priority: fs.Priority,
+				stateID:  fs.ID,
+			}, nil
 		}
 	}
-	return segmentRef{ID: segmentID}, 0, nil
+	return overrideMeta{segment: segmentRef{ID: segmentID}}, nil
+}
+
+// variantWeights maps a variant id to its weight in one scope.
+type variantWeights map[int]float64
+
+// scopeWeights reads the variant weights in force for one scope: the
+// environment default, or a segment override identified by its feature-state
+// link (stateID from overrideMeta). Weights are per scope, so they live on the
+// feature state rather than on the variant, and the variants' own
+// project-level defaults are only a starting point — they stand in for a scope
+// with no allocations of its own, as does the environment default for an
+// override that doesn't exist yet.
+//
+// A feature with no variants has no weights, and costs no request.
+func scopeWeights(cmd *cobra.Command, cred *activeCredential, environmentID int, feature *api.Feature, stateID int) (variantWeights, error) {
+	if len(feature.MultivariateOptions) == 0 {
+		return nil, nil
+	}
+	states, err := cred.client().FeatureStates(cmd.Context(), environmentID, feature.ID)
+	if err != nil {
+		return nil, err
+	}
+	byScope := make(map[int][]api.MultivariateStateValue, len(states))
+	for _, s := range states {
+		if s.Identity != nil {
+			continue // an identity gets a concrete value, never a distribution
+		}
+		scope := 0 // the environment default
+		if s.FeatureSegment != nil {
+			scope = *s.FeatureSegment
+		}
+		byScope[scope] = s.Multivariate
+	}
+	allocations, ok := byScope[stateID]
+	if !ok {
+		allocations = byScope[0]
+	}
+	if len(allocations) == 0 {
+		return defaultWeights(feature), nil
+	}
+	weights := make(variantWeights, len(allocations))
+	for _, a := range allocations {
+		weights[a.OptionID] = a.Allocation
+	}
+	return weights, nil
+}
+
+// defaultWeights is the distribution described by the variants themselves.
+func defaultWeights(feature *api.Feature) variantWeights {
+	weights := make(variantWeights, len(feature.MultivariateOptions))
+	for _, o := range feature.MultivariateOptions {
+		weights[o.ID] = weightOf(o)
+	}
+	return weights
+}
+
+// weightsOf reads a scope's weights back from an update-flag response.
+func weightsOf(variants []api.Variant) variantWeights {
+	if len(variants) == 0 {
+		return nil
+	}
+	weights := make(variantWeights, len(variants))
+	for _, v := range variants {
+		weights[v.ID] = v.Weight
+	}
+	return weights
+}
+
+// variantViews joins a feature's variants — their ids, keys and values, which
+// are project-level — with one scope's weights. Variants keep the feature's own
+// order, so the same flag renders the same way in every scope.
+func variantViews(feature *api.Feature, weights variantWeights) []variantView {
+	if weights == nil {
+		return nil
+	}
+	views := make([]variantView, 0, len(feature.MultivariateOptions))
+	for _, o := range feature.MultivariateOptions {
+		views = append(views, variantView{
+			ID: o.ID, Value: mvOptionValue(o), Weight: weights[o.ID], Key: o.Key,
+		})
+	}
+	return views
 }
 
 func flagEnabled(fs *api.FeatureState) bool {
@@ -367,7 +464,11 @@ var flagGetCmd = &cobra.Command{
 			}
 			return renderSegmentDetail(cmd, v)
 		}
-		return renderFlagDetail(cmd, feature)
+		weights, err := scopeWeights(cmd, cred, env.ID, feature, 0)
+		if err != nil {
+			return err
+		}
+		return renderFlagDetail(cmd, feature, weights)
 	},
 }
 
@@ -489,10 +590,13 @@ func listFeatureIdentityOverrides(cmd *cobra.Command, cred *activeCredential, en
 }
 
 // renderFlagDetail prints one flag's curated detail view (or its JSON).
-func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
+// weights are the environment's variant weights, nil for a feature without
+// variants; the renderer does no fetching of its own.
+func renderFlagDetail(cmd *cobra.Command, feature *api.Feature, weights variantWeights) error {
 	v := newFlagView(feature)
+	v.Variants = variantViews(feature, weights)
 	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
-		return output.Detail(w, []output.Field{
+		if err := output.Detail(w, []output.Field{
 			{Label: "Feature", Value: v.Feature},
 			{Label: "Description", Value: v.Description},
 			{Label: "Type", Value: v.Type},
@@ -502,31 +606,44 @@ func renderFlagDetail(cmd *cobra.Command, feature *api.Feature) error {
 			{Label: "Identity overrides", Value: strconv.Itoa(v.IdentityOverrides)},
 			{Label: "Code references", Value: strconv.Itoa(v.CodeReferences)},
 			{Label: "Lifecycle stage", Value: lifecycleOrDash(v.LifecycleStage)},
-		})
+		}); err != nil {
+			return err
+		}
+		return writeVariants(w, v.Variants, weightPercent)
 	})
 }
 
-// buildSegmentFlagView resolves the override's segment name and priority and
-// assembles the curated view; the renderers stay free of fetching.
+// buildSegmentFlagView resolves the override's segment name, priority and
+// variant weights and assembles the curated view; the renderers stay free of
+// fetching.
 func buildSegmentFlagView(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) (segmentFlagView, error) {
-	segment, priority, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
+	meta, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
 	if err != nil {
 		return segmentFlagView{}, err
 	}
-	return newSegmentFlagView(feature, segment, priority), nil
+	weights, err := scopeWeights(cmd, cred, env.ID, feature, meta.stateID)
+	if err != nil {
+		return segmentFlagView{}, err
+	}
+	v := newSegmentFlagView(feature, meta.segment, meta.priority)
+	v.Variants = variantViews(feature, weights)
+	return v, nil
 }
 
 // renderSegmentDetail prints a flag's curated state for one segment override.
 func renderSegmentDetail(cmd *cobra.Command, v segmentFlagView) error {
 	return output.Render(cmd.OutOrStdout(), v, outputOpts(), func(w io.Writer) error {
-		return output.Detail(w, []output.Field{
+		if err := output.Detail(w, []output.Field{
 			{Label: "Feature", Value: v.Feature},
 			{Label: "Type", Value: v.Type},
 			{Label: "Segment", Value: v.Segment.display()},
 			{Label: "Priority", Value: strconv.Itoa(v.Priority)},
 			{Label: "State", Value: boolState(v.Enabled)},
 			{Label: "Value", Value: valueDisplay(v.Value)},
-		})
+		}); err != nil {
+			return err
+		}
+		return writeVariants(w, v.Variants, weightPercent)
 	})
 }
 

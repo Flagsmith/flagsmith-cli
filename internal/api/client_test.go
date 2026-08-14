@@ -499,46 +499,120 @@ func TestFeatures(t *testing.T) {
 	})
 }
 
-func TestDeleteSegmentOverride(t *testing.T) {
-	t.Run("posts the feature and segment, accepts 204", func(t *testing.T) {
+// updateFlagServer answers one update-flag request with status and body,
+// recording the request it saw.
+func updateFlagServer(t *testing.T, status int, response string) (*httptest.Server, *http.Request, *map[string]any) {
+	t.Helper()
+	var seen http.Request
+	body := map[string]any{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = *r
+		json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		fmt.Fprint(w, response)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &seen, &body
+}
+
+func TestUpdateFlag(t *testing.T) {
+	enabled := true
+
+	t.Run("patches the environment-keyed feature path, and decodes the resulting state", func(t *testing.T) {
 		// Given
-		var body map[string]any
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPost ||
-				r.URL.Path != "/api/experiments/environments/envkey/delete-segment-override/" {
-				t.Errorf("request = %s %s", r.Method, r.URL.Path)
-			}
-			json.NewDecoder(r.Body).Decode(&body)
-			w.WriteHeader(http.StatusNoContent)
-		}))
-		defer srv.Close()
+		srv, seen, body := updateFlagServer(t, http.StatusOK, `{
+			"environment_default": {"enabled": true, "value": {"type": "integer", "value": "10"}, "variants": [{"id": 7, "weight": 25.5}]},
+			"segment_overrides": [{"segment": {"id": 12}, "priority": 1, "enabled": false, "value": null, "variants": []}]
+		}`)
 
 		// When
-		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", FeatureRef{Name: "max_items"}, 12)
+		resp, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
 
 		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
-		if body["feature"].(map[string]any)["name"] != "max_items" ||
-			body["segment"].(map[string]any)["id"] != float64(12) {
-			t.Errorf("body = %+v", body)
+		if seen.Method != http.MethodPatch || seen.URL.Path != "/api/__future__/environments/envkey/features/42/" {
+			t.Errorf("request = %s %s", seen.Method, seen.URL.Path)
+		}
+		if _, ok := (*body)["segment_overrides"]; ok {
+			t.Errorf("body = %+v, want no segment_overrides key", *body)
+		}
+		if !resp.EnvironmentDefault.Enabled || resp.EnvironmentDefault.Value.Value != "10" {
+			t.Errorf("environment default = %+v", resp.EnvironmentDefault)
+		}
+		if len(resp.EnvironmentDefault.Variants) != 1 || resp.EnvironmentDefault.Variants[0].Weight != 25.5 {
+			t.Errorf("variants = %+v", resp.EnvironmentDefault.Variants)
+		}
+		override := resp.Override(12)
+		if override == nil || override.Priority != 1 || override.Value != nil {
+			t.Errorf("override = %+v", override)
+		}
+		if resp.Override(13) != nil {
+			t.Errorf("override for an unwritten segment = %+v, want none", resp.Override(13))
 		}
 	})
 
-	t.Run("404 becomes a no-override error", func(t *testing.T) {
+	t.Run("puts an empty override list verbatim, so the last override can be deleted", func(t *testing.T) {
 		// Given
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		}))
-		defer srv.Close()
+		srv, seen, body := updateFlagServer(t, http.StatusOK,
+			`{"environment_default": {"enabled": false, "value": null, "variants": []}, "segment_overrides": []}`)
 
 		// When
-		err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", FeatureRef{Name: "max_items"}, 12)
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).ReplaceFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{SegmentOverrides: []SegmentOverrideUpdate{}})
 
 		// Then
-		if err == nil || !strings.Contains(err.Error(), "segment 12") {
-			t.Errorf("err = %v, want a no-override error", err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", seen.Method)
+		}
+		overrides, ok := (*body)["segment_overrides"]
+		if !ok {
+			t.Fatalf("body = %+v, want an empty segment_overrides list", *body)
+		}
+		if got := overrides.([]any); len(got) != 0 {
+			t.Errorf("segment_overrides = %+v, want empty", got)
+		}
+		if _, ok := (*body)["environment_default"]; ok {
+			t.Errorf("body = %+v, want no environment_default — a PUT would reset it", *body)
+		}
+	})
+
+	t.Run("a change-request refusal is the workflow sentinel, not a bug", func(t *testing.T) {
+		// Given
+		srv, _, _ := updateFlagServer(t, http.StatusBadRequest,
+			`{"detail": "Cannot update flags in an environment with change requests enabled."}`)
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
+
+		// Then
+		if !errors.Is(err, ErrWorkflowGated) {
+			t.Errorf("err = %v, want ErrWorkflowGated", err)
+		}
+	})
+
+	t.Run("a validation error surfaces the field message, however deeply nested", func(t *testing.T) {
+		// Given
+		srv, _, _ := updateFlagServer(t, http.StatusBadRequest,
+			`{"segment_overrides": [{"segment": {"id": ["Segment not found."]}}]}`)
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{SegmentOverrides: []SegmentOverrideUpdate{{Segment: SegmentTarget{ID: 12}}}})
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "Segment not found.") {
+			t.Errorf("err = %v, want the API's own message", err)
+		}
+		if errors.Is(err, ErrWorkflowGated) {
+			t.Errorf("err = %v, want a plain failure", err)
 		}
 	})
 }

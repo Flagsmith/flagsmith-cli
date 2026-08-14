@@ -67,7 +67,7 @@ func readIdentityOverride(cmd *cobra.Command, cred *activeCredential, envKey str
 }
 
 // nativeScalar converts a typed value into the native scalar the identity
-// endpoints expect (they infer the type from the value, unlike update-flag-v2).
+// endpoints expect (they infer the type from the value, unlike update-flag).
 func nativeScalar(v api.FeatureValue) (any, error) {
 	switch v.Type {
 	case "boolean":
