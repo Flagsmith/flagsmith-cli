@@ -4819,6 +4819,8 @@ func TestFlagUpdateWeight(t *testing.T) {
 		{"over 100 on its own", "hero=140", "is not a percentage"},
 		{"negative", "hero=-1", "is not a percentage"},
 		{"the same variant twice", "hero=10,hero=20", "given twice"},
+		{"the same variant by key and by id", "hero=10,30011=20", "hero and 30011 are the same variant"},
+		{"the same variant by id and by key", "30011=10,hero=20", "30011 and hero are the same variant"},
 		{"an unknown key", "heroic=10", "is not a variant of banner_copy"},
 		{"an unknown id", "99999=10", "is not a variant of banner_copy"},
 		{"the control", "control=10", `"control" is not a variant`},

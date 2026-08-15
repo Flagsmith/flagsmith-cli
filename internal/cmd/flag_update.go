@@ -111,6 +111,8 @@ func parseWeights(args []string) ([]weightRef, error) {
 				return nil, hintf(usageErrorf("%q is not a variant", controlVariantKey),
 					"Whatever the variants leave unallocated serves the flag's own value — set it with --value.")
 			}
+			// Two references to one variant are caught after they resolve, in
+			// mergeWeights; this only catches the same one written twice.
 			if seen[ref] {
 				return nil, usageErrorf("--weight %s is given twice", ref)
 			}
@@ -144,6 +146,7 @@ func mergeWeights(feature *api.Feature, current variantWeights, refs []weightRef
 	for _, o := range feature.MultivariateOptions {
 		weights[o.ID] = current[o.ID]
 	}
+	namedBy := make(map[int]string, len(refs))
 	for _, r := range refs {
 		// Resolved against the feature, never created: the endpoint would take
 		// an unknown key as a new variant, so a typo would silently add one.
@@ -153,6 +156,12 @@ func mergeWeights(feature *api.Feature, current variantWeights, refs []weightRef
 				"Run `flagsmith feature variant list %s` to see its variants, or `flagsmith feature variant add %s` to add one.",
 				feature.Name, feature.Name)
 		}
+		// A variant named twice — by key and by id, say — is two weights for one
+		// variant, and picking one of them silently is the wrong answer.
+		if first, ok := namedBy[option.ID]; ok {
+			return nil, usageErrorf("--weight %s and %s are the same variant", first, r.ref)
+		}
+		namedBy[option.ID] = r.ref
 		weights[option.ID] = r.weight
 	}
 	total := 0.0
