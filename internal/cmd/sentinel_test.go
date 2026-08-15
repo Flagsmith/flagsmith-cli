@@ -24,6 +24,7 @@ func TestEverySentinelHasAHintDecision(t *testing.T) {
 	sentinels := map[string]error{
 		"api.ErrPlanGated":            api.ErrPlanGated,
 		"api.ErrQuotaExceeded":        api.ErrQuotaExceeded,
+		"api.ErrNoSuchOverride":       api.ErrNoSuchOverride,
 		"api.ErrWorkflowGated":        api.ErrWorkflowGated,
 		"auth.ErrNotLoggedIn":         auth.ErrNotLoggedIn,
 		"auth.ErrKeychainUnavailable": auth.ErrKeychainUnavailable,
@@ -40,6 +41,9 @@ func TestEverySentinelHasAHintDecision(t *testing.T) {
 	consciouslyUnhinted := map[string]bool{
 		// The user chose to abort; there is nothing to recover from.
 		"prompt.ErrCancelled": true,
+		// Only reachable when the override goes between the check and the
+		// delete; `flag delete` hints for the case the user can act on.
+		"api.ErrNoSuchOverride": true,
 	}
 
 	found := scanSentinelNames(t)

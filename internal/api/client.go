@@ -843,11 +843,10 @@ type SegmentTarget struct {
 }
 
 // FlagStateUpdate is a change to a flag's state in one scope. Every field is
-// optional: PATCH leaves an omitted one unchanged, and PUT resets it to the
-// server's default — so a partial PUT is a destructive write.
+// optional, and an omitted one is left unchanged.
 //
 // Variants is all-or-nothing: the endpoint rejects a list that doesn't name
-// every variant of the feature, whatever the verb.
+// every variant of the feature.
 type FlagStateUpdate struct {
 	Enabled  *bool         `json:"enabled,omitempty"`
 	Value    *FeatureValue `json:"value,omitempty"`
@@ -865,14 +864,12 @@ type SegmentOverrideUpdate struct {
 	Variants []Variant     `json:"variants,omitempty"`
 }
 
-// UpdateFlagRequest is the update-flag body. Under PATCH the overrides listed
-// are created or updated and the rest are left alone; under PUT the list
-// replaces the whole set, so an override missing from it is deleted — which is
-// why SegmentOverrides distinguishes nil (absent) from empty (delete them all).
-// The endpoint does not manage identity overrides.
+// UpdateFlagRequest is the update-flag body: the overrides it lists are created
+// or updated, and every property it leaves out is left as it is. The endpoint
+// does not manage identity overrides.
 type UpdateFlagRequest struct {
 	EnvironmentDefault *FlagStateUpdate        `json:"environment_default,omitempty"`
-	SegmentOverrides   []SegmentOverrideUpdate `json:"segment_overrides,omitzero"`
+	SegmentOverrides   []SegmentOverrideUpdate `json:"segment_overrides,omitempty"`
 }
 
 // FlagState is a flag's resulting state in one scope, as the update-flag
@@ -921,14 +918,6 @@ func (c *Client) UpdateFlag(ctx context.Context, environmentKey string, featureI
 	return c.writeFlag(ctx, http.MethodPatch, environmentKey, featureID, in)
 }
 
-// ReplaceFlag replaces each property the request carries in full — the only way
-// to delete a segment override, by PUTting the overrides that survive it.
-// Anything a replaced property leaves out is reset, so callers must echo the
-// state they mean to keep.
-func (c *Client) ReplaceFlag(ctx context.Context, environmentKey string, featureID int, in UpdateFlagRequest) (*UpdateFlagResponse, error) {
-	return c.writeFlag(ctx, http.MethodPut, environmentKey, featureID, in)
-}
-
 func (c *Client) writeFlag(ctx context.Context, method, environmentKey string, featureID int, in UpdateFlagRequest) (*UpdateFlagResponse, error) {
 	out, err := send[UpdateFlagResponse](ctx, c, method, updateFlagPath(environmentKey, featureID), in)
 	if err != nil {
@@ -936,6 +925,24 @@ func (c *Client) writeFlag(ctx context.Context, method, environmentKey string, f
 	}
 	return out, nil
 }
+
+// DeleteSegmentOverride removes a flag's override for one segment, leaving the
+// rest of the flag alone. Like the writes, it answers with the flag's whole
+// resulting state. A segment with no override of its own is ErrNoSuchOverride.
+func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey string, featureID, segmentID int) (*UpdateFlagResponse, error) {
+	path := fmt.Sprintf("%ssegment-overrides/%d/", updateFlagPath(environmentKey, featureID), segmentID)
+	out, err := send[UpdateFlagResponse](ctx, c, http.MethodDelete, path, nil)
+	if err != nil {
+		if statusOf(err) == http.StatusNotFound {
+			return nil, ErrNoSuchOverride
+		}
+		return nil, classifyFlagWrite(err)
+	}
+	return out, nil
+}
+
+// ErrNoSuchOverride is returned when a flag serves a segment nothing of its own.
+var ErrNoSuchOverride = errors.New("no override exists for that segment")
 
 // changeRequestCode is the error code update-flag returns when it refuses a
 // write outright, alongside a 409.

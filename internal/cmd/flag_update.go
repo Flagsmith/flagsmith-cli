@@ -387,114 +387,34 @@ var flagDeleteCmd = &cobra.Command{
 	},
 }
 
-// deleteSegmentOverride removes one segment's override. The endpoint has no verb
-// for deleting a single override: a PUT replaces the whole set, and whatever it
-// leaves out is deleted. So the surviving overrides are read and echoed back in
-// full — a partial echo would reset the state it omits. Being a
-// read-modify-write, a change made to another override in between is lost.
+// deleteSegmentOverride removes one segment's override, in one call that leaves
+// the rest of the flag alone. The override rows are read first all the same:
+// they name the segment for the prompt, and a segment with no override is
+// better caught before asking than as a 404 afterwards.
 func deleteSegmentOverride(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) error {
-	fss, err := cred.client().FeatureSegments(cmd.Context(), env.ID, feature.ID)
+	meta, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
 	if err != nil {
 		return err
 	}
-	survivors := make([]api.FeatureSegment, 0, len(fss))
-	var target *api.FeatureSegment
-	for i, fs := range fss {
-		if fs.Segment == segmentID {
-			target = &fss[i]
-			continue
-		}
-		survivors = append(survivors, fs)
-	}
-	if target == nil {
+	if meta.stateID == 0 {
 		return withHint(
 			fmt.Errorf("%s has no override for segment %s in %s",
-				feature.Name, label(cachedSegmentName(segmentID), segmentID), environmentLabel(env)),
+				feature.Name, meta.segment.display(), environmentLabel(env)),
 			fmt.Sprintf("Run `flagsmith flag list --feature %s` to see its segment overrides.", feature.Name))
 	}
-	segmentLabel := segmentRef{ID: segmentID, Name: target.SegmentName}.display()
 
 	errOut := cmd.ErrOrStderr()
-	prompt := fmt.Sprintf("delete %s override for segment %s in %s", feature.Name, segmentLabel, environmentLabel(env))
+	prompt := fmt.Sprintf("delete %s override for segment %s in %s", feature.Name, meta.segment.display(), environmentLabel(env))
 	if ok, err := confirmed(cmd, prompt+"?", "changed"); !ok || err != nil {
 		return err
 	}
 
-	overrides, err := echoOverrides(cmd, cred, env, feature, survivors)
-	if err != nil {
+	if _, err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, feature.ID, segmentID); err != nil {
 		return err
 	}
-	if _, err := cred.client().ReplaceFlag(cmd.Context(), env.APIKey, feature.ID,
-		api.UpdateFlagRequest{SegmentOverrides: overrides}); err != nil {
-		return err
-	}
-	output.Success(errOut, "Deleted %s override for segment %s in environment %s", feature.Name, segmentLabel, environmentLabel(env))
+	output.Success(errOut, "Deleted %s override for segment %s in environment %s",
+		feature.Name, meta.segment.display(), environmentLabel(env))
 	return nil
-}
-
-// echoOverrides reads the current state of the given overrides and restates it
-// in full, for a PUT that must preserve them. The result is never nil: an empty
-// list is what deletes the last override, and must reach the wire as one.
-func echoOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, keep []api.FeatureSegment) ([]api.SegmentOverrideUpdate, error) {
-	overrides := make([]api.SegmentOverrideUpdate, 0, len(keep))
-	if len(keep) == 0 {
-		return overrides, nil
-	}
-	states, err := cred.client().FeatureStates(cmd.Context(), env.ID, feature.ID)
-	if err != nil {
-		return nil, err
-	}
-	byOverride := make(map[int]api.EnvironmentFeatureState, len(states))
-	for _, s := range states {
-		if s.FeatureSegment != nil {
-			byOverride[*s.FeatureSegment] = s
-		}
-	}
-	for _, fs := range keep {
-		// Echoing a zero state would rewrite the override as off with no value,
-		// so a missing one stops the write rather than guessing.
-		state, ok := byOverride[fs.ID]
-		if !ok {
-			return nil, bug.Mark(fmt.Errorf("no feature state found for the override on segment %d; refusing to write", fs.Segment))
-		}
-		enabled, priority := state.Enabled, fs.Priority
-		override := api.SegmentOverrideUpdate{
-			Segment:  api.SegmentTarget{ID: fs.Segment},
-			Enabled:  &enabled,
-			Priority: &priority,
-			Variants: echoVariants(feature, state.Multivariate),
-		}
-		// An override with no value of its own is restated by omission, since the
-		// wire form has no way to say "no value": a replacing write inherits the
-		// environment default for what it omits, which for a valueless flag is
-		// the same nothing.
-		if scalar := state.Value.Scalar(); scalar != nil {
-			value := featureValueFromScalar(scalar)
-			override.Value = &value
-		}
-		overrides = append(overrides, override)
-	}
-	return overrides, nil
-}
-
-// echoVariants restates a feature state's distribution as the full variant list
-// the endpoint requires, so a replacing write leaves the weights alone. Only a
-// feature without variants has none to send: an override with no allocations of
-// its own must still say so with zeros, because a replacing write that omits
-// them inherits the environment default's weights instead.
-func echoVariants(feature *api.Feature, allocations []api.MultivariateStateValue) []api.Variant {
-	if len(feature.MultivariateOptions) == 0 {
-		return nil
-	}
-	weights := make(variantWeights, len(allocations))
-	for _, a := range allocations {
-		weights[a.OptionID] = a.Allocation
-	}
-	variants := make([]api.Variant, 0, len(feature.MultivariateOptions))
-	for _, o := range feature.MultivariateOptions {
-		variants = append(variants, api.Variant{ID: o.ID, Weight: weights[o.ID]})
-	}
-	return variants
 }
 
 var (
@@ -562,27 +482,6 @@ func currentScalar(fs *api.FeatureState) any {
 		return nil
 	}
 	return fs.Value
-}
-
-// featureValueFromScalar converts a bare scalar — read from the features list
-// (JSON numbers arrive as float64) or from api.TypedValue.Scalar() (ints stay
-// int) — into the {type, value} wire form update-flag expects.
-func featureValueFromScalar(v any) api.FeatureValue {
-	switch t := v.(type) {
-	case bool:
-		return api.FeatureValue{Type: "boolean", Value: strconv.FormatBool(t)}
-	case int:
-		return api.FeatureValue{Type: "integer", Value: strconv.Itoa(t)}
-	case float64:
-		if t == float64(int64(t)) {
-			return api.FeatureValue{Type: "integer", Value: strconv.FormatInt(int64(t), 10)}
-		}
-		return api.FeatureValue{Type: "string", Value: strconv.FormatFloat(t, 'f', -1, 64)}
-	case string:
-		return api.FeatureValue{Type: "string", Value: t}
-	default: // nil or an unexpected shape → empty string, Flagsmith's default
-		return api.FeatureValue{Type: "string", Value: ""}
-	}
 }
 
 // inferFeatureValue types a --value literal, honouring an explicit --type.

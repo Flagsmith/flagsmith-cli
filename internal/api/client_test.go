@@ -555,31 +555,39 @@ func TestUpdateFlag(t *testing.T) {
 		}
 	})
 
-	t.Run("puts an empty override list verbatim, so the last override can be deleted", func(t *testing.T) {
+	t.Run("deletes one override by its own verb, and decodes what is left", func(t *testing.T) {
 		// Given
-		srv, seen, body := updateFlagServer(t, http.StatusOK,
-			`{"environment_default": {"enabled": false, "value": null, "variants": []}, "segment_overrides": []}`)
+		srv, seen, _ := updateFlagServer(t, http.StatusOK,
+			`{"environment_default": {"enabled": false, "value": null, "variants": []},
+			  "segment_overrides": [{"segment": {"id": 12}, "priority": 0, "enabled": true, "value": null, "variants": []}]}`)
 
 		// When
-		_, err := testClient(srv.URL, APIKey("k.s"), srv).ReplaceFlag(context.Background(), "envkey", 42,
-			UpdateFlagRequest{SegmentOverrides: []SegmentOverrideUpdate{}})
+		resp, err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", 42, 99)
 
 		// Then
 		if err != nil {
 			t.Fatal(err)
 		}
-		if seen.Method != http.MethodPut {
-			t.Errorf("method = %s, want PUT", seen.Method)
+		if seen.Method != http.MethodDelete ||
+			seen.URL.Path != "/api/__future__/environments/envkey/features/42/segment-overrides/99/" {
+			t.Errorf("request = %s %s", seen.Method, seen.URL.Path)
 		}
-		overrides, ok := (*body)["segment_overrides"]
-		if !ok {
-			t.Fatalf("body = %+v, want an empty segment_overrides list", *body)
+		// The response is the whole flag, so the survivor is readable from it.
+		if resp.Override(12) == nil || resp.Override(99) != nil {
+			t.Errorf("segment_overrides = %+v, want only segment 12 left", resp.SegmentOverrides)
 		}
-		if got := overrides.([]any); len(got) != 0 {
-			t.Errorf("segment_overrides = %+v, want empty", got)
-		}
-		if _, ok := (*body)["environment_default"]; ok {
-			t.Errorf("body = %+v, want no environment_default — a PUT would reset it", *body)
+	})
+
+	t.Run("deleting an override that is not there is a no-override error", func(t *testing.T) {
+		// Given
+		srv, _, _ := updateFlagServer(t, http.StatusNotFound, `{"detail": "Segment override not found."}`)
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", 42, 99)
+
+		// Then
+		if !errors.Is(err, ErrNoSuchOverride) {
+			t.Errorf("err = %v, want ErrNoSuchOverride", err)
 		}
 	})
 
