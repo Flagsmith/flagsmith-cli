@@ -89,10 +89,13 @@ func newSegmentFlagView(f *api.Feature, segment segmentRef, priority int) segmen
 // overrideMeta is what the feature-segments endpoint knows about one segment
 // override: the segment's name, the override's priority, and the id linking it
 // to its feature state. stateID is 0 when the override does not exist yet.
+// nextPriority is a free priority past every existing override, for one that is
+// about to be created — priorities need not be dense, so it is not the count.
 type overrideMeta struct {
-	segment  segmentRef
-	priority int
-	stateID  int
+	segment      segmentRef
+	priority     int
+	stateID      int
+	nextPriority int
 }
 
 // segmentOverrideMeta reads one segment override's metadata from the
@@ -106,20 +109,28 @@ func segmentOverrideMeta(cmd *cobra.Command, cred *activeCredential, environment
 		return overrideMeta{}, err
 	}
 	names := make(map[string]string, len(fss))
+	next := 0
 	for _, fs := range fss {
 		names[strconv.Itoa(fs.Segment)] = fs.SegmentName
+		if fs.Priority >= next {
+			next = fs.Priority + 1
+		}
 	}
 	_ = cache.Merge(apiURL, &cache.Names{Segments: names}) // opportunistic
 	for _, fs := range fss {
 		if fs.Segment == segmentID {
 			return overrideMeta{
-				segment:  segmentRef{ID: segmentID, Name: fs.SegmentName},
-				priority: fs.Priority,
-				stateID:  fs.ID,
+				segment:      segmentRef{ID: segmentID, Name: fs.SegmentName},
+				priority:     fs.Priority,
+				stateID:      fs.ID,
+				nextPriority: next,
 			}, nil
 		}
 	}
-	return overrideMeta{segment: segmentRef{ID: segmentID, Name: cachedSegmentName(segmentID)}}, nil
+	return overrideMeta{
+		segment:      segmentRef{ID: segmentID, Name: cachedSegmentName(segmentID)},
+		nextPriority: next,
+	}, nil
 }
 
 // cachedSegmentName is a segment's name if the cache happens to hold it, or "".

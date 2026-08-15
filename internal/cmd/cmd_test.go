@@ -4237,10 +4237,36 @@ func TestFlagUpdateSegment(t *testing.T) {
 		}
 	})
 
+	// The server rejects two overrides sharing a priority, so a new one has to
+	// clear every existing priority rather than count them.
+	t.Run("a new override joins past sparse priorities, not at their count", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, false)
+		withFeatureSegments(f, 2,
+			map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 10},
+			map[string]any{"id": 4200, "segment": 42, "segment_name": "us-adults", "priority": 20},
+		)
+
+		// When
+		if _, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes"); err != nil {
+			t.Fatalf("flag update --segment: %v", err)
+		}
+
+		// Then
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["priority"] != float64(21) {
+			t.Errorf("segment override = %+v, want priority 21 — past the highest, not the count", ov)
+		}
+	})
+
 	t.Run("a new override leaves the value to the server, which inherits it", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t) // max_items has 1 override, integer 25, off
 		withSegmentOverride(f, false)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+		})
 
 		// When
 		_, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
@@ -4335,7 +4361,10 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 	t.Run("a new override reports the appended priority", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
-		withSegmentOverride(f, false) // num_segment_overrides: 1
+		withSegmentOverride(f, false)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+		})
 
 		// When
 		out, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
@@ -5128,12 +5157,28 @@ func TestFlagUpdatePriority(t *testing.T) {
 		}
 	})
 
-	t.Run("out of range exits 2 before any write", func(t *testing.T) {
+	// Priorities order the overrides but needn't be dense, so a number past
+	// their count is a legitimate move, not a mistake to reject.
+	t.Run("a sparse priority is sent as given", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		withSegmentOverride(f, true) // num_segment_overrides: 1 → valid range 0..0
+		withSegmentOverride(f, true)
 		overrideMeta(f)
 
-		_, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "5", "--yes")
+		if _, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "50", "--yes"); err != nil {
+			t.Fatalf("flag update --priority 50: %v", err)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["priority"] != float64(50) {
+			t.Errorf("override = %+v, want priority 50", ov)
+		}
+	})
+
+	t.Run("a negative priority exits 2 before any write", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		_, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "-1", "--yes")
 		var ue *usageError
 		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--priority") {
 			t.Errorf("err = %v, want a usage error naming --priority", err)

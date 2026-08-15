@@ -228,17 +228,11 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		scope = fmt.Sprintf("for segment %s in environment %s", meta.segment.display(), environmentLabel(env))
 	}
 
-	// Priorities are a dense 0-based order; a new override joins it, growing the
-	// valid range by one. The server treats the write as a move, so only the
-	// bounds need checking.
-	if m.setPriority {
-		limit := feature.NumSegmentOverrides
-		if target == nil {
-			limit++
-		}
-		if m.priority < 0 || m.priority >= limit {
-			return usageErrorf("--priority %d is out of range (0..%d)", m.priority, limit-1)
-		}
+	// Priorities order the overrides but needn't be dense — 10/20/30 is as valid
+	// as 0/1/2 — so there is no upper bound to check against. The server rejects
+	// a priority that would collide with another override.
+	if m.setPriority && m.priority < 0 {
+		return usageErrorf("--priority %d is negative", m.priority)
 	}
 
 	state := api.FlagStateUpdate{}
@@ -288,7 +282,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 				override.Enabled = &enabled
 			}
 			if override.Priority == nil {
-				priority := feature.NumSegmentOverrides // joins at the end
+				priority := meta.nextPriority // joins at the end
 				override.Priority = &priority
 			}
 		}
