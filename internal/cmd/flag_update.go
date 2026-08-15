@@ -484,12 +484,12 @@ func echoOverrides(cmd *cobra.Command, cred *activeCredential, env api.Environme
 }
 
 // echoVariants restates a feature state's distribution as the full variant list
-// the endpoint requires, so a replacing write leaves the weights alone. A
-// feature without variants has none to send, and neither has a state with no
-// allocations of its own — sending zeros would be a change, where omission
-// restates the nothing that is already there.
+// the endpoint requires, so a replacing write leaves the weights alone. Only a
+// feature without variants has none to send: an override with no allocations of
+// its own must still say so with zeros, because a replacing write that omits
+// them inherits the environment default's weights instead.
 func echoVariants(feature *api.Feature, allocations []api.MultivariateStateValue) []api.Variant {
-	if len(feature.MultivariateOptions) == 0 || len(allocations) == 0 {
+	if len(feature.MultivariateOptions) == 0 {
 		return nil
 	}
 	weights := make(variantWeights, len(allocations))

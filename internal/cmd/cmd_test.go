@@ -5003,6 +5003,39 @@ func TestFlagGetVariants(t *testing.T) {
 	})
 }
 
+// An override with no allocations of its own can't be restated by omission: a
+// replacing write reads that as "inherit the environment default's weights".
+func TestFlagDeleteKeepsUnallocatedVariants(t *testing.T) {
+	// Given a multivariate flag whose surviving override has no weights of its
+	// own, while the environment default is on 20/30.
+	f := flagUpdateEnv(t)
+	withMultivariateFlag(f)
+	withFeatureSegments(f, 3,
+		map[string]any{"id": 3100, "segment": 12, "segment_name": "early-adopters", "priority": 0},
+		map[string]any{"id": 3200, "segment": 42, "segment_name": "us-adults", "priority": 1},
+	)
+	withFeatureStates(f, 3,
+		map[string]any{"id": 30, "enabled": true, "feature_segment": nil,
+			"feature_state_value":               map[string]any{"type": "unicode", "string_value": "hello"},
+			"multivariate_feature_state_values": []map[string]any{{"multivariate_feature_option": 30011, "percentage_allocation": 20}, {"multivariate_feature_option": 30010, "percentage_allocation": 30}}},
+		map[string]any{"id": 32, "enabled": true, "feature_segment": 3200,
+			"feature_state_value": map[string]any{"type": "unicode", "string_value": "hi"}},
+	)
+
+	// When
+	if _, err := run("", "flag", "delete", "banner_copy", "--segment", "12", "--yes"); err != nil {
+		t.Fatalf("flag delete: %v", err)
+	}
+
+	// Then the survivor's zeros are stated outright, rather than left to be
+	// filled in from the environment default.
+	survivor := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+	got := wireWeights(survivor)
+	if len(got) != 2 || got[30011] != 0 || got[30010] != 0 {
+		t.Errorf("survivor variants = %+v, want both variants at 0", got)
+	}
+}
+
 func TestFlagDeleteKeepsVariants(t *testing.T) {
 	// Given a multivariate flag with two overrides, one of them being deleted.
 	f := flagUpdateEnv(t)
