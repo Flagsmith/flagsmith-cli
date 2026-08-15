@@ -297,18 +297,35 @@ func responseError(method, u string, resp *http.Response) error {
 	if e := classifyLimit(msg); e != nil {
 		return e
 	}
-	return bug.Mark(&statusError{code: resp.StatusCode, status: resp.Status, message: msg, method: method, url: u})
+	return bug.Mark(&statusError{
+		code: resp.StatusCode, status: resp.Status, message: msg,
+		errorCode: apiErrorCode(body), method: method, url: u,
+	})
+}
+
+// apiErrorCode extracts the machine-readable code from an error body, or "".
+// Only the newer endpoints send one; it is the only part of an error a client
+// should branch on.
+func apiErrorCode(body []byte) string {
+	var coded struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(body), &coded) != nil {
+		return ""
+	}
+	return coded.Code
 }
 
 // statusError is a non-2xx response that wasn't classified as a plan limit. It
 // carries the HTTP status so it can be special-cased. bug.Mark wraps it, so it
 // still reads as unexpected.
 type statusError struct {
-	code    int
-	status  string // e.g. "403 Forbidden"
-	message string // the API's detail, if any
-	method  string
-	url     string
+	code      int
+	status    string // e.g. "403 Forbidden"
+	message   string // the API's detail, if any
+	errorCode string // the API's machine-readable code, if any
+	method    string
+	url       string
 }
 
 func (e *statusError) Error() string {
@@ -920,16 +937,16 @@ func (c *Client) writeFlag(ctx context.Context, method, environmentKey string, f
 	return out, nil
 }
 
-// changeRequestPhrase is the verbatim backend detail for a refused write —
-// matched case-insensitively, since the status (400) is shared with every
-// validation error.
-const changeRequestPhrase = "change requests enabled"
+// changeRequestCode is the error code update-flag returns when it refuses a
+// write outright, alongside a 409.
+const changeRequestCode = "change_requests_enabled"
 
 // classifyFlagWrite recognises the one update-flag failure the user can act on.
+// The code is what identifies it — the status alone would catch any future
+// conflict, and the detail is prose that is free to change.
 func classifyFlagWrite(err error) error {
 	var e *statusError
-	if errors.As(err, &e) && e.code == http.StatusBadRequest &&
-		strings.Contains(strings.ToLower(e.message), changeRequestPhrase) {
+	if errors.As(err, &e) && e.code == http.StatusConflict && e.errorCode == changeRequestCode {
 		return ErrWorkflowGated
 	}
 	return err

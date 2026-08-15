@@ -584,9 +584,10 @@ func TestUpdateFlag(t *testing.T) {
 	})
 
 	t.Run("a change-request refusal is the workflow sentinel, not a bug", func(t *testing.T) {
-		// Given
-		srv, _, _ := updateFlagServer(t, http.StatusBadRequest,
-			`{"detail": "Cannot update flags in an environment with change requests enabled."}`)
+		// Given: the code identifies it — the status is shared with any other
+		// conflict, and the detail is prose.
+		srv, _, _ := updateFlagServer(t, http.StatusConflict,
+			`{"detail": "Cannot update flags in an environment with change requests enabled.", "code": "change_requests_enabled"}`)
 
 		// When
 		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
@@ -595,6 +596,23 @@ func TestUpdateFlag(t *testing.T) {
 		// Then
 		if !errors.Is(err, ErrWorkflowGated) {
 			t.Errorf("err = %v, want ErrWorkflowGated", err)
+		}
+	})
+
+	t.Run("a conflict without the code stays a plain failure", func(t *testing.T) {
+		// Given
+		srv, _, _ := updateFlagServer(t, http.StatusConflict, `{"detail": "Something else conflicted."}`)
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
+
+		// Then
+		if errors.Is(err, ErrWorkflowGated) {
+			t.Errorf("err = %v, want a plain failure", err)
+		}
+		if err == nil || !strings.Contains(err.Error(), "Something else conflicted.") {
+			t.Errorf("err = %v, want the API's own message", err)
 		}
 	})
 

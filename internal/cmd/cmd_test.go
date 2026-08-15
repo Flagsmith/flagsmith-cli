@@ -641,9 +641,10 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			gated := f.workflowGated
 			f.mu.Unlock()
 			if gated {
-				w.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(http.StatusConflict)
 				json.NewEncoder(w).Encode(map[string]any{
 					"detail": "Cannot update flags in an environment with change requests enabled.",
+					"code":   "change_requests_enabled",
 				})
 				return
 			}
