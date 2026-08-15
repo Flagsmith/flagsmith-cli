@@ -4232,7 +4232,9 @@ func TestFlagUpdateSegment(t *testing.T) {
 		if !strings.Contains(out, "for segment us-adults (42)") {
 			t.Errorf("output = %q, want the segment named in the confirmation", out)
 		}
-		if strings.Contains(out, "Segment    42\n") {
+		// Anchored to the detail's own row: the confirmation names the segment
+		// too, so counting occurrences would not say where they are.
+		if !regexp.MustCompile(`(?m)^Segment\s+us-adults \(42\)$`).MatchString(out) {
 			t.Errorf("output = %q, want the detail to name the segment too", out)
 		}
 	})
