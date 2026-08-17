@@ -43,6 +43,9 @@ jobs:
         with:
           version: v2.11.4 # keep in step with the hook rev in .pre-commit-config.yaml
       - run: go mod tidy -diff
+      - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+        with:
+          extra-args: --all-files --hook-stage pre-push renovate-config-validator
 
   install-ps1:
     name: install.ps1 lint

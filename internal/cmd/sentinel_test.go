@@ -28,6 +28,7 @@ func TestEverySentinelHasAHintDecision(t *testing.T) {
 		"api.ErrNoSuchOverride":        api.ErrNoSuchOverride,
 		"api.ErrWorkflowGated":         api.ErrWorkflowGated,
 		"auth.ErrNotLoggedIn":          auth.ErrNotLoggedIn,
+		"auth.ErrNoDiscovery":          auth.ErrNoDiscovery,
 		"auth.ErrKeychainUnavailable":  auth.ErrKeychainUnavailable,
 		"auth.ErrRefreshFailed":        auth.ErrRefreshFailed,
 		"auth.ErrServerSideKey":        auth.ErrServerSideKey,

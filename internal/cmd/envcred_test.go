@@ -15,10 +15,37 @@ func TestScopedEnvName(t *testing.T) {
 		"http://localhost:8000":              "FLAGSMITH_API_KEY_localhost_8000",
 		"http://127.0.0.1:8000/api":          "FLAGSMITH_API_KEY_127_0_0_1_8000",
 		"https://Flagsmith.Example.COM":      "FLAGSMITH_API_KEY_flagsmith_example_com",
+		// An IPv6 literal's brackets are URL syntax, and no shell can export a
+		// variable whose name carries them.
+		"http://[::1]:8000":          "FLAGSMITH_API_KEY___1_8000",
+		"https://[2001:db8::1]:8443": "FLAGSMITH_API_KEY_2001_db8__1_8443",
+		"https://[2001:DB8::1]":      "FLAGSMITH_API_KEY_2001_db8__1",
 	}
 	for in, want := range cases {
 		if got := scopedEnvName(envAPIKey, in); got != want {
 			t.Errorf("scopedEnvName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The variable a user should set is the one that will actually be read: the
+// unscoped form only where it is trusted, the host-scoped form everywhere else.
+func TestEnvVarFor(t *testing.T) {
+	cases := map[string]string{
+		"https://api.flagsmith.com":     envAPIKey,
+		"https://api.flagsmith.com/":    envAPIKey,
+		"https://API.Flagsmith.com":     envAPIKey,
+		"https://flagsmith.example.com": "FLAGSMITH_API_KEY_flagsmith_example_com",
+		"http://localhost:8000":         "FLAGSMITH_API_KEY_localhost_8000",
+		// No instance resolved yet: a scoped name would be a bare suffix that
+		// names nothing and cannot be set.
+		"":    envAPIKey,
+		"/":   envAPIKey,
+		"///": envAPIKey,
+	}
+	for in, want := range cases {
+		if got := envVarFor(envAPIKey, in, defaultAPIURL); got != want {
+			t.Errorf("envVarFor(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

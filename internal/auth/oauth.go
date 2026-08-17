@@ -127,6 +127,10 @@ func secureScheme(u *url.URL) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// ErrNoDiscovery reports that an instance serves no authorization server
+// metadata: a Flagsmith predating the OAuth login, or not a Flagsmith API.
+var ErrNoDiscovery = errors.New("no authorization server metadata")
+
 func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Metadata, error) {
 	u := strings.TrimRight(apiURL, "/") + "/.well-known/oauth-authorization-server"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -138,8 +142,14 @@ func Discover(ctx context.Context, httpClient *http.Client, apiURL string) (*Met
 		return nil, bug.Mark(fmt.Errorf("reaching %s: %w", u, err))
 	}
 	defer resp.Body.Close()
+	// Only a 404 means the document is absent. Any other refusal comes from a
+	// server that has one, and saying otherwise would send a user with a
+	// rate-limited or briefly broken instance looking for a URL mistake.
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%s returned %s: %w", u, resp.Status, ErrNoDiscovery)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s returned %s — is this a Flagsmith API URL?", u, resp.Status)
+		return nil, bug.Mark(fmt.Errorf("%s returned %s", u, resp.Status))
 	}
 	var md Metadata
 	if err := json.NewDecoder(resp.Body).Decode(&md); err != nil {

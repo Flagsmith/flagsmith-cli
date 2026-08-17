@@ -2501,6 +2501,44 @@ func TestConfigCommand(t *testing.T) {
 			t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 		}
 	})
+
+	// A bad config file fails resolveContext before it can publish either
+	// surface URL, so the hint has no instance to scope a name to. Every test
+	// in this process shares those globals, so clear them to model a real run,
+	// which is one command in a process of its own.
+	t.Run("a config that fails to load still names a usable variable", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		writeConfig(t, tempRepo(t), `{"environment": "ser.SuperSecret123"}`)
+		defer func(a, s string) { apiURL, sdkAPIURL = a, s }(apiURL, sdkAPIURL)
+		apiURL, sdkAPIURL = "", ""
+
+		// When
+		_, err := run("", "config")
+
+		// Then
+		hint := hintFor(err)
+		if err == nil || !strings.Contains(hint, envEnvironmentKey+" ") {
+			t.Errorf("err = %v (hint %q), want the plain %s named", err, hint, envEnvironmentKey)
+		}
+	})
+
+	// The SDK credential is scoped to the SDK surface, so the variable to set
+	// is only knowable once that URL is resolved.
+	t.Run("server-side key rejection names the scoped variable", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		tempRepo(t)
+
+		// When
+		_, err := run("", "config", "-e", "ser.AbCd", "--sdk-api-url", "https://sdk.example.com")
+
+		// Then
+		want := "FLAGSMITH_ENVIRONMENT_KEY_sdk_example_com"
+		if err == nil || !strings.Contains(hintFor(err), want) {
+			t.Errorf("err = %v (hint %q), want a hint pointing at %s", err, hintFor(err), want)
+		}
+	})
 }
 
 // fakeTTY makes prompts believe stdin is a terminal for one test.
@@ -8215,8 +8253,8 @@ func TestUnscopedCredentialNotSentToRedirectedHost(t *testing.T) {
 		_, err := run("", "flag", "list")
 
 		// Then
-		if !errors.Is(err, auth.ErrNotLoggedIn) {
-			t.Errorf("err = %v, want ErrNotLoggedIn (credential withheld)", err)
+		if err == nil || !strings.Contains(err.Error(), envAPIKey) {
+			t.Errorf("err = %v, want the credential withheld and said to be", err)
 		}
 		if got := f.featuresCalls(); got != 0 {
 			t.Errorf("features calls = %d, want 0 — no request should carry the key", got)
@@ -8254,8 +8292,8 @@ func TestUnscopedAccessTokenNotSentToRedirectedHost(t *testing.T) {
 	_, err := run("", "auth", "status")
 
 	// Then
-	if !errors.Is(err, auth.ErrNotLoggedIn) {
-		t.Errorf("err = %v, want ErrNotLoggedIn (bearer withheld)", err)
+	if err == nil || !strings.Contains(err.Error(), envAccessToken) {
+		t.Errorf("err = %v, want the bearer withheld and said to be", err)
 	}
 	if got := f.organisationLists(); got != 0 {
 		t.Errorf("organisation calls = %d, want 0 — no request should carry the bearer", got)
@@ -8390,6 +8428,11 @@ func TestEnvServerKeyRejected(t *testing.T) {
 	if err == nil || !strings.Contains(hintFor(err), "FLAGSMITH_ENVIRONMENT_KEY") {
 		t.Errorf("err = %v (hint %q), want a hint pointing at FLAGSMITH_ENVIRONMENT_KEY", err, hintFor(err))
 	}
+	// The rejection must name the variable the value was read from, which off
+	// the default host is never the unscoped one.
+	if want := scopedEnvName(envAPIKey, f.srv.URL); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want it to name %s", err, want)
+	}
 }
 
 func TestEnvBeatsKeychain(t *testing.T) {
@@ -8417,6 +8460,46 @@ func TestEnvBeatsKeychain(t *testing.T) {
 	}
 }
 
+// A credential set in the unscoped variable is ignored off the default host.
+// Reporting that as "not logged in" sends the user to do what they just did.
+func TestUnscopedCredentialIsReportedAsIgnored(t *testing.T) {
+	t.Run("names both the ignored variable and the one to set", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		t.Setenv(envAPIKey, masterKey)
+
+		// When
+		_, err := run("", "project", "list", "--api-url", f.srv.URL)
+
+		// Then
+		if err == nil {
+			t.Fatal("err = nil, want the ignored credential reported")
+		}
+		if !strings.Contains(err.Error(), envAPIKey) || strings.Contains(err.Error(), "not logged in") {
+			t.Errorf("err = %v, want it to name the ignored variable rather than report a login", err)
+		}
+		if want := scopedEnvName(envAPIKey, f.srv.URL); !strings.Contains(hintFor(err), want) {
+			t.Errorf("hint = %q, want it to name %s", hintFor(err), want)
+		}
+	})
+
+	t.Run("silent when the variable is scoped to this instance", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		f := newFakeInstance(t)
+		setMasterKey(t, f.srv.URL)
+
+		// When
+		_, err := run("", "project", "list", "--api-url", f.srv.URL)
+
+		// Then
+		if err != nil {
+			t.Fatalf("project list: %v", err)
+		}
+	})
+}
+
 func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	// Given
 	isolateStorage(t)
@@ -8436,6 +8519,88 @@ func TestLoginFailsClosedWithoutKeychain(t *testing.T) {
 	if strings.Contains(out, "oauth/authorize") {
 		t.Errorf("output = %q — the OAuth flow started despite no keychain", out)
 	}
+}
+
+// oldInstance serves a /version/ document reporting tag, and nothing else — in
+// particular no OAuth metadata, like a Flagsmith predating the browser login.
+// An empty tag serves no version endpoint at all.
+func oldInstance(t *testing.T, tag string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	if tag != "" {
+		mux.HandleFunc("GET /version/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"image_tag":%q}`, tag)
+		})
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A Flagsmith too old to serve OAuth metadata has a way forward — a Master API
+// key — that the bare 404 from the discovery endpoint does not mention.
+func TestLoginAgainstAnInstanceWithoutOAuth(t *testing.T) {
+	t.Run("old version names the version and the key variable to set", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		srv := oldInstance(t, "2.180.3")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		hint := hintFor(err)
+		if err == nil {
+			t.Fatal("err = nil, want a login failure")
+		}
+		for _, want := range []string{"2.180.3", minOAuthVersion, scopedEnvName(envAPIKey, srv.URL)} {
+			if !strings.Contains(hint, want) {
+				t.Errorf("hint = %q, want it to mention %q", hint, want)
+			}
+		}
+	})
+
+	t.Run("unparseable image tag falls back to the generic hint", func(t *testing.T) {
+		// Given: self-hosted images are routinely tagged like this
+		isolateStorage(t)
+		srv := oldInstance(t, "latest")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		if got := hintFor(err); got != hintAPIURL {
+			t.Errorf("hint = %q, want the generic %q", got, hintAPIURL)
+		}
+	})
+
+	t.Run("no version endpoint falls back to the generic hint", func(t *testing.T) {
+		// Given
+		isolateStorage(t)
+		srv := oldInstance(t, "")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		if got := hintFor(err); got != hintAPIURL {
+			t.Errorf("hint = %q, want the generic %q", got, hintAPIURL)
+		}
+	})
+
+	t.Run("current version falls back to the generic hint", func(t *testing.T) {
+		// Given: new enough for OAuth, so a missing document is not about age
+		isolateStorage(t)
+		srv := oldInstance(t, "2.262.0")
+
+		// When
+		_, err := run("", "login", "--api-url", srv.URL, "--no-browser")
+
+		// Then
+		if got := hintFor(err); got != hintAPIURL {
+			t.Errorf("hint = %q, want the generic %q", got, hintAPIURL)
+		}
+	})
 }
 
 func TestRefreshPersistsToKeychain(t *testing.T) {

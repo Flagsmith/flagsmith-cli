@@ -304,7 +304,7 @@ func evalError(sdkURL string, err error) error {
 		return bug.Mark(fmt.Errorf("evaluating flags on %s failed", sdkURL))
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return withHint(fmt.Errorf("%s rejected the environment key (%s)", sdkURL, apiErr.ResponseStatus),
-			hintEnvironmentKey)
+			hintEnvironmentKey())
 	case http.StatusNotFound:
 		return withHint(fmt.Errorf("%s has no SDK API to evaluate against (%s)", sdkURL, apiErr.ResponseStatus),
 			hintSDKAPIURL)

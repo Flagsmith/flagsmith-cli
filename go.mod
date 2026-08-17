@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/Flagsmith/flagsmith-go-client/v5 v5.1.0
+	github.com/blang/semver/v4 v4.0.0
 	github.com/charmbracelet/huh v1.0.0
 	github.com/fatih/color v1.19.0
 	github.com/itchyny/gojq v0.12.19
@@ -11,14 +12,13 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/sync v0.16.0
+	golang.org/x/sync v0.21.0
 	golang.org/x/term v0.45.0
 )
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7 // indirect
 	github.com/charmbracelet/bubbletea v1.3.6 // indirect
@@ -50,7 +50,7 @@ require (
 	github.com/ohler55/ojg v1.28.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/net v0.43.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )

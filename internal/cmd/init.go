@@ -137,8 +137,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	cred, err := resolveCredential(ctx)
 	if errors.Is(err, auth.ErrNotLoggedIn) {
 		if !interactive() {
-			return withHint(errors.New("no credentials found, and a browser login needs a TTY"),
-				"Set FLAGSMITH_API_KEY, run in a CI OIDC context with an org trust relationship, or run `flagsmith login` interactively first.")
+			return hintf(errors.New("no credentials found, and a browser login needs a TTY"),
+				"Set %s, run in a CI OIDC context with an org trust relationship, or run `flagsmith login` interactively first.",
+				apiKeyVar())
 		}
 		if err := browserLogin(cmd); err != nil {
 			return err
