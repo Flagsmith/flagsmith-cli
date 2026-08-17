@@ -19,14 +19,14 @@ repos:
       - id: shfmt
 
   - repo: https://github.com/golangci/golangci-lint
-    rev: v2.11.4
+    rev: v2.12.2
     hooks:
       - id: golangci-lint-full
       - id: golangci-lint-fmt
       - id: golangci-lint-config-verify
 
   - repo: https://github.com/renovatebot/pre-commit-hooks
-    rev: 44.28.0
+    rev: 44.32.2
     hooks:
       # The lint workflow runs this too. It cannot run on pre-commit.ci, whose
       # 250MiB tier limit this hook's 400MiB node environment does not fit.
