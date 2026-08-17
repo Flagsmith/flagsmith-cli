@@ -27,6 +27,8 @@ const (
 	hintAccessToken      = "For an OAuth access token, set FLAGSMITH_ACCESS_TOKEN instead."
 	hintServerSideKey    = "Server-side keys are secrets — provide them via FLAGSMITH_ENVIRONMENT_KEY instead."
 
+	hintUpgradeInstance = "Upgrade the instance, or point --api-url at one new enough. Reading flags works on any version."
+
 	hintEnvironmentKey = "Check FLAGSMITH_ENVIRONMENT_KEY, or the environment name/key passed with -e."
 	hintSDKAPIURL      = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
 
@@ -97,6 +99,8 @@ func hintFor(err error) string {
 		return hintPricing
 	case errors.Is(err, api.ErrWorkflowGated):
 		return docsHint("advanced-use/change-requests")
+	case errors.Is(err, api.ErrFlagWritesUnsupported):
+		return hintUpgradeInstance
 	// Last, so any condition with a specific recovery wins over "report it".
 	case errors.Is(err, bug.ErrUnexpected):
 		return hintReportIssue

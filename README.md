@@ -56,6 +56,8 @@ flagsmith flag list    # list the flags in the current environment
 
 ## Commands
 
+Reading works against any Flagsmith instance. Changing flags — `flag update`, `flag enable`/`disable`, `flag reorder`, `flag delete` — needs Flagsmith 2.263.0 or newer, self-hosted or SaaS.
+
 - `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
 - `flagsmith flag list` — list feature flags in the current environment.
 - `flagsmith flag get <feature>` — show a single flag's state (`--segment <id>` or `--identifier <id>` for an override).

@@ -344,6 +344,16 @@ func statusOf(err error) int {
 	return 0
 }
 
+// apiDetailOf returns the API's own message for an error, or "" — which is what
+// a response that no API rendered looks like.
+func apiDetailOf(err error) string {
+	var e *statusError
+	if errors.As(err, &e) {
+		return e.message
+	}
+	return ""
+}
+
 // apiMessage extracts a human-readable message from a DRF error body, or "".
 func apiMessage(body []byte) string {
 	body = bytes.TrimSpace(body)
@@ -921,7 +931,7 @@ func (c *Client) UpdateFlag(ctx context.Context, environmentKey string, featureI
 func (c *Client) writeFlag(ctx context.Context, method, environmentKey string, featureID int, in UpdateFlagRequest) (*UpdateFlagResponse, error) {
 	out, err := send[UpdateFlagResponse](ctx, c, method, updateFlagPath(environmentKey, featureID), in)
 	if err != nil {
-		return nil, classifyFlagWrite(err)
+		return nil, c.classifyFlagWrite(ctx, err)
 	}
 	return out, nil
 }
@@ -933,10 +943,12 @@ func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey strin
 	path := fmt.Sprintf("%ssegment-overrides/%d/", updateFlagPath(environmentKey, featureID), segmentID)
 	out, err := send[UpdateFlagResponse](ctx, c, http.MethodDelete, path, nil)
 	if err != nil {
-		if statusOf(err) == http.StatusNotFound {
+		// The endpoint's own 404 says the override isn't there; a 404 with
+		// nothing in it says the route isn't, which classifyFlagWrite reads.
+		if statusOf(err) == http.StatusNotFound && apiDetailOf(err) != "" {
 			return nil, ErrNoSuchOverride
 		}
-		return nil, classifyFlagWrite(err)
+		return nil, c.classifyFlagWrite(ctx, err)
 	}
 	return out, nil
 }
@@ -948,15 +960,64 @@ var ErrNoSuchOverride = errors.New("no override exists for that segment")
 // write outright, alongside a 409.
 const changeRequestCode = "change_requests_enabled"
 
-// classifyFlagWrite recognises the one update-flag failure the user can act on.
-// The code is what identifies it — the status alone would catch any future
-// conflict, and the detail is prose that is free to change.
-func classifyFlagWrite(err error) error {
+// MinFlagWriteVersion is the first Flagsmith release carrying the update-flag
+// endpoints every flag mutation uses.
+const MinFlagWriteVersion = "2.263.0"
+
+// classifyFlagWrite recognises the update-flag failures the user can act on: a
+// write refused because the environment gates it, and an instance too old to
+// have the endpoint at all.
+//
+// The refusal is identified by its code — the status alone would catch any
+// future conflict, and the detail is prose that is free to change. The missing
+// endpoint is identified by a 404 that carries no detail: the route isn't there,
+// so nothing rendered one. A 404 from the endpoint itself always carries one,
+// which matters because it uses 404 for an environment or feature the caller
+// cannot see.
+func (c *Client) classifyFlagWrite(ctx context.Context, err error) error {
 	var e *statusError
-	if errors.As(err, &e) && e.code == http.StatusConflict && e.errorCode == changeRequestCode {
+	if !errors.As(err, &e) {
+		return err
+	}
+	switch {
+	case e.code == http.StatusConflict && e.errorCode == changeRequestCode:
 		return ErrWorkflowGated
+	case e.code == http.StatusNotFound && e.message == "":
+		return c.unsupportedFlagWrite(ctx)
 	}
 	return err
+}
+
+// unsupportedFlagWrite names the instance's version in the error when it can be
+// read, since "upgrade" is easier to act on knowing what you're upgrading from.
+// The lookup only happens on this failure path, and its own failure just leaves
+// the version out.
+func (c *Client) unsupportedFlagWrite(ctx context.Context) error {
+	if version, err := c.ServerVersion(ctx); err == nil && version != "" {
+		return fmt.Errorf("%w: this instance runs %s", ErrFlagWritesUnsupported, version)
+	}
+	return ErrFlagWritesUnsupported
+}
+
+// ErrFlagWritesUnsupported marks an instance without the update-flag endpoints,
+// which every flag mutation needs. Reads are unaffected: they use endpoints that
+// have been there all along.
+var ErrFlagWritesUnsupported = fmt.Errorf("changing flags needs Flagsmith %s or newer", MinFlagWriteVersion)
+
+// ServerVersion reports the instance's version, as /version advertises it. The
+// endpoint is unauthenticated and predates everything the CLI uses.
+func (c *Client) ServerVersion(ctx context.Context) (string, error) {
+	var info struct {
+		ImageTag        string            `json:"image_tag"`
+		PackageVersions map[string]string `json:"package_versions"`
+	}
+	if err := c.get(ctx, "/version", &info); err != nil {
+		return "", err
+	}
+	if info.ImageTag != "" {
+		return info.ImageTag, nil
+	}
+	return info.PackageVersions["."], nil
 }
 
 // ErrWorkflowGated is returned when update-flag refuses because the environment

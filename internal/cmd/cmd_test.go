@@ -26,6 +26,7 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/config"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
@@ -174,6 +175,7 @@ type fakeInstance struct {
 	lastUpdateVerb string                      // method of the last update-flag call
 	lastUpdateFeat string                      // feature id in the last update-flag path
 	deletedSegment int                         // segment id of the last override delete, 0 for none
+	oldInstance    bool                        // when true, the update-flag routes are absent
 	workflowGated  bool                        // when true, update-flag reports change requests
 
 	useEdge           bool                       // GET /projects/{id}/ use_edge_identities
@@ -589,6 +591,11 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(clone)
 	})
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"image_tag": "2.262.0", "package_versions": map[string]string{".": "2.262.0"},
+		})
+	})
 	mux.HandleFunc("GET /api/v1/projects/{project}/features/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -638,6 +645,15 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			return
 		}
 		f.mu.Lock()
+		old := f.oldInstance
+		f.mu.Unlock()
+		if old {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "<h1>Not Found</h1>")
+			return
+		}
+		f.mu.Lock()
 		gated := f.workflowGated
 		f.mu.Unlock()
 		if gated {
@@ -673,6 +689,15 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		mux.HandleFunc(method+" /api/__future__/environments/{env}/features/{feature}/", func(w http.ResponseWriter, r *http.Request) {
 			if !authorized(r) {
 				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			f.mu.Lock()
+			old := f.oldInstance
+			f.mu.Unlock()
+			if old {
+				w.Header().Set("Content-Type", "text/html")
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(w, "<h1>Not Found</h1>")
 				return
 			}
 			f.mu.Lock()
@@ -4012,6 +4037,14 @@ func withFeatureStates(f *fakeInstance, featureID int, rows ...map[string]any) {
 // The fake serves requests concurrently (see fsPeak), so every field a handler
 // reads is set through a locked setter rather than assigned directly.
 
+// withOldInstance makes the fake answer the update-flag routes the way an
+// instance without them does: a 404 from outside the API, carrying no detail.
+func withOldInstance(f *fakeInstance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.oldInstance = true
+}
+
 // withWorkflowGating makes update-flag refuse the write, as it does for an
 // environment with change requests enabled.
 func withWorkflowGating(f *fakeInstance) {
@@ -5402,6 +5435,59 @@ func withTwoSegmentOverrides(f *fakeInstance) {
 		map[string]any{"id": 12, "enabled": false, "feature_segment": 4200,
 			"feature_state_value": map[string]any{"type": "int", "integer_value": 99}},
 	)
+}
+
+// An instance older than the update-flag endpoints has to say so: the 404 it
+// answers with would otherwise read as a CLI bug worth reporting.
+func TestFlagWritesNeedANewerInstance(t *testing.T) {
+	for _, args := range [][]string{
+		{"flag", "update", "max_items", "--enable"},
+		{"flag", "enable", "max_items"},
+		{"flag", "delete", "max_items", "--segment", "12"},
+		{"flag", "reorder", "max_items", "powerusers"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			// Given
+			f := flagUpdateEnv(t)
+			withFeatureSegments(f, 2, map[string]any{
+				"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+			})
+			withOldInstance(f)
+
+			// When
+			_, err := run("", append(args, "--yes")...)
+
+			// Then
+			if !errors.Is(err, api.ErrFlagWritesUnsupported) {
+				t.Fatalf("err = %v, want ErrFlagWritesUnsupported", err)
+			}
+			// The instance's own version comes from /version, so "upgrade" can be
+			// read against something.
+			for _, want := range []string{"2.263.0", "2.262.0"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %v, want it to mention %s", err, want)
+				}
+			}
+			if hint := hintFor(err); !strings.Contains(hint, "Upgrade") {
+				t.Errorf("hint = %q, want it to point at upgrading", hint)
+			}
+			if errors.Is(err, bug.ErrUnexpected) {
+				t.Errorf("err = %v, want it not to read as a bug to report", err)
+			}
+		})
+	}
+
+	t.Run("reads keep working", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withOldInstance(f)
+
+		// When / Then
+		if out, err := run("", "flag", "get", "max_items"); err != nil {
+			t.Errorf("flag get: %v\noutput: %s", err, out)
+		}
+		_ = f
+	})
 }
 
 func TestFlagDelete(t *testing.T) {

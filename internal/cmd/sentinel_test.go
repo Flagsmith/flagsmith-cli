@@ -22,19 +22,20 @@ import (
 // under internal/ fails this test until the decision is recorded.
 func TestEverySentinelHasAHintDecision(t *testing.T) {
 	sentinels := map[string]error{
-		"api.ErrPlanGated":            api.ErrPlanGated,
-		"api.ErrQuotaExceeded":        api.ErrQuotaExceeded,
-		"api.ErrNoSuchOverride":       api.ErrNoSuchOverride,
-		"api.ErrWorkflowGated":        api.ErrWorkflowGated,
-		"auth.ErrNotLoggedIn":         auth.ErrNotLoggedIn,
-		"auth.ErrKeychainUnavailable": auth.ErrKeychainUnavailable,
-		"auth.ErrRefreshFailed":       auth.ErrRefreshFailed,
-		"auth.ErrServerSideKey":       auth.ErrServerSideKey,
-		"auth.ErrLegacyAuthtoken":     auth.ErrLegacyAuthtoken,
-		"auth.ErrNotMasterKey":        auth.ErrNotMasterKey,
-		"bug.ErrUnexpected":           bug.ErrUnexpected,
-		"config.ErrServerSideKey":     config.ErrServerSideKey,
-		"prompt.ErrCancelled":         prompt.ErrCancelled,
+		"api.ErrPlanGated":             api.ErrPlanGated,
+		"api.ErrQuotaExceeded":         api.ErrQuotaExceeded,
+		"api.ErrFlagWritesUnsupported": api.ErrFlagWritesUnsupported,
+		"api.ErrNoSuchOverride":        api.ErrNoSuchOverride,
+		"api.ErrWorkflowGated":         api.ErrWorkflowGated,
+		"auth.ErrNotLoggedIn":          auth.ErrNotLoggedIn,
+		"auth.ErrKeychainUnavailable":  auth.ErrKeychainUnavailable,
+		"auth.ErrRefreshFailed":        auth.ErrRefreshFailed,
+		"auth.ErrServerSideKey":        auth.ErrServerSideKey,
+		"auth.ErrLegacyAuthtoken":      auth.ErrLegacyAuthtoken,
+		"auth.ErrNotMasterKey":         auth.ErrNotMasterKey,
+		"bug.ErrUnexpected":            bug.ErrUnexpected,
+		"config.ErrServerSideKey":      config.ErrServerSideKey,
+		"prompt.ErrCancelled":          prompt.ErrCancelled,
 	}
 
 	// Sentinels reviewed and deliberately left without a hint.

@@ -578,6 +578,66 @@ func TestUpdateFlag(t *testing.T) {
 		}
 	})
 
+	// An instance without the endpoint answers from outside DRF, so the body
+	// carries no detail. Every other 404 here is the endpoint's own.
+	t.Run("a 404 with no detail is an instance too old, and names its version", func(t *testing.T) {
+		// Given
+		mux := http.NewServeMux()
+		mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"image_tag": "2.262.0", "package_versions": {".": "2.262.0"}}`)
+		})
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "<h1>Not Found</h1>")
+		})
+		srv := httptest.NewServer(mux)
+		defer srv.Close()
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
+
+		// Then
+		if !errors.Is(err, ErrFlagWritesUnsupported) {
+			t.Fatalf("err = %v, want ErrFlagWritesUnsupported", err)
+		}
+		for _, want := range []string{MinFlagWriteVersion, "2.262.0"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %v, want it to mention %s", err, want)
+			}
+		}
+	})
+
+	t.Run("an unreadable version still reports the requirement", func(t *testing.T) {
+		// Given: no /version to read, as a proxy in front of an old instance
+		// might leave it.
+		srv, _, _ := updateFlagServer(t, http.StatusNotFound, "<h1>Not Found</h1>")
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
+
+		// Then
+		if !errors.Is(err, ErrFlagWritesUnsupported) {
+			t.Errorf("err = %v, want ErrFlagWritesUnsupported", err)
+		}
+	})
+
+	t.Run("the endpoint's own 404 is not read as an old instance", func(t *testing.T) {
+		// Given: what it answers for an environment the caller cannot see.
+		srv, _, _ := updateFlagServer(t, http.StatusNotFound, `{"detail": "Not found."}`)
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
+
+		// Then
+		if errors.Is(err, ErrFlagWritesUnsupported) {
+			t.Errorf("err = %v, want a plain not-found failure", err)
+		}
+	})
+
 	t.Run("deleting an override that is not there is a no-override error", func(t *testing.T) {
 		// Given
 		srv, _, _ := updateFlagServer(t, http.StatusNotFound, `{"detail": "Segment override not found."}`)
@@ -588,6 +648,22 @@ func TestUpdateFlag(t *testing.T) {
 		// Then
 		if !errors.Is(err, ErrNoSuchOverride) {
 			t.Errorf("err = %v, want ErrNoSuchOverride", err)
+		}
+	})
+
+	t.Run("deleting against an instance without the route reports the version", func(t *testing.T) {
+		// Given
+		srv, _, _ := updateFlagServer(t, http.StatusNotFound, "<h1>Not Found</h1>")
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).DeleteSegmentOverride(context.Background(), "envkey", 42, 99)
+
+		// Then
+		if errors.Is(err, ErrNoSuchOverride) {
+			t.Errorf("err = %v, want the version error rather than a missing override", err)
+		}
+		if !errors.Is(err, ErrFlagWritesUnsupported) {
+			t.Errorf("err = %v, want ErrFlagWritesUnsupported", err)
 		}
 	})
 
