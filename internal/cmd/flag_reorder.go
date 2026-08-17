@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,9 +22,9 @@ var flagReorderCmd = &cobra.Command{
 }
 
 // runFlagReorder assigns priorities 0..n-1 to a feature's segment overrides in
-// the input order, in one update-flag-v2 request (one published version under
-// v2 versioning). The input must name every overridden segment exactly once —
-// a partial list would make the result depend on the current order.
+// the input order, in one update-flag request (one published version under v2
+// versioning). The input must name every overridden segment exactly once — a
+// partial list would make the result depend on the current order.
 func runFlagReorder(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	_, cred, projectID, env, err := flagContext(cmd)
@@ -95,37 +96,14 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 			name, strings.Join(missing, ", "))
 	}
 
-	// Each override echoes its current state and value; only priorities move.
-	states, err := cred.client().FeatureStates(cmd.Context(), env.ID, feature.ID)
-	if err != nil {
-		return err
-	}
-	stateByFS := make(map[int]api.EnvironmentFeatureState, len(states))
-	for _, s := range states {
-		if s.FeatureSegment != nil {
-			stateByFS[*s.FeatureSegment] = s
-		}
-	}
-	req := api.UpdateFlagRequest{
-		Feature: api.FeatureRef{Name: feature.Name},
-		EnvironmentDefault: api.EnvironmentDefault{
-			Enabled: flagEnabled(feature.EnvironmentState),
-			Value:   featureValueFromScalar(currentScalar(feature.EnvironmentState)),
-		},
-	}
+	// Only priorities move: a partial write leaves every other property of
+	// each override — its state, value and weights — exactly as it is.
+	var req api.UpdateFlagRequest
 	for i, segmentID := range ordered {
 		priority := i
-		// A zero state would echo the override as off with an empty value, so a
-		// priority-only move would quietly rewrite it.
-		state, ok := stateByFS[current[segmentID].ID]
-		if !ok {
-			return fmt.Errorf("no feature state found for the override on segment %d; refusing to reorder", segmentID)
-		}
-		req.SegmentOverrides = append(req.SegmentOverrides, api.SegmentOverride{
-			SegmentID: segmentID,
-			Enabled:   state.Enabled,
-			Value:     featureValueFromScalar(state.Value.Scalar()),
-			Priority:  &priority,
+		req.SegmentOverrides = append(req.SegmentOverrides, api.SegmentOverrideUpdate{
+			Segment:  api.SegmentTarget{ID: segmentID},
+			Priority: &priority,
 		})
 	}
 
@@ -134,26 +112,31 @@ func runFlagReorder(cmd *cobra.Command, args []string) error {
 	if ok, err := confirmed(cmd, prompt, "changed"); !ok || err != nil {
 		return err
 	}
-	if err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, req); err != nil {
+	resp, err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, feature.ID, req)
+	if err != nil {
 		return err
 	}
 	output.Success(errOut, "Reordered %d segment overrides for %s in environment %s", len(ordered), name, environmentLabel(env))
 
-	// Result model: print the resulting override list. It is fully known —
-	// the write assigned priorities 0..n-1 in input order, and each
-	// override's state was read (and echoed unchanged) before the write.
-	views := make([]segmentFlagView, len(ordered))
-	for i, segmentID := range ordered {
-		fs := current[segmentID]
-		state := stateByFS[fs.ID]
-		views[i] = segmentFlagView{
+	// Result model: print the resulting override list, in the new priority
+	// order the response reports. Only the segment names come from the rows
+	// read before the write — the response identifies segments by id alone.
+	views := make([]segmentFlagView, 0, len(resp.SegmentOverrides))
+	for _, override := range resp.SegmentOverrides {
+		scalar, err := scalarOfValue(override.Value)
+		if err != nil {
+			return err
+		}
+		views = append(views, segmentFlagView{
 			Feature:  feature.Name,
 			Type:     featureTypeLabel(feature.Type),
-			Segment:  segmentRef{ID: segmentID, Name: fs.SegmentName},
-			Priority: i,
-			Enabled:  state.Enabled,
-			Value:    state.Value.Scalar(),
-		}
+			Segment:  segmentRef{ID: override.Segment.ID, Name: current[override.Segment.ID].SegmentName},
+			Priority: override.Priority,
+			Enabled:  override.Enabled,
+			Value:    scalar,
+			Variants: variantViews(feature, weightsOf(override.Variants)),
+		})
 	}
+	sort.SliceStable(views, func(a, b int) bool { return views[a].Priority < views[b].Priority })
 	return renderSegmentOverrideList(cmd, views)
 }

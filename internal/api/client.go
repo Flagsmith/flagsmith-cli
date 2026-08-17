@@ -13,8 +13,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
+	"github.com/blang/semver/v4"
 
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/httpx"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
 )
@@ -297,18 +298,35 @@ func responseError(method, u string, resp *http.Response) error {
 	if e := classifyLimit(msg); e != nil {
 		return e
 	}
-	return bug.Mark(&statusError{code: resp.StatusCode, status: resp.Status, message: msg, method: method, url: u})
+	return bug.Mark(&statusError{
+		code: resp.StatusCode, status: resp.Status, message: msg,
+		errorCode: apiErrorCode(body), method: method, url: u,
+	})
+}
+
+// apiErrorCode extracts the machine-readable code from an error body, or "".
+// Only the newer endpoints send one; it is the only part of an error a client
+// should branch on.
+func apiErrorCode(body []byte) string {
+	var coded struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(body), &coded) != nil {
+		return ""
+	}
+	return coded.Code
 }
 
 // statusError is a non-2xx response that wasn't classified as a plan limit. It
 // carries the HTTP status so it can be special-cased. bug.Mark wraps it, so it
 // still reads as unexpected.
 type statusError struct {
-	code    int
-	status  string // e.g. "403 Forbidden"
-	message string // the API's detail, if any
-	method  string
-	url     string
+	code      int
+	status    string // e.g. "403 Forbidden"
+	message   string // the API's detail, if any
+	errorCode string // the API's machine-readable code, if any
+	method    string
+	url       string
 }
 
 func (e *statusError) Error() string {
@@ -327,6 +345,16 @@ func statusOf(err error) int {
 	return 0
 }
 
+// apiDetailOf returns the API's own message for an error, or "" — which is what
+// a response that no API rendered looks like.
+func apiDetailOf(err error) string {
+	var e *statusError
+	if errors.As(err, &e) {
+		return e.message
+	}
+	return ""
+}
+
 // apiMessage extracts a human-readable message from a DRF error body, or "".
 func apiMessage(body []byte) string {
 	body = bytes.TrimSpace(body)
@@ -339,25 +367,45 @@ func apiMessage(body []byte) string {
 	if json.Unmarshal(body, &detail) == nil && detail.Detail != "" {
 		return detail.Detail
 	}
-	// Field-keyed validation errors: {"field": ["msg"]} or {"field": "msg"}.
+	// Field-keyed validation errors: {"field": ["msg"]} or {"field": "msg"},
+	// nested to whatever depth the field's own shape has — update-flag reports
+	// {"segment_overrides": [{"segment": {"id": ["Segment not found."]}}]}.
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(body, &fields) != nil {
 		return ""
 	}
 	var msgs []string
 	for _, raw := range fields {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			msgs = append(msgs, s)
-			continue
-		}
-		var arr []string
-		if json.Unmarshal(raw, &arr) == nil {
-			msgs = append(msgs, arr...)
-		}
+		msgs = append(msgs, errorStrings(raw)...)
 	}
 	sort.Strings(msgs) // map order is random; keep the message stable
 	return strings.Join(msgs, "; ")
+}
+
+// errorStrings collects every string leaf of a DRF error value.
+func errorStrings(raw json.RawMessage) []string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return []string{s}
+	}
+	var list []json.RawMessage
+	if json.Unmarshal(raw, &list) == nil {
+		var msgs []string
+		for _, item := range list {
+			msgs = append(msgs, errorStrings(item)...)
+		}
+		return msgs
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil {
+		var msgs []string
+		for _, value := range fields {
+			msgs = append(msgs, errorStrings(value)...)
+		}
+		sort.Strings(msgs) // map order is random; keep the message stable
+		return msgs
+	}
+	return nil
 }
 
 // Verbatim backend exception detail strings, matched case-insensitively against
@@ -707,15 +755,24 @@ func (v TypedValue) Scalar() any {
 	return nil
 }
 
+// MultivariateStateValue is one variant's weight in a single feature state —
+// the per-scope allocation, which starts from the option's project-level
+// default and changes as environments and segments are re-weighted.
+type MultivariateStateValue struct {
+	OptionID   int     `json:"multivariate_feature_option"`
+	Allocation float64 `json:"percentage_allocation"`
+}
+
 // EnvironmentFeatureState is one row of the admin featurestates list: a
 // feature's state for the environment default (feature_segment null), one
 // segment override, or (in v2-versioned environments) an identity override.
 type EnvironmentFeatureState struct {
-	ID             int        `json:"id"`
-	Enabled        bool       `json:"enabled"`
-	FeatureSegment *int       `json:"feature_segment"`
-	Identity       *int       `json:"identity"`
-	Value          TypedValue `json:"feature_state_value"`
+	ID             int                      `json:"id"`
+	Enabled        bool                     `json:"enabled"`
+	FeatureSegment *int                     `json:"feature_segment"`
+	Identity       *int                     `json:"identity"`
+	Value          TypedValue               `json:"feature_state_value"`
+	Multivariate   []MultivariateStateValue `json:"multivariate_feature_state_values"`
 }
 
 // FeatureStates lists a feature's live states in one environment.
@@ -776,90 +833,188 @@ func (c *Client) EdgeIdentityOverrides(ctx context.Context, envKey string, featu
 	return rows, nil
 }
 
-// FeatureRef targets a feature by name or id (exactly one) in update-flag-v2.
-type FeatureRef struct {
-	Name string `json:"name,omitempty"`
-	ID   int    `json:"id,omitempty"`
-}
-
-// FeatureValue is a typed flag value in the update-flag-v2 wire form: the type
-// as a word and the value always as a string.
+// FeatureValue is a typed flag value in the update-flag wire form: the type as
+// a word and the value always as a string.
 type FeatureValue struct {
 	Type  string `json:"type"`  // "integer" | "string" | "boolean"
 	Value string `json:"value"` // always a string; parsed server-side per type
 }
 
-// EnvironmentDefault is the environment-wide state update-flag-v2 requires in
-// full on every call.
-type EnvironmentDefault struct {
-	Enabled bool         `json:"enabled"`
-	Value   FeatureValue `json:"value"`
+// Variant is one multivariate variant's share of a scope's traffic, as a
+// percentage between 0 and 100. Weights that don't add up to 100 leave the
+// remainder serving the flag's own value.
+type Variant struct {
+	ID     int     `json:"id"`
+	Weight float64 `json:"weight"`
 }
 
-// SegmentOverride is one segment's state in the update-flag-v2 body. Priority,
-// when set, moves the override to that position — the server renumbers the
-// others around it, preserving their relative order.
-type SegmentOverride struct {
-	SegmentID int          `json:"segment_id"`
-	Enabled   bool         `json:"enabled"`
-	Value     FeatureValue `json:"value"`
-	Priority  *int         `json:"priority,omitempty"`
+// SegmentTarget names the segment an override belongs to.
+type SegmentTarget struct {
+	ID int `json:"id"`
 }
 
-// UpdateFlagRequest is the update-flag-v2 body. environment_default is always
-// required; segment_overrides only creates/updates the segments listed and
-// never removes others. This endpoint does not manage identity overrides.
+// FlagStateUpdate is a change to a flag's state in one scope. Every field is
+// optional, and an omitted one is left unchanged.
+//
+// Variants is all-or-nothing: the endpoint rejects a list that doesn't name
+// every variant of the feature.
+type FlagStateUpdate struct {
+	Enabled  *bool         `json:"enabled,omitempty"`
+	Value    *FeatureValue `json:"value,omitempty"`
+	Variants []Variant     `json:"variants,omitempty"`
+}
+
+// SegmentOverrideUpdate is a change to one segment's override. Priority, when
+// set, moves the override to that position — the server renumbers the others
+// around it, preserving their relative order.
+type SegmentOverrideUpdate struct {
+	Segment  SegmentTarget `json:"segment"`
+	Enabled  *bool         `json:"enabled,omitempty"`
+	Priority *int          `json:"priority,omitempty"`
+	Value    *FeatureValue `json:"value,omitempty"`
+	Variants []Variant     `json:"variants,omitempty"`
+}
+
+// UpdateFlagRequest is the update-flag body: the overrides it lists are created
+// or updated, and every property it leaves out is left as it is. The endpoint
+// does not manage identity overrides.
 type UpdateFlagRequest struct {
-	Feature            FeatureRef         `json:"feature"`
-	EnvironmentDefault EnvironmentDefault `json:"environment_default"`
-	SegmentOverrides   []SegmentOverride  `json:"segment_overrides,omitempty"`
+	EnvironmentDefault *FlagStateUpdate        `json:"environment_default,omitempty"`
+	SegmentOverrides   []SegmentOverrideUpdate `json:"segment_overrides,omitempty"`
 }
 
-// postUpdateFlags posts a body to one of the experimental flags-update
-// endpoints (update-flag-v2, delete-segment-override), which share their status
-// protocol: 403 means the environment is workflow-gated, 404 maps to notFound
-// when it is non-nil, and 204/200 are success.
-func (c *Client) postUpdateFlags(ctx context.Context, path string, payload any, notFound error) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := c.newRequest(ctx, http.MethodPost, path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusForbidden:
-		return ErrWorkflowGated
-	case resp.StatusCode == http.StatusNotFound && notFound != nil:
-		return notFound
-	case resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK:
-		return responseError(http.MethodPost, req.URL.String(), resp)
+// FlagState is a flag's resulting state in one scope, as the update-flag
+// endpoint reports it. Value is null for a feature with no value at all.
+type FlagState struct {
+	Enabled  bool          `json:"enabled"`
+	Value    *FeatureValue `json:"value"`
+	Variants []Variant     `json:"variants"`
+}
+
+// SegmentOverrideState is one segment override's resulting state.
+type SegmentOverrideState struct {
+	Segment  SegmentTarget `json:"segment"`
+	Priority int           `json:"priority"`
+	Enabled  bool          `json:"enabled"`
+	Value    *FeatureValue `json:"value"`
+	Variants []Variant     `json:"variants"`
+}
+
+// UpdateFlagResponse is the flag's complete state in the environment after the
+// write, whichever properties the request carried.
+type UpdateFlagResponse struct {
+	EnvironmentDefault FlagState              `json:"environment_default"`
+	SegmentOverrides   []SegmentOverrideState `json:"segment_overrides"`
+}
+
+// Override returns the resulting state of one segment's override, or nil when
+// the response carries none for it.
+func (r *UpdateFlagResponse) Override(segmentID int) *SegmentOverrideState {
+	for i := range r.SegmentOverrides {
+		if r.SegmentOverrides[i].Segment.ID == segmentID {
+			return &r.SegmentOverrides[i]
+		}
 	}
 	return nil
 }
 
-// DeleteSegmentOverride removes a feature's override for one segment, via the
-// experimental delete-segment-override endpoint keyed by the environment key.
-func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey string, feature FeatureRef, segmentID int) error {
-	payload := map[string]any{
-		"feature": feature,
-		"segment": map[string]int{"id": segmentID},
-	}
-	return c.postUpdateFlags(ctx,
-		"/api/experiments/environments/"+environmentKey+"/delete-segment-override/",
-		payload,
-		fmt.Errorf("no override exists for segment %d", segmentID))
+func updateFlagPath(environmentKey string, featureID int) string {
+	return fmt.Sprintf("/api/__future__/environments/%s/features/%d/", environmentKey, featureID)
 }
 
-// ErrWorkflowGated is returned when update-flag-v2 refuses because the
-// environment has change-request workflows enabled.
+// UpdateFlag applies a partial change to a flag's state in one environment,
+// keyed by the environment's client-side key and the feature's id. Properties
+// the request omits are left as they are.
+func (c *Client) UpdateFlag(ctx context.Context, environmentKey string, featureID int, in UpdateFlagRequest) (*UpdateFlagResponse, error) {
+	return c.writeFlag(ctx, http.MethodPatch, environmentKey, featureID, in)
+}
+
+func (c *Client) writeFlag(ctx context.Context, method, environmentKey string, featureID int, in UpdateFlagRequest) (*UpdateFlagResponse, error) {
+	out, err := send[UpdateFlagResponse](ctx, c, method, updateFlagPath(environmentKey, featureID), in)
+	if err != nil {
+		return nil, c.classifyFlagWrite(ctx, err)
+	}
+	return out, nil
+}
+
+// DeleteSegmentOverride removes a flag's override for one segment, leaving the
+// rest of the flag alone. Like the writes, it answers with the flag's whole
+// resulting state. A segment with no override of its own is ErrNoSuchOverride.
+func (c *Client) DeleteSegmentOverride(ctx context.Context, environmentKey string, featureID, segmentID int) (*UpdateFlagResponse, error) {
+	path := fmt.Sprintf("%ssegment-overrides/%d/", updateFlagPath(environmentKey, featureID), segmentID)
+	out, err := send[UpdateFlagResponse](ctx, c, http.MethodDelete, path, nil)
+	if err != nil {
+		// The endpoint's own 404 says the override isn't there; a 404 with
+		// nothing in it says the route isn't, which classifyFlagWrite reads.
+		if statusOf(err) == http.StatusNotFound && apiDetailOf(err) != "" {
+			return nil, ErrNoSuchOverride
+		}
+		return nil, c.classifyFlagWrite(ctx, err)
+	}
+	return out, nil
+}
+
+// ErrNoSuchOverride is returned when a flag serves a segment nothing of its own.
+var ErrNoSuchOverride = errors.New("no override exists for that segment")
+
+// changeRequestCode is the error code update-flag returns when it refuses a
+// write outright, alongside a 409.
+const changeRequestCode = "change_requests_enabled"
+
+// MinFlagWriteVersion is the first Flagsmith release carrying the update-flag
+// endpoints every flag mutation uses.
+const MinFlagWriteVersion = "2.263.0"
+
+// classifyFlagWrite recognises the update-flag failures the user can act on: a
+// write refused because the environment gates it, and an instance too old to
+// have the endpoint at all.
+//
+// The refusal is identified by its code — the status alone would catch any
+// future conflict, and the detail is prose that is free to change. The missing
+// endpoint is identified by a 404 that carries no detail: the route isn't there,
+// so nothing rendered one. A 404 from the endpoint itself always carries one,
+// which matters because it uses 404 for an environment or feature the caller
+// cannot see.
+func (c *Client) classifyFlagWrite(ctx context.Context, err error) error {
+	var e *statusError
+	if !errors.As(err, &e) {
+		return err
+	}
+	switch {
+	case e.code == http.StatusConflict && e.errorCode == changeRequestCode:
+		return ErrWorkflowGated
+	case e.code == http.StatusNotFound && e.message == "":
+		return c.unsupportedFlagWrite(ctx)
+	}
+	return err
+}
+
+// unsupportedFlagWrite names the instance's version in the error when it can be
+// read, since "upgrade" is easier to act on knowing what you're upgrading from.
+// The lookup only happens on this failure path.
+//
+// A tag that is not a version ("latest", a commit sha) is left out rather than
+// quoted back: unlike the inference in `login`, nothing here rests on it — the
+// 404 already established the endpoint is absent — so it only decides whether
+// the version can be named.
+func (c *Client) unsupportedFlagWrite(ctx context.Context) error {
+	tag, err := ServerVersion(ctx, c.httpClient, c.baseURL)
+	if err != nil {
+		return ErrFlagWritesUnsupported
+	}
+	if _, err := semver.ParseTolerant(tag); err != nil {
+		return ErrFlagWritesUnsupported
+	}
+	return fmt.Errorf("%w: this instance runs %s", ErrFlagWritesUnsupported, tag)
+}
+
+// ErrFlagWritesUnsupported marks an instance without the update-flag endpoints,
+// which every flag mutation needs. Reads are unaffected: they use endpoints that
+// have been there all along.
+var ErrFlagWritesUnsupported = fmt.Errorf("changing flags needs Flagsmith %s or newer", MinFlagWriteVersion)
+
+// ErrWorkflowGated is returned when update-flag refuses because the environment
+// has change-request workflows enabled.
 var ErrWorkflowGated = fmt.Errorf("this environment uses change-request workflows; direct updates are disabled")
 
 // ErrPlanGated marks a self-serve plan limit a user lifts by upgrading — seats,
@@ -872,15 +1027,6 @@ var ErrPlanGated = errors.New("not available on your organisation's current plan
 // enterprise plans can relax. Telling the two apart is by message text only (see
 // classifyLimit); Flagsmith ships no machine-readable error code.
 var ErrQuotaExceeded = errors.New("resource limit reached on your organisation's current plan")
-
-// UpdateFlag applies an environment-default change via the experimental
-// update-flag-v2 endpoint, keyed by the environment's client-side key. The
-// endpoint returns 204 No Content on success.
-func (c *Client) UpdateFlag(ctx context.Context, environmentKey string, in UpdateFlagRequest) error {
-	return c.postUpdateFlags(ctx,
-		"/api/experiments/environments/"+environmentKey+"/update-flag-v2/",
-		in, nil)
-}
 
 // Environment carries the curated fields plus the raw API item, so JSON output
 // mirrors the server's full field set. Identified by APIKey, not id.

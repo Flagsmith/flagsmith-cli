@@ -86,6 +86,40 @@ func formatWeight(w float64) string {
 	return strconv.FormatFloat(w, 'f', -1, 64)
 }
 
+// weightPercent marks a weight as the percentage it is. Every human view shows
+// weights this way; formatWeight stays bare for the places a weight is echoed
+// back as the user typed it, or read inside a sentence that carries its own %.
+func weightPercent(w float64) string {
+	return formatWeight(w) + "%"
+}
+
+// writeVariants prints the indented Variants block shared by the feature and
+// flag detail views, formatting each weight with weight. Nothing is printed for
+// a feature without variants.
+func writeVariants(w io.Writer, views []variantView, weight func(float64) string) error {
+	if len(views) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\nVariants"); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	tw := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "VALUE\tWEIGHT\tKEY\tID")
+	for _, v := range views {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", fmt.Sprint(v.Value), weight(v.Weight), v.Key, v.ID)
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if _, err := fmt.Fprintf(w, "  %s\n", line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 var featureListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List features in the current project",
@@ -150,20 +184,7 @@ func renderFeature(cmd *cobra.Command, f *api.Feature) error {
 		}); err != nil {
 			return err
 		}
-		if len(view.Variants) > 0 {
-			fmt.Fprintln(w, "\nVariants")
-			var buf bytes.Buffer
-			tw := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "VALUE\tWEIGHT\tKEY\tID")
-			for _, v := range view.Variants {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", fmt.Sprint(v.Value), formatWeight(v.Weight), v.Key, v.ID)
-			}
-			tw.Flush()
-			for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
-				fmt.Fprintf(w, "  %s\n", line)
-			}
-		}
-		return nil
+		return writeVariants(w, view.Variants, weightPercent)
 	})
 }
 
@@ -411,7 +432,7 @@ var featureVariantListCmd = &cobra.Command{
 		return renderList(cmd, variants, "No variants.",
 			[]string{"VALUE", "WEIGHT", "KEY", "ID"},
 			func(_ int, v variantView) []string {
-				return []string{fmt.Sprint(v.Value), formatWeight(v.Weight), v.Key, strconv.Itoa(v.ID)}
+				return []string{fmt.Sprint(v.Value), weightPercent(v.Weight), v.Key, strconv.Itoa(v.ID)}
 			}, "", "")
 	},
 }

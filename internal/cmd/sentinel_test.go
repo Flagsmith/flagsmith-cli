@@ -22,25 +22,30 @@ import (
 // under internal/ fails this test until the decision is recorded.
 func TestEverySentinelHasAHintDecision(t *testing.T) {
 	sentinels := map[string]error{
-		"api.ErrPlanGated":            api.ErrPlanGated,
-		"api.ErrQuotaExceeded":        api.ErrQuotaExceeded,
-		"api.ErrWorkflowGated":        api.ErrWorkflowGated,
-		"auth.ErrNotLoggedIn":         auth.ErrNotLoggedIn,
-		"auth.ErrNoDiscovery":         auth.ErrNoDiscovery,
-		"auth.ErrKeychainUnavailable": auth.ErrKeychainUnavailable,
-		"auth.ErrRefreshFailed":       auth.ErrRefreshFailed,
-		"auth.ErrServerSideKey":       auth.ErrServerSideKey,
-		"auth.ErrLegacyAuthtoken":     auth.ErrLegacyAuthtoken,
-		"auth.ErrNotMasterKey":        auth.ErrNotMasterKey,
-		"bug.ErrUnexpected":           bug.ErrUnexpected,
-		"config.ErrServerSideKey":     config.ErrServerSideKey,
-		"prompt.ErrCancelled":         prompt.ErrCancelled,
+		"api.ErrPlanGated":             api.ErrPlanGated,
+		"api.ErrQuotaExceeded":         api.ErrQuotaExceeded,
+		"api.ErrFlagWritesUnsupported": api.ErrFlagWritesUnsupported,
+		"api.ErrNoSuchOverride":        api.ErrNoSuchOverride,
+		"api.ErrWorkflowGated":         api.ErrWorkflowGated,
+		"auth.ErrNotLoggedIn":          auth.ErrNotLoggedIn,
+		"auth.ErrNoDiscovery":          auth.ErrNoDiscovery,
+		"auth.ErrKeychainUnavailable":  auth.ErrKeychainUnavailable,
+		"auth.ErrRefreshFailed":        auth.ErrRefreshFailed,
+		"auth.ErrServerSideKey":        auth.ErrServerSideKey,
+		"auth.ErrLegacyAuthtoken":      auth.ErrLegacyAuthtoken,
+		"auth.ErrNotMasterKey":         auth.ErrNotMasterKey,
+		"bug.ErrUnexpected":            bug.ErrUnexpected,
+		"config.ErrServerSideKey":      config.ErrServerSideKey,
+		"prompt.ErrCancelled":          prompt.ErrCancelled,
 	}
 
 	// Sentinels reviewed and deliberately left without a hint.
 	consciouslyUnhinted := map[string]bool{
 		// The user chose to abort; there is nothing to recover from.
 		"prompt.ErrCancelled": true,
+		// Only reachable when the override goes between the check and the
+		// delete; `flag delete` hints for the case the user can act on.
+		"api.ErrNoSuchOverride": true,
 	}
 
 	found := scanSentinelNames(t)

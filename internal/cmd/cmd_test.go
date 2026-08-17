@@ -26,6 +26,7 @@ import (
 
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/auth"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/config"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
@@ -87,6 +88,7 @@ func resetFlags() {
 	apiFieldFlags = nil
 	apiRawFields = nil
 	evalTraitFlags = nil
+	flagWeightFlags = nil
 }
 
 // setEnvCred exports a credential variable host-scoped to url, as a
@@ -168,11 +170,13 @@ type fakeInstance struct {
 	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
 	orgListCalls   int                         // count of GET /organisations/ list calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
-	updateCalls    int                         // count of update-flag-v2 calls
-	lastUpdate     map[string]any              // last update-flag-v2 request body
-	lastDelete     map[string]any              // last delete-segment-override request body
-	workflowGated  bool                        // when true, update endpoints return 403
-	segmentMissing bool                        // when true, delete-segment-override returns 404
+	updateCalls    int                         // count of update-flag calls
+	lastUpdate     map[string]any              // last update-flag request body
+	lastUpdateVerb string                      // method of the last update-flag call
+	lastUpdateFeat string                      // feature id in the last update-flag path
+	deletedSegment int                         // segment id of the last override delete, 0 for none
+	oldInstance    bool                        // when true, the update-flag routes are absent
+	workflowGated  bool                        // when true, update-flag reports change requests
 
 	useEdge           bool                       // GET /projects/{id}/ use_edge_identities
 	coreIdentities    map[string]int             // identifier -> identity id
@@ -587,6 +591,11 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(clone)
 	})
+	mux.HandleFunc("GET /version/", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"image_tag": "2.262.0", "package_versions": map[string]string{".": "2.262.0"},
+		})
+	})
 	mux.HandleFunc("GET /api/v1/projects/{project}/features/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -628,46 +637,92 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 			"count": len(items), "next": nil, "previous": nil, "results": items,
 		})
 	})
-	mux.HandleFunc("POST /api/experiments/environments/{env}/update-flag-v2/", func(w http.ResponseWriter, r *http.Request) {
+	// Deleting one segment's override, which answers with the whole flag as the
+	// writes do.
+	mux.HandleFunc("DELETE /api/__future__/environments/{env}/features/{feature}/segment-overrides/{segment}/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		old := f.oldInstance
+		f.mu.Unlock()
+		if old {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "<h1>Not Found</h1>")
 			return
 		}
 		f.mu.Lock()
 		gated := f.workflowGated
 		f.mu.Unlock()
 		if gated {
-			w.WriteHeader(http.StatusForbidden)
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]any{
+				"detail": "Cannot update flags in an environment with change requests enabled.",
+				"code":   "change_requests_enabled",
+			})
 			return
 		}
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		featureKey, segment := r.PathValue("feature"), r.PathValue("segment")
+		segmentID, _ := strconv.Atoi(segment)
 		f.mu.Lock()
-		f.updateCalls++
-		f.lastUpdate = body
-		f.applyFlagUpdate(body)
-		f.mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
-	})
-	mux.HandleFunc("POST /api/experiments/environments/{env}/delete-segment-override/", func(w http.ResponseWriter, r *http.Request) {
-		if !authorized(r) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		f.mu.Lock()
-		missing := f.segmentMissing
-		f.mu.Unlock()
-		if missing {
+		defer f.mu.Unlock()
+		item := f.featureItem(featureKey)
+		if item == nil || f.overrideRow(featureKey, segmentID) == nil {
 			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{"detail": "Segment override not found."})
 			return
 		}
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		f.mu.Lock()
-		f.lastDelete = body
-		f.mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
+		f.deletedSegment = segmentID
+		keep := map[int]bool{}
+		for _, row := range f.featureSegments[featureKey] {
+			if id, _ := row["segment"].(int); id != segmentID {
+				keep[id] = true
+			}
+		}
+		f.deleteOverridesExcept(featureKey, item, keep)
+		json.NewEncoder(w).Encode(f.flagStateResponse(featureKey, item))
 	})
+	// update-flag: PATCH writes only the properties it carries.
+	for _, method := range []string{http.MethodPatch} {
+		mux.HandleFunc(method+" /api/__future__/environments/{env}/features/{feature}/", func(w http.ResponseWriter, r *http.Request) {
+			if !authorized(r) {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			f.mu.Lock()
+			old := f.oldInstance
+			f.mu.Unlock()
+			if old {
+				w.Header().Set("Content-Type", "text/html")
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(w, "<h1>Not Found</h1>")
+				return
+			}
+			f.mu.Lock()
+			gated := f.workflowGated
+			f.mu.Unlock()
+			if gated {
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]any{
+					"detail": "Cannot update flags in an environment with change requests enabled.",
+					"code":   "change_requests_enabled",
+				})
+				return
+			}
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			f.mu.Lock()
+			f.updateCalls++
+			f.lastUpdate = body
+			f.lastUpdateVerb = r.Method
+			f.lastUpdateFeat = r.PathValue("feature")
+			resp := f.applyFlagUpdate(r.PathValue("feature"), r.Method == http.MethodPut, body)
+			f.mu.Unlock()
+			json.NewEncoder(w).Encode(resp)
+		})
+	}
 	// Project retrieve — carries use_edge_identities.
 	mux.HandleFunc("GET /api/v1/projects/{project}/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorized(r) {
@@ -1373,58 +1428,242 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 	return f
 }
 
-// applyFlagUpdate mutates the stored features to reflect an update-flag-v2
-// body, so a re-fetch after the mutation sees the new state. Called under lock.
-func (f *fakeInstance) applyFlagUpdate(body map[string]any) {
-	feature, _ := body["feature"].(map[string]any)
-	name, _ := feature["name"].(string)
-	def, _ := body["environment_default"].(map[string]any)
-	enabled, _ := def["enabled"].(bool)
-	val, _ := def["value"].(map[string]any)
-	overrides, _ := body["segment_overrides"].([]any)
-	for _, items := range f.features {
-		for _, item := range items {
-			if item["name"] != name {
-				continue
+// applyFlagUpdate mutates the stored feature to reflect an update-flag body, so
+// a re-fetch after the mutation sees the new state, and returns the flag's
+// resulting state in the environment as the endpoint reports it. replace models
+// PUT: a property the body carries is written in full, so anything it leaves
+// out is reset, and an override missing from the list is deleted. Called under
+// lock.
+func (f *fakeInstance) applyFlagUpdate(featureKey string, replace bool, body map[string]any) map[string]any {
+	item := f.featureItem(featureKey)
+	if item == nil {
+		return map[string]any{}
+	}
+	if def, ok := body["environment_default"].(map[string]any); ok {
+		f.writeScope(ensureMap(item, "environment_feature_state"), f.stateRow(featureKey, 0), def, replace)
+	}
+	if overrides, ok := body["segment_overrides"].([]any); ok {
+		written := map[int]bool{}
+		for _, o := range overrides {
+			ov, _ := o.(map[string]any)
+			segment := wireSegmentID(ov)
+			written[segment] = true
+			row := f.ensureFeatureSegment(featureKey, segment)
+			if priority, ok := ov["priority"].(float64); ok {
+				row["priority"] = int(priority)
 			}
-			state, _ := item["environment_feature_state"].(map[string]any)
-			if state == nil {
-				state = map[string]any{}
-				item["environment_feature_state"] = state
-			}
-			state["enabled"] = enabled
-			state["feature_state_value"] = scalarFromWire(val)
-			featureKey := ""
-			if id, ok := item["id"].(int); ok {
-				featureKey = strconv.Itoa(id)
-			}
-			for _, o := range overrides {
-				ov, _ := o.(map[string]any)
-				segEnabled, _ := ov["enabled"].(bool)
-				segVal, _ := ov["value"].(map[string]any)
-				item["segment_feature_state"] = map[string]any{
-					"enabled": segEnabled, "feature_state_value": scalarFromWire(segVal),
-				}
-				// A priority write moves the feature-segment row, so a re-fetch
-				// sees the new order.
-				if prio, ok := ov["priority"].(float64); ok {
-					for _, row := range f.featureSegments[featureKey] {
-						if seg, _ := row["segment"].(int); float64(seg) == ov["segment_id"] {
-							row["priority"] = int(prio)
-						}
-					}
-				}
-			}
-			sort.SliceStable(f.featureSegments[featureKey], func(a, b int) bool {
-				pa, _ := f.featureSegments[featureKey][a]["priority"].(int)
-				pb, _ := f.featureSegments[featureKey][b]["priority"].(int)
-				return pa < pb
-			})
+			stateID, _ := row["id"].(int)
+			// The fake keeps one segment_feature_state per feature: it is only
+			// ever read back through the features list's ?segment= filter.
+			f.writeScope(ensureMap(item, "segment_feature_state"), f.stateRow(featureKey, stateID), ov, replace)
 		}
+		if replace {
+			f.deleteOverridesExcept(featureKey, item, written)
+		}
+		f.sortOverrides(featureKey)
+	}
+	return f.flagStateResponse(featureKey, item)
+}
+
+// writeScope applies one scope's requested state to the features-list view of
+// it and, when the test registered one, to its featurestates row — the only
+// place a scope's variant weights live.
+func (f *fakeInstance) writeScope(view, row, in map[string]any, replace bool) {
+	if enabled, ok := in["enabled"].(bool); ok {
+		view["enabled"] = enabled
+		if row != nil {
+			row["enabled"] = enabled
+		}
+	} else if replace {
+		view["enabled"] = false
+		if row != nil {
+			row["enabled"] = false
+		}
+	}
+	if value, ok := in["value"].(map[string]any); ok {
+		view["feature_state_value"] = scalarFromWire(value)
+		if row != nil {
+			row["feature_state_value"] = typedFromWire(value)
+		}
+	} else if replace {
+		view["feature_state_value"] = nil
+		if row != nil {
+			row["feature_state_value"] = typedFromWire(nil)
+		}
+	}
+	if row == nil {
+		return
+	}
+	if variants, ok := in["variants"].([]any); ok {
+		row["multivariate_feature_state_values"] = allocationsFromWire(variants)
+	} else if replace {
+		row["multivariate_feature_state_values"] = []map[string]any{}
 	}
 }
 
-// scalarFromWire turns an update-flag-v2 {type,value} into the bare scalar the
+// flagStateResponse is the flag's whole state in the environment: the default,
+// plus one entry per surviving segment override in priority order.
+func (f *fakeInstance) flagStateResponse(featureKey string, item map[string]any) map[string]any {
+	view, _ := item["environment_feature_state"].(map[string]any)
+	enabled, _ := view["enabled"].(bool)
+	overrides := []map[string]any{}
+	for _, fs := range f.featureSegments[featureKey] {
+		stateID, _ := fs["id"].(int)
+		segment, _ := fs["segment"].(int)
+		priority, _ := fs["priority"].(int)
+		// Without a registered featurestates row the fake has only the single
+		// segment_feature_state to report the override from.
+		ovEnabled, ovValue := false, any(nil)
+		if seg, ok := item["segment_feature_state"].(map[string]any); ok {
+			ovEnabled, _ = seg["enabled"].(bool)
+			ovValue = seg["feature_state_value"]
+		}
+		row := f.stateRow(featureKey, stateID)
+		if row != nil {
+			ovEnabled, _ = row["enabled"].(bool)
+			typed, _ := row["feature_state_value"].(map[string]any)
+			ovValue = scalarFromTyped(typed)
+		}
+		overrides = append(overrides, map[string]any{
+			"segment":  map[string]any{"id": segment},
+			"priority": priority,
+			"enabled":  ovEnabled,
+			"value":    wireValue(ovValue),
+			"variants": wireVariants(row),
+		})
+	}
+	return map[string]any{
+		"environment_default": map[string]any{
+			"enabled":  enabled,
+			"value":    wireValue(view["feature_state_value"]),
+			"variants": wireVariants(f.stateRow(featureKey, 0)),
+		},
+		"segment_overrides": overrides,
+	}
+}
+
+// featureItem finds a stored feature item by its id, as a path parameter
+// spells it, across every project (caller holds the lock).
+func (f *fakeInstance) featureItem(featureKey string) map[string]any {
+	id, err := strconv.Atoi(featureKey)
+	if err != nil {
+		return nil
+	}
+	for _, items := range f.features {
+		for _, item := range items {
+			if got, _ := item["id"].(int); got == id {
+				return item
+			}
+		}
+	}
+	return nil
+}
+
+// overrideRow returns the feature-segment row for one segment, or nil.
+func (f *fakeInstance) overrideRow(featureKey string, segmentID int) map[string]any {
+	for _, row := range f.featureSegments[featureKey] {
+		if id, _ := row["segment"].(int); id == segmentID {
+			return row
+		}
+	}
+	return nil
+}
+
+// stateRow returns the registered featurestates row for one scope — the
+// environment default for stateID 0, otherwise the override linked by that
+// feature-segment id — or nil when the test registered none.
+func (f *fakeInstance) stateRow(featureKey string, stateID int) map[string]any {
+	for _, row := range f.featureStates[featureKey] {
+		link, ok := row["feature_segment"].(int)
+		if !ok && stateID == 0 {
+			return row
+		}
+		if ok && link == stateID {
+			return row
+		}
+	}
+	return nil
+}
+
+// ensureFeatureSegment returns the feature-segment row for a segment, adding
+// one for an override that doesn't exist yet.
+func (f *fakeInstance) ensureFeatureSegment(featureKey string, segment int) map[string]any {
+	for _, row := range f.featureSegments[featureKey] {
+		if got, _ := row["segment"].(int); got == segment {
+			return row
+		}
+	}
+	if f.featureSegments == nil {
+		f.featureSegments = map[string][]map[string]any{}
+	}
+	row := map[string]any{
+		"id": 9000 + segment, "segment": segment, "segment_name": "",
+		"priority": len(f.featureSegments[featureKey]),
+	}
+	f.featureSegments[featureKey] = append(f.featureSegments[featureKey], row)
+	return row
+}
+
+// deleteOverridesExcept drops the overrides a replacing write left out.
+func (f *fakeInstance) deleteOverridesExcept(featureKey string, item map[string]any, keep map[int]bool) {
+	kept := []map[string]any{}
+	for _, row := range f.featureSegments[featureKey] {
+		segment, _ := row["segment"].(int)
+		if keep[segment] {
+			kept = append(kept, row)
+			continue
+		}
+		stateID, _ := row["id"].(int)
+		f.deleteStateRow(featureKey, stateID)
+	}
+	f.featureSegments[featureKey] = kept
+	if len(kept) == 0 {
+		delete(item, "segment_feature_state")
+	}
+}
+
+func (f *fakeInstance) deleteStateRow(featureKey string, stateID int) {
+	if f.featureStates[featureKey] == nil {
+		return
+	}
+	kept := []map[string]any{}
+	for _, row := range f.featureStates[featureKey] {
+		if link, ok := row["feature_segment"].(int); ok && link == stateID {
+			continue
+		}
+		kept = append(kept, row)
+	}
+	f.featureStates[featureKey] = kept
+}
+
+// sortOverrides keeps the feature-segment rows in priority order, as the
+// endpoint returns them.
+func (f *fakeInstance) sortOverrides(featureKey string) {
+	rows := f.featureSegments[featureKey]
+	sort.SliceStable(rows, func(a, b int) bool {
+		pa, _ := rows[a]["priority"].(int)
+		pb, _ := rows[b]["priority"].(int)
+		return pa < pb
+	})
+}
+
+// ensureMap returns a nested map on item, creating it when absent.
+func ensureMap(item map[string]any, key string) map[string]any {
+	nested, _ := item[key].(map[string]any)
+	if nested == nil {
+		nested = map[string]any{}
+		item[key] = nested
+	}
+	return nested
+}
+
+func wireSegmentID(override map[string]any) int {
+	segment, _ := override["segment"].(map[string]any)
+	id, _ := segment["id"].(float64)
+	return int(id)
+}
+
+// scalarFromWire turns an update-flag {type,value} into the bare scalar the
 // features list would report.
 func scalarFromWire(val map[string]any) any {
 	t, _ := val["type"].(string)
@@ -1438,6 +1677,108 @@ func scalarFromWire(val map[string]any) any {
 	default:
 		return v
 	}
+}
+
+// typedFromWire turns an update-flag {type,value} into the nested typed form
+// the featurestates rows carry.
+func typedFromWire(val map[string]any) map[string]any {
+	switch scalar := scalarFromWire(val).(type) {
+	case int:
+		return map[string]any{"type": "int", "integer_value": scalar}
+	case bool:
+		return map[string]any{"type": "bool", "boolean_value": scalar}
+	default:
+		return map[string]any{"type": "unicode", "string_value": scalar}
+	}
+}
+
+// scalarFromTyped reads a featurestates row's typed value back as a scalar.
+func scalarFromTyped(typed map[string]any) any {
+	switch typed["type"] {
+	case "int":
+		return typed["integer_value"]
+	case "bool":
+		return typed["boolean_value"]
+	default:
+		return typed["string_value"]
+	}
+}
+
+// wireValue types a scalar for an update-flag response. A feature with no value
+// at all reports null.
+func wireValue(scalar any) any {
+	switch v := scalar.(type) {
+	case nil:
+		return nil
+	case int:
+		return map[string]any{"type": "integer", "value": strconv.Itoa(v)}
+	case float64:
+		return map[string]any{"type": "integer", "value": strconv.Itoa(int(v))}
+	case bool:
+		return map[string]any{"type": "boolean", "value": strconv.FormatBool(v)}
+	default:
+		return map[string]any{"type": "string", "value": fmt.Sprint(v)}
+	}
+}
+
+// allocationsFromWire turns requested variants into the featurestates row's
+// per-scope allocations.
+func allocationsFromWire(variants []any) []map[string]any {
+	allocations := make([]map[string]any, 0, len(variants))
+	for _, v := range variants {
+		variant, _ := v.(map[string]any)
+		id, _ := variant["id"].(float64)
+		weight, _ := variant["weight"].(float64)
+		allocations = append(allocations, map[string]any{
+			"multivariate_feature_option": int(id), "percentage_allocation": weight,
+		})
+	}
+	return allocations
+}
+
+// wireVariants reports a scope's allocations the way the update-flag response
+// does. A scope with none — every standard feature — reports an empty list.
+func wireVariants(row map[string]any) []map[string]any {
+	variants := []map[string]any{}
+	if row == nil {
+		return variants
+	}
+	for _, a := range allocationRows(row) {
+		variants = append(variants, map[string]any{
+			"id":     int(number(a["multivariate_feature_option"])),
+			"weight": number(a["percentage_allocation"]),
+		})
+	}
+	return variants
+}
+
+// allocationRows reads a featurestates row's allocations, whether they were
+// registered by a test or written by an update.
+func allocationRows(row map[string]any) []map[string]any {
+	switch allocations := row["multivariate_feature_state_values"].(type) {
+	case []map[string]any:
+		return allocations
+	case []any:
+		rows := make([]map[string]any, 0, len(allocations))
+		for _, a := range allocations {
+			if row, ok := a.(map[string]any); ok {
+				rows = append(rows, row)
+			}
+		}
+		return rows
+	}
+	return nil
+}
+
+// number reads a JSON-ish number written as any of Go's numeric types.
+func number(v any) float64 {
+	switch n := v.(type) {
+	case int:
+		return float64(n)
+	case float64:
+		return n
+	}
+	return 0
 }
 
 func (f *fakeInstance) revokeCount() int {
@@ -3585,7 +3926,9 @@ func flagUpdateEnv(t *testing.T) *fakeInstance {
 }
 
 func TestFlagUpdate(t *testing.T) {
-	t.Run("--enable preserves the current value and reprints", func(t *testing.T) {
+	// A partial write is the point of the endpoint: --enable sends the state it
+	// changes and nothing else, so the value is left alone rather than echoed.
+	t.Run("--enable sends only the state, and reprints the value it left alone", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
 
@@ -3596,13 +3939,21 @@ func TestFlagUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("flag update: %v\noutput: %s", err, out)
 		}
+		if f.lastUpdateVerb != http.MethodPatch || f.lastUpdateFeat != "2" {
+			t.Errorf("request = %s feature %s, want PATCH feature 2", f.lastUpdateVerb, f.lastUpdateFeat)
+		}
 		def := f.lastUpdate["environment_default"].(map[string]any)
-		val := def["value"].(map[string]any)
-		if def["enabled"] != true || val["type"] != "integer" || val["value"] != "25" {
-			t.Errorf("environment_default = %+v", def)
+		if def["enabled"] != true || len(def) != 1 {
+			t.Errorf("environment_default = %+v, want enabled alone", def)
+		}
+		if _, ok := f.lastUpdate["segment_overrides"]; ok {
+			t.Errorf("body = %+v, want no segment_overrides key", f.lastUpdate)
 		}
 		if !strings.Contains(out, "Enabled max_items") {
 			t.Errorf("output = %q, want an Enabled confirmation", out)
+		}
+		if !strings.Contains(out, "25") {
+			t.Errorf("output = %q, want the untouched value reprinted", out)
 		}
 	})
 
@@ -3724,18 +4075,20 @@ func withFeatureStates(f *fakeInstance, featureID int, rows ...map[string]any) {
 // The fake serves requests concurrently (see fsPeak), so every field a handler
 // reads is set through a locked setter rather than assigned directly.
 
-// withWorkflowGating makes the update endpoints answer 403.
+// withOldInstance makes the fake answer the update-flag routes the way an
+// instance without them does: a 404 from outside the API, carrying no detail.
+func withOldInstance(f *fakeInstance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.oldInstance = true
+}
+
+// withWorkflowGating makes update-flag refuse the write, as it does for an
+// environment with change requests enabled.
 func withWorkflowGating(f *fakeInstance) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.workflowGated = true
-}
-
-// withMissingSegmentOverride makes delete-segment-override answer 404.
-func withMissingSegmentOverride(f *fakeInstance) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.segmentMissing = true
 }
 
 // withEdgeIdentities makes the project report use_edge_identities.
@@ -3879,19 +4232,18 @@ func TestSegmentOverridePriorityView(t *testing.T) {
 }
 
 func TestFlagEnableDisable(t *testing.T) {
-	t.Run("enable turns the environment default on, preserving value", func(t *testing.T) {
+	t.Run("enable turns the environment default on, leaving the value alone", func(t *testing.T) {
 		f := flagUpdateEnv(t) // max_items is off, integer 25
 		out, err := run("", "flag", "enable", "max_items", "--yes")
 		if err != nil {
 			t.Fatalf("flag enable: %v\noutput: %s", err, out)
 		}
 		def := f.lastUpdate["environment_default"].(map[string]any)
-		val := def["value"].(map[string]any)
-		if def["enabled"] != true || val["type"] != "integer" || val["value"] != "25" {
-			t.Errorf("environment_default = %+v, want enabled with the value carried", def)
+		if def["enabled"] != true || len(def) != 1 {
+			t.Errorf("environment_default = %+v, want enabled alone", def)
 		}
-		if !strings.Contains(out, "Enabled max_items") {
-			t.Errorf("output = %q, want an Enabled confirmation", out)
+		if !strings.Contains(out, "Enabled max_items") || !strings.Contains(out, "25") {
+			t.Errorf("output = %q, want an Enabled confirmation and the kept value", out)
 		}
 	})
 
@@ -3916,7 +4268,7 @@ func TestFlagEnableDisable(t *testing.T) {
 			t.Fatalf("flag enable --segment: %v", err)
 		}
 		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
-		if ov["segment_id"] != float64(7) || ov["enabled"] != true {
+		if wireSegmentID(ov) != 7 || ov["enabled"] != true {
 			t.Errorf("segment override = %+v, want enabled for segment 7", ov)
 		}
 	})
@@ -3932,7 +4284,7 @@ func TestFlagEnableDisable(t *testing.T) {
 }
 
 func TestFlagUpdateSegment(t *testing.T) {
-	t.Run("updates the override and carries the env default unchanged", func(t *testing.T) {
+	t.Run("writes the override alone, touching neither the default nor the rest", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
@@ -3944,26 +4296,28 @@ func TestFlagUpdateSegment(t *testing.T) {
 		if err != nil {
 			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
 		}
-		def := f.lastUpdate["environment_default"].(map[string]any)
-		defVal := def["value"].(map[string]any)
-		if def["enabled"] != false || defVal["type"] != "integer" || defVal["value"] != "25" {
-			t.Errorf("environment_default = %+v, want the current default carried unchanged", def)
+		if _, ok := f.lastUpdate["environment_default"]; ok {
+			t.Errorf("body = %+v, want no environment_default — nothing about it changed", f.lastUpdate)
 		}
 		ovs := f.lastUpdate["segment_overrides"].([]any)
 		ov := ovs[0].(map[string]any)
 		ovVal := ov["value"].(map[string]any)
-		if ov["segment_id"] != float64(12) || ov["enabled"] != true ||
-			ovVal["type"] != "string" || ovVal["value"] != "new" {
-			t.Errorf("segment override = %+v, want enabled preserved and value \"new\"", ov)
+		if wireSegmentID(ov) != 12 || ovVal["type"] != "string" || ovVal["value"] != "new" {
+			t.Errorf("segment override = %+v, want value \"new\" for segment 12", ov)
+		}
+		if _, ok := ov["enabled"]; ok {
+			t.Errorf("segment override = %+v, want no enabled key — a value edit must not touch the state", ov)
 		}
 		if !strings.Contains(out, `Set max_items to "new" for segment 12 in environment`) {
 			t.Errorf("output = %q", out)
 		}
 	})
 
-	t.Run("a new override inherits the env default state", func(t *testing.T) {
+	// A new override is the one case the CLI states the inherited parts of
+	// outright, rather than leaving them to the server.
+	t.Run("a new override states the env default's state and joins at the end", func(t *testing.T) {
 		// Given
-		f := flagUpdateEnv(t)
+		f := flagUpdateEnv(t) // onboarding_banner is on, with no overrides
 
 		// When
 		out, err := run("", "flag", "update", "onboarding_banner", "--segment", "7", "--value", "yo", "--yes")
@@ -3976,12 +4330,64 @@ func TestFlagUpdateSegment(t *testing.T) {
 		if ov["enabled"] != true {
 			t.Errorf("segment override = %+v, want enabled inherited from the env default (on)", ov)
 		}
+		if ov["priority"] != float64(0) {
+			t.Errorf("segment override = %+v, want priority 0 — the first override", ov)
+		}
 	})
 
-	t.Run("a new override inherits the env default value", func(t *testing.T) {
+	// A new override has no feature-segment row to read a name from, so the
+	// name the user typed (cached when it was resolved) is what names it.
+	t.Run("a new override is still named, not shown as a bare id", func(t *testing.T) {
+		// Given
+		flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "update", "onboarding_banner", "--segment", "us-adults", "--value", "yo", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --segment: %v\noutput: %s", err, out)
+		}
+		if !strings.Contains(out, "for segment us-adults (42)") {
+			t.Errorf("output = %q, want the segment named in the confirmation", out)
+		}
+		// Anchored to the detail's own row: the confirmation names the segment
+		// too, so counting occurrences would not say where they are.
+		if !regexp.MustCompile(`(?m)^Segment\s+us-adults \(42\)$`).MatchString(out) {
+			t.Errorf("output = %q, want the detail to name the segment too", out)
+		}
+	})
+
+	// The server rejects two overrides sharing a priority, so a new one has to
+	// clear every existing priority rather than count them.
+	t.Run("a new override joins past sparse priorities, not at their count", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, false)
+		withFeatureSegments(f, 2,
+			map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 10},
+			map[string]any{"id": 4200, "segment": 42, "segment_name": "us-adults", "priority": 20},
+		)
+
+		// When
+		if _, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes"); err != nil {
+			t.Fatalf("flag update --segment: %v", err)
+		}
+
+		// Then
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["priority"] != float64(21) {
+			t.Errorf("segment override = %+v, want priority 21 — past the highest, not the count", ov)
+		}
+	})
+
+	t.Run("a new override leaves the value to the server, which inherits it", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t) // max_items has 1 override, integer 25, off
+		withSegmentOverride(f, false)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+		})
 
 		// When
 		_, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
@@ -3991,10 +4397,11 @@ func TestFlagUpdateSegment(t *testing.T) {
 			t.Fatalf("flag update --segment: %v", err)
 		}
 		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
-		ovVal := ov["value"].(map[string]any)
-		if ov["segment_id"] != float64(7) || ov["enabled"] != true ||
-			ovVal["type"] != "integer" || ovVal["value"] != "25" {
-			t.Errorf("segment override = %+v, want inherited integer 25", ov)
+		if wireSegmentID(ov) != 7 || ov["enabled"] != true || ov["priority"] != float64(1) {
+			t.Errorf("segment override = %+v, want segment 7 enabled at priority 1", ov)
+		}
+		if _, ok := ov["value"]; ok {
+			t.Errorf("segment override = %+v, want no value key — the server inherits it", ov)
 		}
 	})
 }
@@ -4075,7 +4482,10 @@ func TestFlagUpdateRendersWithoutRefetch(t *testing.T) {
 	t.Run("a new override reports the appended priority", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
-		withSegmentOverride(f, false) // num_segment_overrides: 1
+		withSegmentOverride(f, false)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+		})
 
 		// When
 		out, err := run("", "flag", "update", "max_items", "--segment", "7", "--enable", "--yes")
@@ -4127,8 +4537,8 @@ func TestFlagSegmentByName(t *testing.T) {
 			t.Fatalf("flag update --segment beta-optin: %v", err)
 		}
 		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
-		if ov["segment_id"] != float64(57) {
-			t.Errorf("segment_id = %v, want 57 resolved from beta-optin", ov["segment_id"])
+		if wireSegmentID(ov) != 57 {
+			t.Errorf("segment = %v, want 57 resolved from beta-optin", ov["segment"])
 		}
 	})
 
@@ -4141,7 +4551,7 @@ func TestFlagSegmentByName(t *testing.T) {
 			t.Fatalf("flag disable --segment us-adults: %v", err)
 		}
 		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
-		if ov["segment_id"] != float64(42) || ov["enabled"] != false {
+		if wireSegmentID(ov) != 42 || ov["enabled"] != false {
 			t.Errorf("segment override = %+v, want segment 42 disabled", ov)
 		}
 	})
@@ -4149,13 +4559,16 @@ func TestFlagSegmentByName(t *testing.T) {
 	t.Run("flag delete --segment resolves a name", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 4200, "segment": 42, "segment_name": "us-adults", "priority": 0,
+		})
 
 		_, err := run("", "flag", "delete", "max_items", "--segment", "us-adults", "--yes")
 		if err != nil {
 			t.Fatalf("flag delete --segment us-adults: %v", err)
 		}
-		if f.lastDelete["segment"].(map[string]any)["id"] != float64(42) {
-			t.Errorf("delete body = %+v, want segment id 42", f.lastDelete)
+		if f.deletedSegment != 42 {
+			t.Errorf("deleted segment = %d, want 42 resolved from the name", f.deletedSegment)
 		}
 	})
 
@@ -4172,18 +4585,19 @@ func TestFlagSegmentByName(t *testing.T) {
 		}
 	})
 
-	t.Run("delete names the segment from the cache", func(t *testing.T) {
+	t.Run("delete names the segment from the override it removes", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withSegmentOverride(f, true)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 4200, "segment": 42, "segment_name": "us-adults", "priority": 0,
+		})
 
-		// Resolving the name lists segments, which warms the cache the
-		// delete message reads.
 		out, err := run("", "flag", "delete", "max_items", "--segment", "us-adults", "--yes")
 		if err != nil {
 			t.Fatalf("flag delete --segment us-adults: %v\noutput: %s", err, out)
 		}
 		if !strings.Contains(out, "Deleted max_items override for segment us-adults (42) in environment") {
-			t.Errorf("output = %q, want the segment named from the cache", out)
+			t.Errorf("output = %q, want the segment named from its override row", out)
 		}
 	})
 
@@ -4399,6 +4813,346 @@ func TestFlagListIdentityOverrides(t *testing.T) {
 	})
 }
 
+// withMultivariateFlag adds banner_copy (feature 3) to project 101: two
+// variants whose project-level defaults (30/50) have already drifted from the
+// weights in force — 25/75 in the environment, 100/0 for segment 12's override
+// — so a test can tell the scopes apart.
+func withMultivariateFlag(f *fakeInstance) {
+	f.features["101"] = append(f.features["101"], map[string]any{
+		"id": 3, "name": "banner_copy", "type": "MULTIVARIATE",
+		"description": "A/B banner text", "lifecycle_stage": "live",
+		"num_segment_overrides": 1, "num_identity_overrides": 0,
+		"code_references_counts":    []any{},
+		"environment_feature_state": map[string]any{"enabled": true, "feature_state_value": "hello"},
+		"segment_feature_state":     map[string]any{"enabled": true, "feature_state_value": "hello"},
+		"multivariate_options": []any{
+			map[string]any{"id": 30011, "type": "unicode", "string_value": "headline", "default_percentage_allocation": 30, "key": "hero"},
+			map[string]any{"id": 30010, "type": "unicode", "string_value": "subhead", "default_percentage_allocation": 50, "key": "sub"},
+		},
+	})
+	withFeatureSegments(f, 3, map[string]any{
+		"id": 3100, "segment": 12, "segment_name": "early-adopters", "priority": 0,
+	})
+	allocations := func(hero, sub float64) []map[string]any {
+		return []map[string]any{
+			{"multivariate_feature_option": 30011, "percentage_allocation": hero},
+			{"multivariate_feature_option": 30010, "percentage_allocation": sub},
+		}
+	}
+	hello := map[string]any{"type": "unicode", "string_value": "hello"}
+	withFeatureStates(f, 3,
+		map[string]any{"id": 30, "enabled": true, "feature_segment": nil,
+			"feature_state_value": hello, "multivariate_feature_state_values": allocations(25, 75)},
+		map[string]any{"id": 31, "enabled": true, "feature_segment": 3100,
+			"feature_state_value": hello, "multivariate_feature_state_values": allocations(100, 0)},
+	)
+}
+
+// wireWeights reads the variants of one scope in an update-flag request body.
+func wireWeights(scope map[string]any) map[int]float64 {
+	weights := map[int]float64{}
+	variants, _ := scope["variants"].([]any)
+	for _, v := range variants {
+		variant, _ := v.(map[string]any)
+		weights[int(number(variant["id"]))] = number(variant["weight"])
+	}
+	return weights
+}
+
+func TestFlagUpdateWeight(t *testing.T) {
+	t.Run("sends every variant, merged onto the environment's own weights", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		out, err := run("", "flag", "update", "banner_copy", "--weight", "hero=20", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --weight: %v\noutput: %s", err, out)
+		}
+		def := f.lastUpdate["environment_default"].(map[string]any)
+		// The unnamed variant keeps the environment's 75, not its project
+		// default of 50 — and is still sent, since a partial list is rejected.
+		if got := wireWeights(def); got[30011] != 20 || got[30010] != 75 || len(got) != 2 {
+			t.Errorf("variants = %+v, want hero re-weighted to 20 and sub kept at 75", got)
+		}
+		if !strings.Contains(out, "Set banner_copy weights to hero=20 in environment") {
+			t.Errorf("output = %q, want a weights confirmation", out)
+		}
+		// The detail reprint grows a Variants block, showing the new weights.
+		for _, want := range []string{"Variants", "VALUE", "WEIGHT", "KEY", "ID", "headline", "20%", "subhead", "75%", "30011"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+	})
+
+	t.Run("one --weight can carry comma-separated pairs, by key or id", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		_, err := run("", "flag", "update", "banner_copy", "--weight", "hero=10,30010=20", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --weight: %v", err)
+		}
+		def := f.lastUpdate["environment_default"].(map[string]any)
+		if got := wireWeights(def); got[30011] != 10 || got[30010] != 20 {
+			t.Errorf("variants = %+v, want hero=10 and the id-referenced sub=20", got)
+		}
+	})
+
+	t.Run("re-weights a segment override from its own distribution", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		out, err := run("", "flag", "update", "banner_copy", "--segment", "12", "--weight", "hero=70", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update --segment --weight: %v\noutput: %s", err, out)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		// sub keeps the override's own 0, not the environment's 75.
+		if got := wireWeights(ov); got[30011] != 70 || got[30010] != 0 {
+			t.Errorf("variants = %+v, want the override's own sub=0 kept", got)
+		}
+		if !strings.Contains(out, "Set banner_copy weights to hero=70 for segment early-adopters (12)") {
+			t.Errorf("output = %q", out)
+		}
+	})
+
+	t.Run("composes with a state and value change in one request", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		out, err := run("", "flag", "update", "banner_copy",
+			"--disable", "--value", "bye", "--weight", "hero=50,sub=50", "--yes")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag update: %v\noutput: %s", err, out)
+		}
+		f.mu.Lock()
+		calls := f.updateCalls
+		f.mu.Unlock()
+		if calls != 1 {
+			t.Errorf("update calls = %d, want one request", calls)
+		}
+		def := f.lastUpdate["environment_default"].(map[string]any)
+		if def["enabled"] != false || def["value"].(map[string]any)["value"] != "bye" {
+			t.Errorf("environment_default = %+v, want disabled with the new value", def)
+		}
+		if got := wireWeights(def); got[30011] != 50 || got[30010] != 50 {
+			t.Errorf("variants = %+v, want an even split", got)
+		}
+	})
+
+	// Weights that overflow, name nothing, or aren't weights at all are caught
+	// before the write: the endpoint would reject some of them, and take an
+	// unknown key as a new variant.
+	for _, tc := range []struct {
+		name, arg, want string
+	}{
+		{"over 100 in total", "hero=40", ""}, // filled in below
+		{"not a pair", "hero", "is not <key|id>=<percentage>"},
+		{"not a percentage", "hero=lots", "is not a percentage"},
+		{"over 100 on its own", "hero=140", "is not a percentage"},
+		{"negative", "hero=-1", "is not a percentage"},
+		{"the same variant twice", "hero=10,hero=20", "given twice"},
+		{"the same variant by key and by id", "hero=10,30011=20", "hero and 30011 are the same variant"},
+		{"the same variant by id and by key", "30011=10,hero=20", "30011 and hero are the same variant"},
+		{"an unknown key", "heroic=10", "is not a variant of banner_copy"},
+		{"an unknown id", "99999=10", "is not a variant of banner_copy"},
+		{"the control", "control=10", `"control" is not a variant`},
+	} {
+		t.Run(tc.name+" exits 2 without writing", func(t *testing.T) {
+			// Given
+			f := flagUpdateEnv(t)
+			withMultivariateFlag(f)
+			arg, want := tc.arg, tc.want
+			if want == "" { // the environment's sub=75 makes hero=40 overflow
+				want = "add up to 115%"
+				arg = "hero=40,sub=75"
+			}
+
+			// When
+			_, err := run("", "flag", "update", "banner_copy", "--weight", arg, "--yes")
+
+			// Then
+			var ue *usageError
+			if !errors.As(err, &ue) || !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %v, want a usage error containing %q", err, want)
+			}
+			if f.lastUpdate != nil {
+				t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+			}
+		})
+	}
+
+	t.Run("a feature with no variants exits 2, pointing at feature variant", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+
+		// When
+		_, err := run("", "flag", "update", "max_items", "--weight", "hero=10", "--yes")
+
+		// Then
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "no variants to weight") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		if hint := hintFor(err); !strings.Contains(hint, "feature variant add") {
+			t.Errorf("hint = %q, want a pointer to `feature variant add`", hint)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+
+	t.Run("an identity takes a value, not a distribution", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		_, err := run("", "flag", "update", "banner_copy", "--identifier", "user-1", "--weight", "hero=10", "--yes")
+
+		// Then
+		var ue *usageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no write", f.lastUpdate)
+		}
+	})
+
+	t.Run("bad syntax costs no request at all", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		_, err := run("", "flag", "update", "banner_copy", "--weight", "=10", "--yes")
+
+		// Then
+		var ue *usageError
+		if !errors.As(err, &ue) {
+			t.Errorf("err = %v, want a usage error", err)
+		}
+		if got := f.featuresCalls(); got != 0 {
+			t.Errorf("features calls = %d, want the flag parsed before any request", got)
+		}
+	})
+}
+
+func TestFlagGetVariants(t *testing.T) {
+	t.Run("shows the environment's weights, not the variants' defaults", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		out, err := run("", "flag", "get", "banner_copy")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag get: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"multivariate", "Variants", "headline", "25%", "subhead", "75%", "hero", "30011"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		if strings.Contains(out, "30%") || strings.Contains(out, "50%") {
+			t.Errorf("output = %q, want the environment's weights rather than the project defaults", out)
+		}
+		_ = f
+	})
+
+	t.Run("--json carries the variants", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		out, err := run("", "flag", "get", "banner_copy", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag get --json: %v", err)
+		}
+		var view struct {
+			Type     string `json:"type"`
+			Variants []struct {
+				ID     int     `json:"id"`
+				Key    string  `json:"key"`
+				Value  any     `json:"value"`
+				Weight float64 `json:"weight"`
+			} `json:"variants"`
+		}
+		if err := json.Unmarshal([]byte(out), &view); err != nil {
+			t.Fatalf("json: %v\noutput: %s", err, out)
+		}
+		if view.Type != "multivariate" || len(view.Variants) != 2 {
+			t.Fatalf("view = %+v", view)
+		}
+		if v := view.Variants[0]; v.ID != 30011 || v.Key != "hero" || v.Value != "headline" || v.Weight != 25 {
+			t.Errorf("first variant = %+v", v)
+		}
+		_ = f
+	})
+
+	t.Run("--segment shows the override's weights", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withMultivariateFlag(f)
+
+		// When
+		out, err := run("", "flag", "get", "banner_copy", "--segment", "12")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag get --segment: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"early-adopters (12)", "Variants", "headline", "100%", "subhead", "0%"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
+		}
+		_ = f
+	})
+
+	t.Run("a flag without variants shows no Variants block, and costs no state read", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "flag", "get", "max_items")
+
+		// Then
+		if err != nil {
+			t.Fatalf("flag get: %v\noutput: %s", err, out)
+		}
+		if strings.Contains(out, "Variants") {
+			t.Errorf("output = %q, want no Variants block", out)
+		}
+		if got := f.featureStatesCalls(); got != 0 {
+			t.Errorf("featurestates calls = %d, want 0 for a standard feature", got)
+		}
+	})
+}
+
 func TestFlagUpdatePriority(t *testing.T) {
 	// max_items (feature 2) has one override, for segment 12 at priority 1.
 	overrideMeta := func(f *fakeInstance) {
@@ -4417,13 +5171,8 @@ func TestFlagUpdatePriority(t *testing.T) {
 			t.Fatalf("flag update --priority: %v\noutput: %s", err, out)
 		}
 		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
-		if ov["priority"] != float64(0) {
-			t.Errorf("override = %+v, want priority 0", ov)
-		}
-		// The override's current state rides along unchanged.
-		ovVal := ov["value"].(map[string]any)
-		if ov["enabled"] != true || ovVal["value"] != "special" {
-			t.Errorf("override = %+v, want current state echoed", ov)
+		if ov["priority"] != float64(0) || len(ov) != 2 {
+			t.Errorf("override = %+v, want the segment and priority 0 alone", ov)
 		}
 		if !strings.Contains(out, "Set max_items priority to 0 for segment powerusers (12) in environment") {
 			t.Errorf("output = %q, want a priority confirmation naming the segment", out)
@@ -4460,12 +5209,28 @@ func TestFlagUpdatePriority(t *testing.T) {
 		}
 	})
 
-	t.Run("out of range exits 2 before any write", func(t *testing.T) {
+	// Priorities order the overrides but needn't be dense, so a number past
+	// their count is a legitimate move, not a mistake to reject.
+	t.Run("a sparse priority is sent as given", func(t *testing.T) {
 		f := flagUpdateEnv(t)
-		withSegmentOverride(f, true) // num_segment_overrides: 1 → valid range 0..0
+		withSegmentOverride(f, true)
 		overrideMeta(f)
 
-		_, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "5", "--yes")
+		if _, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "50", "--yes"); err != nil {
+			t.Fatalf("flag update --priority 50: %v", err)
+		}
+		ov := f.lastUpdate["segment_overrides"].([]any)[0].(map[string]any)
+		if ov["priority"] != float64(50) {
+			t.Errorf("override = %+v, want priority 50", ov)
+		}
+	})
+
+	t.Run("a negative priority exits 2 before any write", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withSegmentOverride(f, true)
+		overrideMeta(f)
+
+		_, err := run("", "flag", "update", "max_items", "--segment", "12", "--priority", "-1", "--yes")
 		var ue *usageError
 		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--priority") {
 			t.Errorf("err = %v, want a usage error naming --priority", err)
@@ -4497,24 +5262,29 @@ func TestFlagFeatureByID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("flag update 2: %v\noutput: %s", err, out)
 		}
-		feature := f.lastUpdate["feature"].(map[string]any)
-		if feature["name"] != "max_items" {
-			t.Errorf("feature ref = %+v, want the canonical name on the wire", feature)
+		if f.lastUpdateFeat != "2" {
+			t.Errorf("feature on the wire = %q, want id 2", f.lastUpdateFeat)
 		}
 		if !strings.Contains(out, "Enabled max_items") {
 			t.Errorf("output = %q, want the canonical name in the message", out)
 		}
 	})
 
-	t.Run("delete --segment by id targets the id on the wire", func(t *testing.T) {
+	t.Run("delete --segment by id resolves the feature", func(t *testing.T) {
 		f := flagUpdateEnv(t)
+		withFeatureSegments(f, 2, map[string]any{
+			"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+		})
 
-		_, err := run("", "flag", "delete", "2", "--segment", "12", "--yes")
+		out, err := run("", "flag", "delete", "2", "--segment", "12", "--yes")
 		if err != nil {
 			t.Fatalf("flag delete 2: %v", err)
 		}
-		if f.lastDelete["feature"].(map[string]any)["id"] != float64(2) {
-			t.Errorf("delete body = %+v, want the feature targeted by id", f.lastDelete)
+		if f.deletedSegment != 12 {
+			t.Errorf("deleted segment = %d, want 12", f.deletedSegment)
+		}
+		if !strings.Contains(out, "Deleted max_items override") {
+			t.Errorf("output = %q, want the canonical name in the message", out)
 		}
 	})
 
@@ -4526,8 +5296,8 @@ func TestFlagFeatureByID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("flag reorder 2: %v", err)
 		}
-		if f.lastUpdate["feature"].(map[string]any)["name"] != "max_items" {
-			t.Errorf("feature ref = %+v, want the canonical name on the wire", f.lastUpdate["feature"])
+		if f.lastUpdateFeat != "2" {
+			t.Errorf("feature on the wire = %q, want id 2", f.lastUpdateFeat)
 		}
 	})
 }
@@ -4536,33 +5306,7 @@ func TestFlagReorder(t *testing.T) {
 	// Fixture: max_items has overrides beta-optin (57, priority 0, "blue",
 	// on) and us-adults (42, priority 1, 25, off); env default off/25.
 
-	t.Run("refuses to reorder when an override has no state row", func(t *testing.T) {
-		// Given us-adults' state row missing — as a concurrent delete would
-		// leave it. Echoing a zero state would disable and blank the override.
-		f := flagUpdateEnv(t)
-		withFeatureOverridesFixture(f)
-		str := func(s string) map[string]any { return map[string]any{"type": "unicode", "string_value": s} }
-		withFeatureStates(f, 2,
-			map[string]any{"id": 9000, "feature_segment": nil, "enabled": false, "feature_state_value": str("default")},
-			map[string]any{"id": 9001, "feature_segment": 1200, "enabled": true, "feature_state_value": str("blue")},
-		)
-
-		// When
-		_, err := run("", "flag", "reorder", "max_items", "us-adults", "beta-optin", "--yes")
-
-		// Then
-		if err == nil || !strings.Contains(err.Error(), "42") {
-			t.Errorf("err = %v, want a refusal naming the segment", err)
-		}
-		f.mu.Lock()
-		calls := f.updateCalls
-		f.mu.Unlock()
-		if calls != 0 {
-			t.Errorf("update calls = %d, want no write at all", calls)
-		}
-	})
-
-	t.Run("re-permutes every override in one request", func(t *testing.T) {
+	t.Run("re-permutes every override in one request, writing priorities alone", func(t *testing.T) {
 		f := flagUpdateEnv(t)
 		withFeatureOverridesFixture(f)
 
@@ -4582,32 +5326,34 @@ func TestFlagReorder(t *testing.T) {
 		}
 		first := ovs[0].(map[string]any)
 		second := ovs[1].(map[string]any)
-		if first["segment_id"] != float64(42) || first["priority"] != float64(0) {
+		if wireSegmentID(first) != 42 || first["priority"] != float64(0) {
 			t.Errorf("first override = %+v, want us-adults at priority 0", first)
 		}
-		if second["segment_id"] != float64(57) || second["priority"] != float64(1) {
+		if wireSegmentID(second) != 57 || second["priority"] != float64(1) {
 			t.Errorf("second override = %+v, want beta-optin at priority 1", second)
 		}
-		// Each override echoes its current state so nothing else changes.
-		firstVal := first["value"].(map[string]any)
-		secondVal := second["value"].(map[string]any)
-		if first["enabled"] != false || firstVal["type"] != "integer" || firstVal["value"] != "25" {
-			t.Errorf("first override = %+v, want current state echoed", first)
+		// Nothing but the priorities is sent, so no state can be disturbed by
+		// a move — not the overrides', and not the environment default's.
+		for _, ov := range []map[string]any{first, second} {
+			if len(ov) != 2 {
+				t.Errorf("override = %+v, want the segment and its priority alone", ov)
+			}
 		}
-		if second["enabled"] != true || secondVal["value"] != "blue" {
-			t.Errorf("second override = %+v, want current state echoed", second)
-		}
-		// The environment default rides along unchanged.
-		def := f.lastUpdate["environment_default"].(map[string]any)
-		if def["enabled"] != false {
-			t.Errorf("environment_default = %+v, want carried unchanged", def)
+		if _, ok := f.lastUpdate["environment_default"]; ok {
+			t.Errorf("body = %+v, want no environment_default", f.lastUpdate)
 		}
 		if !strings.Contains(out, "Reordered 2 segment overrides for max_items") {
 			t.Errorf("output = %q, want a reorder confirmation", out)
 		}
-		// The resulting order is printed, us-adults now first.
+		// The resulting order is printed, us-adults now first, with each
+		// override's untouched state read back from the response.
 		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
 			t.Errorf("output = %q, want the resulting table with us-adults first", out)
+		}
+		for _, want := range []string{"25", "blue"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want each override's kept value (%s)", out, want)
+			}
 		}
 	})
 
@@ -4629,8 +5375,8 @@ func TestFlagReorder(t *testing.T) {
 		if got := f.featureSegmentsCalls(); got != 1 {
 			t.Errorf("feature-segments calls = %d, want 1", got)
 		}
-		if got := f.featureStatesCalls(); got != 1 {
-			t.Errorf("featurestates calls = %d, want 1", got)
+		if got := f.featureStatesCalls(); got != 0 {
+			t.Errorf("featurestates calls = %d, want 0 (a priority move needs no state)", got)
 		}
 		if us, beta := strings.Index(out, "us-adults"), strings.Index(out, "beta-optin"); us == -1 || us > beta {
 			t.Errorf("output = %q, want the resulting table with us-adults first", out)
@@ -4711,10 +5457,82 @@ func TestFlagReorder(t *testing.T) {
 	})
 }
 
-func TestFlagDelete(t *testing.T) {
-	t.Run("deletes a segment override", func(t *testing.T) {
+// withTwoSegmentOverrides gives max_items overrides for segments 12 and 42,
+// each with its own state, so a write that must preserve one can be seen doing
+// it.
+func withTwoSegmentOverrides(f *fakeInstance) {
+	withFeatureSegments(f, 2,
+		map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0},
+		map[string]any{"id": 4200, "segment": 42, "segment_name": "us-adults", "priority": 1},
+	)
+	withFeatureStates(f, 2,
+		map[string]any{"id": 10, "enabled": false, "feature_segment": nil,
+			"feature_state_value": map[string]any{"type": "int", "integer_value": 25}},
+		map[string]any{"id": 11, "enabled": true, "feature_segment": 1200,
+			"feature_state_value": map[string]any{"type": "unicode", "string_value": "special"}},
+		map[string]any{"id": 12, "enabled": false, "feature_segment": 4200,
+			"feature_state_value": map[string]any{"type": "int", "integer_value": 99}},
+	)
+}
+
+// An instance older than the update-flag endpoints has to say so: the 404 it
+// answers with would otherwise read as a CLI bug worth reporting.
+func TestFlagWritesNeedANewerInstance(t *testing.T) {
+	for _, args := range [][]string{
+		{"flag", "update", "max_items", "--enable"},
+		{"flag", "enable", "max_items"},
+		{"flag", "delete", "max_items", "--segment", "12"},
+		{"flag", "reorder", "max_items", "powerusers"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			// Given
+			f := flagUpdateEnv(t)
+			withFeatureSegments(f, 2, map[string]any{
+				"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0,
+			})
+			withOldInstance(f)
+
+			// When
+			_, err := run("", append(args, "--yes")...)
+
+			// Then
+			if !errors.Is(err, api.ErrFlagWritesUnsupported) {
+				t.Fatalf("err = %v, want ErrFlagWritesUnsupported", err)
+			}
+			// The instance's own version comes from /version, so "upgrade" can be
+			// read against something.
+			for _, want := range []string{"2.263.0", "2.262.0"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("err = %v, want it to mention %s", err, want)
+				}
+			}
+			if hint := hintFor(err); !strings.Contains(hint, "Upgrade") {
+				t.Errorf("hint = %q, want it to point at upgrading", hint)
+			}
+			if errors.Is(err, bug.ErrUnexpected) {
+				t.Errorf("err = %v, want it not to read as a bug to report", err)
+			}
+		})
+	}
+
+	t.Run("reads keep working", func(t *testing.T) {
 		// Given
 		f := flagUpdateEnv(t)
+		withOldInstance(f)
+
+		// When / Then
+		if out, err := run("", "flag", "get", "max_items"); err != nil {
+			t.Errorf("flag get: %v\noutput: %s", err, out)
+		}
+		_ = f
+	})
+}
+
+func TestFlagDelete(t *testing.T) {
+	t.Run("deletes the one override, leaving the others alone", func(t *testing.T) {
+		// Given
+		f := flagUpdateEnv(t)
+		withTwoSegmentOverrides(f)
 
 		// When
 		out, err := run("", "flag", "delete", "max_items", "--segment", "12", "--yes")
@@ -4723,11 +5541,14 @@ func TestFlagDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("flag delete: %v\noutput: %s", err, out)
 		}
-		if f.lastDelete["feature"].(map[string]any)["name"] != "max_items" ||
-			f.lastDelete["segment"].(map[string]any)["id"] != float64(12) {
-			t.Errorf("delete body = %+v", f.lastDelete)
+		if f.deletedSegment != 12 {
+			t.Errorf("deleted segment = %d, want 12", f.deletedSegment)
 		}
-		if !strings.Contains(out, "Deleted max_items override for segment 12") {
+		// Nothing is restated, so no write can touch the survivor.
+		if f.lastUpdate != nil {
+			t.Errorf("lastUpdate = %+v, want no update-flag write at all", f.lastUpdate)
+		}
+		if !strings.Contains(out, "Deleted max_items override for segment powerusers (12)") {
 			t.Errorf("output = %q", out)
 		}
 	})
@@ -4739,17 +5560,25 @@ func TestFlagDelete(t *testing.T) {
 		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "--segment") {
 			t.Errorf("err = %v, want a usage error naming --segment", err)
 		}
-		if f.lastDelete != nil {
-			t.Errorf("lastDelete = %+v, want no call", f.lastDelete)
+		if f.deletedSegment != 0 {
+			t.Errorf("deleted segment = %d, want no call", f.deletedSegment)
 		}
 	})
 
-	t.Run("missing override reports not found", func(t *testing.T) {
+	t.Run("a segment with no override errors before any write", func(t *testing.T) {
+		// Given
 		f := flagUpdateEnv(t)
-		withMissingSegmentOverride(f)
-		_, err := run("", "flag", "delete", "max_items", "--segment", "99", "--yes")
-		if err == nil || !strings.Contains(err.Error(), "segment 99") {
+		withTwoSegmentOverrides(f)
+
+		// When
+		_, err := run("", "flag", "delete", "max_items", "--segment", "57", "--yes")
+
+		// Then
+		if err == nil || !strings.Contains(err.Error(), "segment 57") {
 			t.Errorf("err = %v, want a not-found error naming the segment", err)
+		}
+		if f.deletedSegment != 0 {
+			t.Errorf("deleted segment = %d, want no call", f.deletedSegment)
 		}
 	})
 }
@@ -5309,7 +6138,8 @@ func TestFeatureGet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("feature get: %v\noutput: %s", err, out)
 		}
-		for _, want := range []string{"banner-copy (91)", "multivariate", "hello", "Variants", "headline", "30", "hero", "subhead"} {
+		// Human views mark every weight as the percentage it is.
+		for _, want := range []string{"banner-copy (91)", "multivariate", "hello", "Variants", "headline", "30%", "hero", "subhead", "70%"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want %q", out, want)
 			}
@@ -5632,7 +6462,7 @@ func TestFeatureVariant(t *testing.T) {
 		if err != nil {
 			t.Fatalf("variant list: %v\noutput: %s", err, out)
 		}
-		for _, want := range []string{"VALUE", "WEIGHT", "KEY", "ID", "headline", "30", "hero", "201", "subhead"} {
+		for _, want := range []string{"VALUE", "WEIGHT", "KEY", "ID", "headline", "30%", "hero", "201", "subhead", "70%"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output = %q, want %q", out, want)
 			}

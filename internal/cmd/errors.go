@@ -26,6 +26,8 @@ const (
 	hintSDKAPIURL = "Check --sdk-api-url (or `sdkApiUrl`) — it must point at a Flagsmith SDK API."
 	hintAPIURL    = "Check --api-url (or `apiUrl`) — it must point at a Flagsmith API."
 
+	hintUpgradeInstance = "Upgrade the instance, or point --api-url at one new enough. Reading flags works on any version."
+
 	hintEnvironmentList  = "Run `flagsmith environment list` to see the environments in this project."
 	hintProjectList      = "Run `flagsmith project list` to see the projects you can access."
 	hintOrganisationList = "Run `flagsmith organisation list` to see the organisations you can access."
@@ -117,6 +119,8 @@ func hintFor(err error) string {
 		return hintPricing
 	case errors.Is(err, api.ErrWorkflowGated):
 		return docsHint("advanced-use/change-requests")
+	case errors.Is(err, api.ErrFlagWritesUnsupported):
+		return hintUpgradeInstance
 	// Last, so any condition with a specific recovery wins over "report it".
 	case errors.Is(err, bug.ErrUnexpected):
 		return hintReportIssue

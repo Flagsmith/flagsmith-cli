@@ -3,11 +3,12 @@ package cmd
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/api"
-	"github.com/Flagsmith/flagsmith-cli/v2/internal/cache"
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/output"
 )
 
@@ -16,6 +17,7 @@ var (
 	flagDisableFlag      bool
 	flagValueFlag        string
 	flagTypeFlag         string
+	flagWeightFlags      []string
 	flagUpdateSegment    string
 	flagUpdateIdentifier string
 	flagUpdatePriority   int
@@ -36,7 +38,11 @@ var flagUpdateCmd = &cobra.Command{
 
   # target a segment or identity override instead of the default
   flagsmith flag update onboarding --enable --segment 12
-  flagsmith flag update onboarding --value beta --identifier user-123`,
+  flagsmith flag update onboarding --value beta --identifier user-123
+
+  # re-weight a multivariate flag's variants (by key or id)
+  flagsmith flag update banner-copy --weight hero=25 --weight sub=75
+  flagsmith flag update banner-copy --segment 12 --weight hero=100,sub=0`,
 	Args: cobra.ExactArgs(1),
 	RunE: runFlagUpdate,
 }
@@ -58,12 +64,116 @@ func runFlagUpdate(cmd *cobra.Command, args []string) error {
 		return usageErrorf("--enable and --disable are mutually exclusive")
 	case m.setPriority && m.segmentRef == "":
 		return usageErrorf("--priority only applies together with --segment")
-	case !m.enable && !m.disable && !m.setValue && !m.setPriority:
-		return usageErrorf("nothing to update — pass --enable, --disable, --value, or --priority")
+	case len(flagWeightFlags) > 0 && m.identifier != "":
+		return hintf(usageErrorf("--weight and --identifier are mutually exclusive"),
+			"An identity is served one concrete value, not a distribution — use --value.")
+	case !m.enable && !m.disable && !m.setValue && !m.setPriority && len(flagWeightFlags) == 0:
+		return usageErrorf("nothing to update — pass --enable, --disable, --value, --weight, or --priority")
 	case cmd.Flags().Changed("type") && !m.setValue:
 		return usageErrorf("--type only applies together with --value")
 	}
+	// Parsed up front: bad syntax should cost no request.
+	weights, err := parseWeights(flagWeightFlags)
+	if err != nil {
+		return err
+	}
+	m.weights = weights
 	return applyFlagMutation(cmd, args[0], m)
+}
+
+// weightRef is one --weight pair: a variant reference (key or id) and the
+// percentage of traffic it should serve.
+type weightRef struct {
+	ref    string
+	weight float64
+}
+
+// controlVariantKey is the backend's reserved name for the share of traffic no
+// variant claims. It is not a variant, so it cannot be weighted directly.
+const controlVariantKey = "control"
+
+// parseWeights parses repeated --weight values, each one or more
+// comma-separated <key|id>=<percentage> pairs.
+func parseWeights(args []string) ([]weightRef, error) {
+	var refs []weightRef
+	seen := map[string]bool{}
+	for _, arg := range args {
+		for _, pair := range strings.Split(arg, ",") {
+			ref, raw, ok := strings.Cut(strings.TrimSpace(pair), "=")
+			if !ok || ref == "" || raw == "" {
+				return nil, usageErrorf("--weight %q is not <key|id>=<percentage>", pair)
+			}
+			weight, err := strconv.ParseFloat(raw, 64)
+			if err != nil || weight < 0 || weight > 100 {
+				return nil, usageErrorf("--weight %s: %q is not a percentage between 0 and 100", ref, raw)
+			}
+			if ref == controlVariantKey {
+				return nil, hintf(usageErrorf("%q is not a variant", controlVariantKey),
+					"Whatever the variants leave unallocated serves the flag's own value — set it with --value.")
+			}
+			// Two references to one variant are caught after they resolve, in
+			// mergeWeights; this only catches the same one written twice.
+			if seen[ref] {
+				return nil, usageErrorf("--weight %s is given twice", ref)
+			}
+			seen[ref] = true
+			refs = append(refs, weightRef{ref: ref, weight: weight})
+		}
+	}
+	return refs, nil
+}
+
+// weightSummary renders the requested weights for a confirmation line, in the
+// order and by the references the user gave.
+func weightSummary(refs []weightRef) string {
+	pairs := make([]string, len(refs))
+	for i, r := range refs {
+		pairs[i] = r.ref + "=" + formatWeight(r.weight)
+	}
+	return strings.Join(pairs, ", ")
+}
+
+// weightTolerance absorbs the rounding of percentages that are exact in decimal
+// but not in binary, so weights a user reads as summing to 100 are accepted.
+const weightTolerance = 1e-9
+
+// mergeWeights overlays the requested weights onto the scope's current
+// distribution, and returns the whole variant list: the endpoint rejects a
+// partial one, and sending everything is also what keeps an unnamed variant at
+// the weight it already had.
+func mergeWeights(feature *api.Feature, current variantWeights, refs []weightRef) ([]api.Variant, error) {
+	weights := make(variantWeights, len(feature.MultivariateOptions))
+	for _, o := range feature.MultivariateOptions {
+		weights[o.ID] = current[o.ID]
+	}
+	namedBy := make(map[int]string, len(refs))
+	for _, r := range refs {
+		// Resolved against the feature, never created: the endpoint would take
+		// an unknown key as a new variant, so a typo would silently add one.
+		option := findVariant(feature, r.ref)
+		if option == nil {
+			return nil, hintf(usageErrorf("%q is not a variant of %s", r.ref, feature.Name),
+				"Run `flagsmith feature variant list %s` to see its variants, or `flagsmith feature variant add %s` to add one.",
+				feature.Name, feature.Name)
+		}
+		// A variant named twice — by key and by id, say — is two weights for one
+		// variant, and picking one of them silently is the wrong answer.
+		if first, ok := namedBy[option.ID]; ok {
+			return nil, usageErrorf("--weight %s and %s are the same variant", first, r.ref)
+		}
+		namedBy[option.ID] = r.ref
+		weights[option.ID] = r.weight
+	}
+	total := 0.0
+	variants := make([]api.Variant, 0, len(feature.MultivariateOptions))
+	for _, o := range feature.MultivariateOptions {
+		variants = append(variants, api.Variant{ID: o.ID, Weight: weights[o.ID]})
+		total += weights[o.ID]
+	}
+	if total > 100+weightTolerance {
+		return nil, usageErrorf("the merged weights add up to %s%%, over the 100%% available", formatWeight(total))
+	}
+	return variants, nil
 }
 
 // flagMutation is the state change a flag command applies to one feature — some
@@ -75,13 +185,14 @@ type flagMutation struct {
 	enable, disable, setValue bool
 	setPriority               bool
 	priority                  int
+	weights                   []weightRef
 	segmentRef                string
 	identifier                string
 }
 
-// applyFlagMutation resolves the feature and applies m via update-flag-v2 (which
-// requires the whole environment default, so the rest is carried forward
-// unchanged), then reprints the resulting flag.
+// applyFlagMutation resolves the feature and applies m as a partial update-flag
+// write — only the properties m changes are sent, and the rest are left as they
+// are — then reprints the resulting flag from the endpoint's response.
 func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	_, cred, projectID, env, err := flagContext(cmd)
 	if err != nil {
@@ -95,84 +206,87 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if err != nil {
 		return err
 	}
-	name = feature.Name // canonical for the wire ref and messages
+	name = feature.Name // canonical for messages
 
 	if m.identifier != "" {
 		return runIdentityUpdate(cmd, cred, env, projectID, feature, m.identifier, m.enable, m.disable, m.setValue)
 	}
 
-	req := api.UpdateFlagRequest{
-		Feature: api.FeatureRef{Name: name},
-		EnvironmentDefault: api.EnvironmentDefault{
-			Enabled: flagEnabled(feature.EnvironmentState),
-			Value:   featureValueFromScalar(currentScalar(feature.EnvironmentState)),
-		},
-	}
-
 	// The state being changed: the environment default, or a segment override.
 	// The scope carries its own preposition: "in environment …" for the
 	// default, "for segment name (id) in environment …" for an override.
-	// The override's metadata (name, current priority) is fetched once and
-	// reused for the post-update render.
+	// The override's metadata (name, priority, feature-state link) is fetched
+	// once and reused for the weights and the post-update render.
 	target := feature.EnvironmentState
 	scope := "in environment " + environmentLabel(env)
-	var segment segmentRef
-	var priority int
+	var meta overrideMeta
 	if segmentID != 0 {
 		target = feature.SegmentState // nil when the override does not exist yet
-		var err error
-		segment, priority, err = segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
+		if meta, err = segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID); err != nil {
+			return err
+		}
+		scope = fmt.Sprintf("for segment %s in environment %s", meta.segment.display(), environmentLabel(env))
+	}
+
+	// Priorities order the overrides but needn't be dense — 10/20/30 is as valid
+	// as 0/1/2 — so there is no upper bound to check against. The server rejects
+	// a priority that would collide with another override.
+	if m.setPriority && m.priority < 0 {
+		return usageErrorf("--priority %d is negative", m.priority)
+	}
+
+	state := api.FlagStateUpdate{}
+	if m.enable || m.disable {
+		state.Enabled = &m.enable
+	}
+	if m.setValue {
+		value, err := inferFeatureValue(flagValueFlag, flagTypeFlag)
 		if err != nil {
 			return err
 		}
-		scope = fmt.Sprintf("for segment %s in environment %s", segment.display(), environmentLabel(env))
+		state.Value = &value
 	}
-
-	// Priorities are a dense 0-based order; a new override joins it, growing the
-	// valid range by one. The server treats the write as a move, so only the
-	// bounds need checking.
-	if m.setPriority {
-		limit := feature.NumSegmentOverrides
-		if target == nil {
-			limit++
+	if len(m.weights) > 0 {
+		if len(feature.MultivariateOptions) == 0 {
+			return hintf(usageErrorf("%s has no variants to weight", name),
+				"Add one with `flagsmith feature variant add %s --value <value>`.", name)
 		}
-		if m.priority < 0 || m.priority >= limit {
-			return usageErrorf("--priority %d is out of range (0..%d)", m.priority, limit-1)
+		current, err := scopeWeights(cmd, cred, env.ID, feature, meta.stateID)
+		if err != nil {
+			return err
 		}
-	}
-
-	// A new segment override inherits the environment default — enabled state
-	// and value alike; an existing one keeps its current state. A value-only
-	// edit must never silently switch the segment off.
-	enabled := flagEnabled(target)
-	if target == nil {
-		enabled = flagEnabled(feature.EnvironmentState)
-	}
-	if m.enable {
-		enabled = true
-	}
-	if m.disable {
-		enabled = false
-	}
-	value := req.EnvironmentDefault.Value
-	if target != nil {
-		value = featureValueFromScalar(currentScalar(target))
-	}
-	if m.setValue {
-		if value, err = inferFeatureValue(flagValueFlag, flagTypeFlag); err != nil {
+		if state.Variants, err = mergeWeights(feature, current, m.weights); err != nil {
 			return err
 		}
 	}
 
+	var req api.UpdateFlagRequest
 	if segmentID == 0 {
-		req.EnvironmentDefault.Enabled = enabled
-		req.EnvironmentDefault.Value = value
+		req.EnvironmentDefault = &state
 	} else {
-		override := api.SegmentOverride{SegmentID: segmentID, Enabled: enabled, Value: value}
+		override := api.SegmentOverrideUpdate{
+			Segment:  api.SegmentTarget{ID: segmentID},
+			Enabled:  state.Enabled,
+			Value:    state.Value,
+			Variants: state.Variants,
+		}
 		if m.setPriority {
 			override.Priority = &m.priority
 		}
-		req.SegmentOverrides = []api.SegmentOverride{override}
+		// A new override starts from the environment default — enabled state and
+		// position — stated outright rather than left to the server, so that a
+		// value-only edit can't switch the segment off or jump the queue.
+		if target == nil {
+			if override.Enabled == nil {
+				enabled := flagEnabled(feature.EnvironmentState)
+				override.Enabled = &enabled
+			}
+			if override.Priority == nil {
+				priority := meta.nextPriority // joins at the end
+				override.Priority = &priority
+			}
+		}
+		req.SegmentOverrides = []api.SegmentOverrideUpdate{override}
 	}
 
 	errOut := cmd.ErrOrStderr()
@@ -180,12 +294,16 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		return err
 	}
 
-	if err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, req); err != nil {
+	resp, err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, feature.ID, req)
+	if err != nil {
 		return err
 	}
 
 	if m.setValue {
-		output.Success(errOut, "Set %s to %s %s", name, displayValue(value), scope)
+		output.Success(errOut, "Set %s to %s %s", name, displayValue(*state.Value), scope)
+	}
+	if len(m.weights) > 0 {
+		output.Success(errOut, "Set %s weights to %s %s", name, weightSummary(m.weights), scope)
 	}
 	if m.enable {
 		output.Success(errOut, "Enabled %s %s", name, scope)
@@ -198,25 +316,39 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	}
 
 	// Result model: an update also prints the resulting resource to stdout. The
-	// request carried the written state in full, so the detail renders from it
-	// rather than re-fetching the features list.
-	scalar, err := nativeScalar(value)
+	// response carries the flag's whole state in the environment, so the detail
+	// renders from it rather than re-fetching the features list.
+	updated := *feature
+	if segmentID != 0 {
+		override := resp.Override(segmentID)
+		if override == nil {
+			return bug.Mark(fmt.Errorf("the update of %s left no override for segment %s", name, meta.segment.display()))
+		}
+		scalar, err := scalarOfValue(override.Value)
+		if err != nil {
+			return err
+		}
+		updated.SegmentState = &api.FeatureState{Enabled: override.Enabled, Value: scalar}
+		view := newSegmentFlagView(&updated, meta.segment, override.Priority)
+		view.Variants = variantViews(feature, weightsOf(override.Variants))
+		return renderSegmentDetail(cmd, view)
+	}
+	scalar, err := scalarOfValue(resp.EnvironmentDefault.Value)
 	if err != nil {
 		return err
 	}
-	updated := *feature
-	if segmentID != 0 {
-		updated.SegmentState = &api.FeatureState{Enabled: enabled, Value: scalar}
-		if target == nil {
-			priority = feature.NumSegmentOverrides // a new override joins at the end
-		}
-		if m.setPriority {
-			priority = m.priority
-		}
-		return renderSegmentDetail(cmd, newSegmentFlagView(&updated, segment, priority))
+	updated.EnvironmentState = &api.FeatureState{Enabled: resp.EnvironmentDefault.Enabled, Value: scalar}
+	return renderFlagDetail(cmd, &updated, weightsOf(resp.EnvironmentDefault.Variants))
+}
+
+// scalarOfValue converts a typed value from an update-flag response into the
+// bare scalar the flag views render. A flag with no value at all reads as unset
+// rather than as an empty string.
+func scalarOfValue(v *api.FeatureValue) (any, error) {
+	if v == nil {
+		return nil, nil
 	}
-	updated.EnvironmentState = &api.FeatureState{Enabled: enabled, Value: scalar}
-	return renderFlagDetail(cmd, &updated)
+	return nativeScalar(*v)
 }
 
 var flagDeleteCmd = &cobra.Command{
@@ -243,25 +375,46 @@ var flagDeleteCmd = &cobra.Command{
 		if hasIdentifier {
 			return runIdentityDelete(cmd, cred, env, projectID, name, flagDeleteIdentifier)
 		}
+		feature, err := requireFeature(cmd, cred, projectID, env, 0, name)
+		if err != nil {
+			return err
+		}
 		segmentID, err := resolveSegmentID(cmd, cred, projectID, flagDeleteSegment)
 		if err != nil {
 			return err
 		}
-		// Nothing on this path carries the segment's name, so the display comes
-		// from the name cache (seeded by resolving a name ref) and degrades to
-		// the bare id.
-		segmentLabel := label(cache.Load(apiURL).Segments[strconv.Itoa(segmentID)], segmentID)
-		errOut := cmd.ErrOrStderr()
-		prompt := fmt.Sprintf("delete %s override for segment %s in %s", name, segmentLabel, environmentLabel(env))
-		if ok, err := confirmed(cmd, prompt+"?", "changed"); !ok || err != nil {
-			return err
-		}
-		if err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, featureRefFor(name), segmentID); err != nil {
-			return err
-		}
-		output.Success(errOut, "Deleted %s override for segment %s in environment %s", name, segmentLabel, environmentLabel(env))
-		return nil
+		return deleteSegmentOverride(cmd, cred, env, feature, segmentID)
 	},
+}
+
+// deleteSegmentOverride removes one segment's override, in one call that leaves
+// the rest of the flag alone. The override rows are read first all the same:
+// they name the segment for the prompt, and a segment with no override is
+// better caught before asking than as a 404 afterwards.
+func deleteSegmentOverride(cmd *cobra.Command, cred *activeCredential, env api.Environment, feature *api.Feature, segmentID int) error {
+	meta, err := segmentOverrideMeta(cmd, cred, env.ID, feature.ID, segmentID)
+	if err != nil {
+		return err
+	}
+	if meta.stateID == 0 {
+		return withHint(
+			fmt.Errorf("%s has no override for segment %s in %s",
+				feature.Name, meta.segment.display(), environmentLabel(env)),
+			fmt.Sprintf("Run `flagsmith flag list --feature %s` to see its segment overrides.", feature.Name))
+	}
+
+	errOut := cmd.ErrOrStderr()
+	prompt := fmt.Sprintf("delete %s override for segment %s in %s", feature.Name, meta.segment.display(), environmentLabel(env))
+	if ok, err := confirmed(cmd, prompt+"?", "changed"); !ok || err != nil {
+		return err
+	}
+
+	if _, err := cred.client().DeleteSegmentOverride(cmd.Context(), env.APIKey, feature.ID, segmentID); err != nil {
+		return err
+	}
+	output.Success(errOut, "Deleted %s override for segment %s in environment %s",
+		feature.Name, meta.segment.display(), environmentLabel(env))
+	return nil
 }
 
 var (
@@ -323,42 +476,12 @@ var flagCreateCmd = &cobra.Command{
 	},
 }
 
-// featureRefFor parses a feature reference into the update-flag wire form:
-// all-digit → id, anything else → name, resolved server-side.
-func featureRefFor(ref string) api.FeatureRef {
-	if id, err := strconv.Atoi(ref); err == nil {
-		return api.FeatureRef{ID: id}
-	}
-	return api.FeatureRef{Name: ref}
-}
-
 // currentScalar returns a feature state's current value, or nil.
 func currentScalar(fs *api.FeatureState) any {
 	if fs == nil {
 		return nil
 	}
 	return fs.Value
-}
-
-// featureValueFromScalar converts a bare scalar — read from the features list
-// (JSON numbers arrive as float64) or from api.TypedValue.Scalar() (ints stay
-// int) — into the {type, value} wire form update-flag-v2 expects.
-func featureValueFromScalar(v any) api.FeatureValue {
-	switch t := v.(type) {
-	case bool:
-		return api.FeatureValue{Type: "boolean", Value: strconv.FormatBool(t)}
-	case int:
-		return api.FeatureValue{Type: "integer", Value: strconv.Itoa(t)}
-	case float64:
-		if t == float64(int64(t)) {
-			return api.FeatureValue{Type: "integer", Value: strconv.FormatInt(int64(t), 10)}
-		}
-		return api.FeatureValue{Type: "string", Value: strconv.FormatFloat(t, 'f', -1, 64)}
-	case string:
-		return api.FeatureValue{Type: "string", Value: t}
-	default: // nil or an unexpected shape → empty string, Flagsmith's default
-		return api.FeatureValue{Type: "string", Value: ""}
-	}
 }
 
 // inferFeatureValue types a --value literal, honouring an explicit --type.
@@ -409,6 +532,8 @@ func init() {
 	flagUpdateCmd.Flags().IntVar(&flagUpdatePriority, "priority", 0, "move the segment override to this priority (0 is evaluated first)")
 	flagDeleteCmd.Flags().StringVar(&flagDeleteSegment, "segment", "", "the segment (id or name) whose override to delete")
 	flagDeleteCmd.Flags().StringVarP(&flagDeleteIdentifier, "identifier", "i", "", "the identity whose override to delete")
+	flagUpdateCmd.Flags().StringArrayVar(&flagWeightFlags, "weight", nil,
+		"set a variant's weight, as <key|id>=<percentage> (repeatable, or comma-separated)")
 	for _, c := range []*cobra.Command{flagEnableCmd, flagDisableCmd} {
 		c.Flags().StringVar(&flagToggleSegment, "segment", "", "target this segment's override (id or name) instead of the environment default")
 		c.Flags().StringVarP(&flagToggleIdentifier, "identifier", "i", "", "target this identity's override instead of the environment default")
