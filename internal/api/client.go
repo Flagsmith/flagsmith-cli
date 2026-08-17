@@ -746,7 +746,7 @@ func (v TypedValue) Scalar() any {
 
 // MultivariateStateValue is one variant's weight in a single feature state —
 // the per-scope allocation, which starts from the option's project-level
-// default and drifts as environments and segments are re-weighted.
+// default and changes as environments and segments are re-weighted.
 type MultivariateStateValue struct {
 	OptionID   int     `json:"multivariate_feature_option"`
 	Allocation float64 `json:"percentage_allocation"`
