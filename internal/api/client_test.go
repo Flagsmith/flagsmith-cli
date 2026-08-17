@@ -583,7 +583,7 @@ func TestUpdateFlag(t *testing.T) {
 	t.Run("a 404 with no detail is an instance too old, and names its version", func(t *testing.T) {
 		// Given
 		mux := http.NewServeMux()
-		mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/version/", func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, `{"image_tag": "2.262.0", "package_versions": {".": "2.262.0"}}`)
 		})
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -606,6 +606,32 @@ func TestUpdateFlag(t *testing.T) {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("err = %v, want it to mention %s", err, want)
 			}
+		}
+	})
+
+	t.Run("a tag that is not a version is left out rather than quoted back", func(t *testing.T) {
+		// Given: what a self-hosted instance tracking a branch reports.
+		mux := http.NewServeMux()
+		mux.HandleFunc("/version/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"image_tag": "latest"}`)
+		})
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "<h1>Not Found</h1>")
+		})
+		srv := httptest.NewServer(mux)
+		defer srv.Close()
+
+		// When
+		_, err := testClient(srv.URL, APIKey("k.s"), srv).UpdateFlag(context.Background(), "envkey", 42,
+			UpdateFlagRequest{EnvironmentDefault: &FlagStateUpdate{Enabled: &enabled}})
+
+		// Then
+		if !errors.Is(err, ErrFlagWritesUnsupported) {
+			t.Fatalf("err = %v, want ErrFlagWritesUnsupported", err)
+		}
+		if strings.Contains(err.Error(), "latest") {
+			t.Errorf("err = %v, want the unparseable tag left out", err)
 		}
 	})
 

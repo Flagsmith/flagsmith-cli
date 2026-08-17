@@ -591,7 +591,7 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(clone)
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /version/", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"image_tag": "2.262.0", "package_versions": map[string]string{".": "2.262.0"},
 		})

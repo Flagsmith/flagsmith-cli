@@ -13,8 +13,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
+	"github.com/blang/semver/v4"
 
+	"github.com/Flagsmith/flagsmith-cli/v2/internal/bug"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/httpx"
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/version"
 )
@@ -990,35 +991,27 @@ func (c *Client) classifyFlagWrite(ctx context.Context, err error) error {
 
 // unsupportedFlagWrite names the instance's version in the error when it can be
 // read, since "upgrade" is easier to act on knowing what you're upgrading from.
-// The lookup only happens on this failure path, and its own failure just leaves
-// the version out.
+// The lookup only happens on this failure path.
+//
+// A tag that is not a version ("latest", a commit sha) is left out rather than
+// quoted back: unlike the inference in `login`, nothing here rests on it — the
+// 404 already established the endpoint is absent — so it only decides whether
+// the version can be named.
 func (c *Client) unsupportedFlagWrite(ctx context.Context) error {
-	if version, err := c.ServerVersion(ctx); err == nil && version != "" {
-		return fmt.Errorf("%w: this instance runs %s", ErrFlagWritesUnsupported, version)
+	tag, err := ServerVersion(ctx, c.httpClient, c.baseURL)
+	if err != nil {
+		return ErrFlagWritesUnsupported
 	}
-	return ErrFlagWritesUnsupported
+	if _, err := semver.ParseTolerant(tag); err != nil {
+		return ErrFlagWritesUnsupported
+	}
+	return fmt.Errorf("%w: this instance runs %s", ErrFlagWritesUnsupported, tag)
 }
 
 // ErrFlagWritesUnsupported marks an instance without the update-flag endpoints,
 // which every flag mutation needs. Reads are unaffected: they use endpoints that
 // have been there all along.
 var ErrFlagWritesUnsupported = fmt.Errorf("changing flags needs Flagsmith %s or newer", MinFlagWriteVersion)
-
-// ServerVersion reports the instance's version, as /version advertises it. The
-// endpoint is unauthenticated and predates everything the CLI uses.
-func (c *Client) ServerVersion(ctx context.Context) (string, error) {
-	var info struct {
-		ImageTag        string            `json:"image_tag"`
-		PackageVersions map[string]string `json:"package_versions"`
-	}
-	if err := c.get(ctx, "/version", &info); err != nil {
-		return "", err
-	}
-	if info.ImageTag != "" {
-		return info.ImageTag, nil
-	}
-	return info.PackageVersions["."], nil
-}
 
 // ErrWorkflowGated is returned when update-flag refuses because the environment
 // has change-request workflows enabled.
