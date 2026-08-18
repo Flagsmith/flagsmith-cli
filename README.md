@@ -45,7 +45,7 @@ flagsmith flag list --json                             # JSON
 flagsmith flag list --json --jq '.[] | select(.enabled) | .name'
 ```
 
-A spec-compliant jq is compiled into the binary with nothing extra to install in your shell or in a CI image. Output switches to JSON automatically when it isn't attached to a terminal.
+jq is compiled into the binary so your agent doesn't have to pipe the output anywhere.
 
 ---
 
