@@ -1,6 +1,6 @@
 # Flagsmith CLI
 
-Manage Flagsmith from your terminal and your pipeline. One binary, no runtime.
+Manage Flagsmith from your terminal and your pipeline.
 
 ```bash
 curl -sSL https://get.flagsmith.com | sh
