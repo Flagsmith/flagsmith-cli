@@ -4,9 +4,7 @@ Manage Flagsmith from your terminal and your pipeline.
 
 ```bash
 curl -sSL https://get.flagsmith.com | sh
-flagsmith login
 flagsmith init
-```
 
 [![Release](https://img.shields.io/github/v/release/Flagsmith/flagsmith-cli)](https://github.com/Flagsmith/flagsmith-cli/releases) [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
