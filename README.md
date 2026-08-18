@@ -112,10 +112,6 @@ flagsmith --api-url https://flagsmith.internal/api/v1 flag list
 
 The CLI is a smaller context cost than a full tool catalogue: your agent gets one binary with self-documenting help, and pays for it only when it runs something.
 
-Drop [`AGENTS.md`](./examples/AGENTS.md) into your repo and your agent will know how to use it — which commands are safe to run unprompted, and which need a human.
-
----
-
 ## Which Flagsmith CLI is this?
 
 There are two, and they do different jobs.
