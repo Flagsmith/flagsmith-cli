@@ -84,9 +84,9 @@ function Add-UserPath {
     return $true
 }
 
-# Write-Conflicts reports other flagsmith commands on PATH that may shadow
+# Write-ConflictWarning reports other flagsmith commands on PATH that may shadow
 # (or be shadowed by) the one just installed.
-function Write-Conflicts {
+function Write-ConflictWarning {
     param([string]$Target)
 
     $resolvedTarget = [System.IO.Path]::GetFullPath($Target)
@@ -170,7 +170,7 @@ $exe = Join-Path $BinDir $ExeName
 $installed = & $exe --version
 if ($LASTEXITCODE -ne 0) { throw "$exe was installed but will not run" }
 Write-Output "$verb $installed $prep $exe"
-Write-Conflicts -Target $exe
+Write-ConflictWarning -Target $exe
 
 $pathAdded = $false
 if (-not $NoModifyPath) {
