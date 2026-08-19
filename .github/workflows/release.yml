@@ -59,13 +59,13 @@ jobs:
         with:
           node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
       # TODO: switch to goreleaser-npm-publisher-action once https://github.com/evg4b/goreleaser-npm-publisher/pull/26 is released
-      # Prebuilt dist committed on the fork branch (c1e31d2 + dist/, built and
+      # Prebuilt dist committed on the fork branch (5e09f1e + dist/, built and
       # smoke-tested locally). Deliberately no yarn install/build here: this job
       # holds id-token: write, so third-party install scripts must not run in it.
       - name: Fetch goreleaser-npm-publisher
         run: |
           git clone https://github.com/khvn26/goreleaser-npm-publisher "$RUNNER_TEMP/gnp"
-          git -C "$RUNNER_TEMP/gnp" checkout 5001ba9cbd9795b904c2be3090f161a5392a6651
+          git -C "$RUNNER_TEMP/gnp" checkout ad16d393106b23b6289d0569beefb8e9b3bd3159
       - name: Publish npm packages
         run: >-
           node "$RUNNER_TEMP/gnp/dist/cli.cjs" publish
@@ -73,6 +73,7 @@ jobs:
           --bin flagsmith
           --prefix @flagsmith
           --license MIT
+          --repository 'git+https://github.com/Flagsmith/flagsmith-cli.git'
           --description 'The Flagsmith command-line interface'
           --keywords flagsmith feature-flags cli
           --files README.md LICENSE
