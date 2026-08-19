@@ -58,15 +58,14 @@ jobs:
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
-      # TODO: swith to goreleaser-npm-publisher-action once https://github.com/evg4b/goreleaser-npm-publisher/pull/26 is released
-      - name: Build goreleaser-npm-publisher
+      # TODO: switch to goreleaser-npm-publisher-action once https://github.com/evg4b/goreleaser-npm-publisher/pull/26 is released
+      # Prebuilt dist committed on the fork branch (c1e31d2 + dist/, built and
+      # smoke-tested locally). Deliberately no yarn install/build here: this job
+      # holds id-token: write, so third-party install scripts must not run in it.
+      - name: Fetch goreleaser-npm-publisher
         run: |
           git clone https://github.com/khvn26/goreleaser-npm-publisher "$RUNNER_TEMP/gnp"
-          cd "$RUNNER_TEMP/gnp"
-          git checkout c1e31d21c240162920cbf87c62a47e3ce306944a
-          corepack enable
-          yarn install --immutable
-          yarn build
+          git -C "$RUNNER_TEMP/gnp" checkout 5001ba9cbd9795b904c2be3090f161a5392a6651
       - name: Publish npm packages
         run: >-
           node "$RUNNER_TEMP/gnp/dist/cli.cjs" publish
