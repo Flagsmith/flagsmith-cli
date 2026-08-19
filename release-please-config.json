@@ -4,9 +4,6 @@
         ".": {
             "release-type": "go",
             "changelog-path": "CHANGELOG.md",
-            "versioning": "prerelease",
-            "prerelease": true,
-            "prerelease-type": "beta",
             "draft": false,
             "include-component-in-tag": false,
             "extra-files": [
