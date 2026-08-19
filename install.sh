@@ -282,7 +282,7 @@ If ${VERSION} was released moments ago its archives may still be uploading — r
 	preposition=to
 	if [ -e "${INSTALL_DIR}/${BIN_NAME}" ]; then
 		verb=updated
-		preposition=at
+		preposition='at'
 	fi
 	mv -f "${tmp}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
 
