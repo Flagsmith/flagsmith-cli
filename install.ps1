@@ -90,10 +90,13 @@ function Write-ConflictWarning {
     param([string]$Target)
 
     $resolvedTarget = [System.IO.Path]::GetFullPath($Target)
-    $others = @(Get-Command -Name 'flagsmith' -All -ErrorAction SilentlyContinue |
-            Where-Object { $_.Source -and ([System.IO.Path]::GetFullPath($_.Source) -ne $resolvedTarget) })
+    # Application catches flagsmith.exe and npm's flagsmith.cmd shim;
+    # ExternalScript catches its flagsmith.ps1 shim. Both expose .Path, and
+    # neither triggers module auto-loading the way an unfiltered -All can.
+    $others = @(Get-Command -Name 'flagsmith' -CommandType Application, ExternalScript -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -and ([System.IO.Path]::GetFullPath($_.Path) -ne $resolvedTarget) })
     foreach ($other in $others) {
-        Write-Output "warning: another 'flagsmith' is on your PATH at $($other.Source)"
+        Write-Output "warning: another 'flagsmith' is on your PATH at $($other.Path)"
     }
     if ($others.Count -gt 0) {
         Write-Output "It may shadow $Target - uninstall it first ('npm uninstall -g flagsmith-cli' removes the old npm CLI), then open a new terminal."
