@@ -84,6 +84,22 @@ function Add-UserPath {
     return $true
 }
 
+# Write-Conflicts reports other flagsmith commands on PATH that may shadow
+# (or be shadowed by) the one just installed.
+function Write-Conflicts {
+    param([string]$Target)
+
+    $resolvedTarget = [System.IO.Path]::GetFullPath($Target)
+    $others = @(Get-Command -Name 'flagsmith' -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.Source -and ([System.IO.Path]::GetFullPath($_.Source) -ne $resolvedTarget) })
+    foreach ($other in $others) {
+        Write-Output "warning: another 'flagsmith' is on your PATH at $($other.Source)"
+    }
+    if ($others.Count -gt 0) {
+        Write-Output "It may shadow $Target - uninstall it first ('npm uninstall -g flagsmith-cli' removes the old npm CLI), then open a new terminal."
+    }
+}
+
 # Add-CiPath makes the CLI available to later steps of a GitHub Actions job.
 function Add-CiPath {
     param([string]$Dir)
@@ -144,6 +160,7 @@ try {
 
     Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    $verb, $prep = if (Test-Path -LiteralPath (Join-Path $BinDir $ExeName)) { 'updated', 'at' } else { 'installed', 'to' }
     Move-Item -Force -LiteralPath (Join-Path $tmp $ExeName) -Destination (Join-Path $BinDir $ExeName)
 } finally {
     Remove-Item -Recurse -Force -LiteralPath $tmp
@@ -152,7 +169,8 @@ try {
 $exe = Join-Path $BinDir $ExeName
 $installed = & $exe --version
 if ($LASTEXITCODE -ne 0) { throw "$exe was installed but will not run" }
-Write-Output "installed $installed to $exe"
+Write-Output "$verb $installed $prep $exe"
+Write-Conflicts -Target $exe
 
 $pathAdded = $false
 if (-not $NoModifyPath) {
