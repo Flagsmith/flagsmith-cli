@@ -19,6 +19,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # configure-pages reads the site's base URL from the Pages API. It never
+      # creates the site: enablement defaults to false, so Pages has to be set
+      # to build from Actions by hand, and read is all this job needs.
+      pages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
