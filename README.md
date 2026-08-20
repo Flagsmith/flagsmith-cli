@@ -56,6 +56,8 @@ flagsmith flag list    # list the flags in the current environment
 
 ## Commands
 
+Full reference for every command and flag: <https://flagsmith.github.io/flagsmith-cli/> (generated from `--help`, so it matches the release).
+
 Reading works against any Flagsmith instance. Changing flags — `flag update`, `flag enable`/`disable`, `flag reorder`, `flag delete` — needs Flagsmith 2.263.0 or newer, self-hosted or SaaS.
 
 - `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).

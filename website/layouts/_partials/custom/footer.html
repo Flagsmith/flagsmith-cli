@@ -1,0 +1,19 @@
+{{/*
+  Hextra's own extension point for footer content, so unlike layouts/home.html
+  this copies no theme markup and cannot drift from it.
+
+  The site always describes the newest release, which is invisible to someone
+  who arrives from a search result while running an older CLI. Name the version,
+  so a stale page looks stale. HUGO_PARAMS_VERSION is set by the docs workflow;
+  it is empty for a local preview, which renders nothing.
+*/}}
+{{- with site.Params.version -}}
+  <div class="hx:py-8 hx:text-sm">
+    Documenting
+    <a
+      class="hx:font-semibold hx:underline hx:decoration-from-font hx:underline-offset-2"
+      href="https://github.com/Flagsmith/flagsmith-cli/releases/tag/{{ . }}"
+      >{{ . }}</a
+    >, the latest release. Run <code>flagsmith --version</code> to check yours.
+  </div>
+{{- end -}}

@@ -9,7 +9,8 @@
             "extra-files": [
                 "install.sh",
                 "install.ps1",
-                "README.md"
+                "README.md",
+                "website/hugo.yaml"
             ]
         }
     },

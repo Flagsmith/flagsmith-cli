@@ -1,0 +1,39 @@
+{{/*
+  Hextra has no hook for navbar content, so this is the theme's own
+  navbar-title.html with a version badge added beside the title. The version
+  belongs where it is seen without scrolling: a reader arriving from a search
+  result on an older CLI should not have to reach the footer to find out which
+  release the page describes.
+
+  The auto margin that pushes the menu to the right moves onto the badge when
+  there is one, so the badge sits beside the title rather than beside the menu.
+
+  Copied from hextra@v0.12.3 layouts/_partials/navbar-title.html; re-check when
+  bumping the theme.
+*/}}
+{{- $logoPath := .Site.Params.navbar.logo.path | default "images/logo.svg" -}}
+{{- $logoLink := .Site.Params.navbar.logo.link | default .Site.Home.RelPermalink -}}
+{{- $logoWidth := .Site.Params.navbar.logo.width | default "20" -}}
+{{- $logoHeight := .Site.Params.navbar.logo.height | default "20" -}}
+{{- $logoDarkPath := .Site.Params.navbar.logo.dark | default $logoPath -}}
+{{- $version := .Site.Params.version -}}
+{{- $push := cond (eq $version "") "hx:ltr:mr-auto hx:rtl:ml-auto" "" -}}
+
+<a class="hx:flex hx:items-center hx:hover:opacity-75 {{ $push }}" href="{{ $logoLink }}">
+  {{- $displayTitle := (.Site.Params.navbar.displayTitle | default true) }}
+  {{- if (.Site.Params.navbar.displayLogo | default true) }}
+    <img class="hx:mr-2 hx:block hx:dark:hidden" src="{{ $logoPath | relURL }}" alt="{{ cond $displayTitle `Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+    <img class="hx:mr-2 hx:hidden hx:dark:block" src="{{ $logoDarkPath | relURL }}" alt="{{ cond $displayTitle `Dark Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+  {{- end }}
+  {{- if $displayTitle }}
+    <span class="hx:mr-2 hx:font-extrabold hx:inline hx:select-none">{{- .Site.Title -}}</span>
+  {{- end }}
+</a>
+{{- with $version }}
+  <a
+    class="hx:ltr:mr-auto hx:rtl:ml-auto hx:rounded-full hx:px-2 hx:py-0.5 hx:text-xs hx:font-medium hx:bg-gray-100 hx:text-gray-600 hx:dark:bg-neutral-800 hx:dark:text-gray-300 hx:hover:opacity-75"
+    href="https://github.com/Flagsmith/flagsmith-cli/releases/tag/{{ . }}"
+    title="Documenting the latest release"
+    >{{ . }}</a
+  >
+{{- end }}

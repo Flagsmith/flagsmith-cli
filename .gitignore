@@ -1,3 +1,9 @@
 /flagsmith
 /dist/
 *.test
+
+# Generated command reference and Hugo build output (see website/README.md).
+/website/content/
+/website/public/
+/website/resources/
+/website/.hugo_build.lock

@@ -174,6 +174,14 @@ func nudgeInit(cmd *cobra.Command) bool {
 	return true
 }
 
+// Root returns the fully wired command tree, for callers that need to inspect
+// it rather than run it — documentation generation, shell completions. It never
+// executes a command, so no credential or network access is involved.
+func Root() *cobra.Command {
+	prepare()
+	return rootCmd
+}
+
 func Execute() {
 	prepare()
 	// ExecuteC returns the command that actually ran (or failed to parse), so a
