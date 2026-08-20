@@ -37,9 +37,15 @@ REQUIRES_PYTHON = ">=3.8"
 # GoReleaser target -> wheel platform tag(s). A wheel may claim several
 # platforms; the compressed tag set is joined with "." in the filename.
 # CGO is disabled, so the Linux binaries are static and run on musl too.
+#
+# A macOS tag is a minimum: macosx_12_0 installs on 12 and newer. Keep it at
+# the floor of the Go version in go.mod, which the release job builds with --
+# claiming more than the binary supports means installing onto a macOS that
+# cannot run it. Go 1.26 needs macOS 12; 1.27 moves to 13. See
+# https://go.dev/wiki/MinimumRequirements
 PLATFORM_TAGS: dict[tuple[str, str], list[str]] = {
-    ("darwin", "amd64"): ["macosx_10_13_x86_64"],
-    ("darwin", "arm64"): ["macosx_11_0_arm64"],
+    ("darwin", "amd64"): ["macosx_12_0_x86_64"],
+    ("darwin", "arm64"): ["macosx_12_0_arm64"],
     ("linux", "amd64"): ["manylinux2014_x86_64", "musllinux_1_1_x86_64"],
     ("linux", "arm64"): ["manylinux2014_aarch64", "musllinux_1_1_aarch64"],
     ("windows", "amd64"): ["win_amd64"],
