@@ -3,7 +3,7 @@ module github.com/Flagsmith/flagsmith-cli/v2
 go 1.26
 
 require (
-	github.com/Flagsmith/flagsmith-go-client/v5 v5.1.0
+	github.com/Flagsmith/flagsmith-go-client/v5 v5.2.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/charmbracelet/huh v1.0.0
 	github.com/fatih/color v1.19.0

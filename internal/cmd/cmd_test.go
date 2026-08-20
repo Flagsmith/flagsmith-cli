@@ -6938,7 +6938,6 @@ func TestEvaluate(t *testing.T) {
 		if items["value"] != float64(25) || items["enabled"] != false {
 			t.Errorf("flag = %+v, want the resolved value", items)
 		}
-		// Omitted until the SDK API returns them: absent, never faked.
 		for _, absent := range []string{"reason", "variant"} {
 			if _, ok := items[absent]; ok {
 				t.Errorf("flag = %+v, want %q omitted rather than invented", items, absent)
@@ -6946,6 +6945,86 @@ func TestEvaluate(t *testing.T) {
 		}
 		if _, ok := doc["segments"]; ok {
 			t.Errorf("doc = %+v, want segments omitted rather than invented", doc)
+		}
+	})
+
+	t.Run("json carries the reason and variant the SDK API returned", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		flags := sdkFlagsFrom(defaultFeatures())
+		flags[0]["reason"] = "DEFAULT"
+		flags[1]["reason"] = "SPLIT; weight=30"
+		flags[1]["variant"] = "treatment"
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = flags
+
+		// When
+		out, err := run("", "evaluate", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --json: %v\noutput: %s", err, out)
+		}
+		resolved, _ := evalDoc(t, out)["flags"].(map[string]any)
+		items, _ := resolved["max_items"].(map[string]any)
+		if items["reason"] != "SPLIT; weight=30" || items["variant"] != "treatment" {
+			t.Errorf("flag = %+v, want the reason and variant it resolved by", items)
+		}
+		// A standard feature has no variant to report; the schema calls that null,
+		// and an EvaluationResult that is already a subset omits it.
+		banner, _ := resolved["onboarding_banner"].(map[string]any)
+		if banner["reason"] != "DEFAULT" {
+			t.Errorf("flag = %+v, want the reason it resolved by", banner)
+		}
+		if _, ok := banner["variant"]; ok {
+			t.Errorf("flag = %+v, want no variant where none applied", banner)
+		}
+	})
+
+	t.Run("the table adds VARIANT when SDK API returns a variant", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		flags := sdkFlagsFrom(defaultFeatures())
+		flags[0]["reason"] = "DEFAULT"
+		flags[1]["reason"] = "TARGETING_MATCH; segment=power users"
+		flags[1]["variant"] = "treatment"
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = flags
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{
+			"VARIANT", "REASON",
+			"TARGETING_MATCH; segment=power users", "treatment", "DEFAULT",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want it to contain %q", out, want)
+			}
+		}
+	})
+
+	t.Run("the table drops the columns an SDK API left empty", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		flags := sdkFlagsFrom(defaultFeatures())
+		flags[0]["reason"], flags[1]["reason"] = "DEFAULT", "DEFAULT"
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = flags
+
+		// When
+		out, err := run("", "evaluate")
+
+		// Then
+		if !strings.Contains(out, "REASON") {
+			t.Errorf("output = %q, want the reason column", out)
+		}
+		if strings.Contains(out, "VARIANT") {
+			t.Errorf("output = %q, want no variant column where nothing was bucketed", out)
+		}
+		if err != nil {
+			t.Fatalf("evaluate: %v\noutput: %s", err, out)
 		}
 	})
 
@@ -7171,6 +7250,32 @@ func TestEvaluate(t *testing.T) {
 		}
 		if strings.Contains(out, "onboarding_banner") {
 			t.Errorf("output = %q, want only the named feature", out)
+		}
+		for _, absent := range []string{"Reason", "Variant"} {
+			if strings.Contains(out, absent) {
+				t.Errorf("output = %q, want no %q the SDK API never reported", out, absent)
+			}
+		}
+	})
+
+	t.Run("a single feature's detail view says why it resolved", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		flags := sdkFlagsFrom(defaultFeatures())
+		flags[1]["reason"], flags[1]["variant"] = "SPLIT; weight=30", "treatment"
+		f.sdkEnvFlags["WqXhZk8sVY3dGgTqZ9pJmN"] = flags
+
+		// When
+		out, err := run("", "evaluate", "max_items")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate max_items: %v\noutput: %s", err, out)
+		}
+		for _, want := range []string{"Variant", "treatment", "Reason", "SPLIT; weight=30"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output = %q, want %q", out, want)
+			}
 		}
 	})
 
@@ -7448,6 +7553,26 @@ func TestEvaluateIdentity(t *testing.T) {
 		body := f.identifyBody()
 		if body["identifier"] != "user-123" || body["transient"] != true {
 			t.Errorf("body = %+v, want a transient identity", body)
+		}
+	})
+
+	t.Run("an identity's variant and reason survive the identify call", func(t *testing.T) {
+		// Given
+		f := evalEnv(t)
+		flags := overridden()
+		flags[1]["reason"], flags[1]["variant"] = "SPLIT; weight=50", "treatment"
+		f.sdkIdentityFlags["user-123"] = flags
+
+		// When
+		out, err := run("", "evaluate", "max_items", "--identity", "user-123", "--json")
+
+		// Then
+		if err != nil {
+			t.Fatalf("evaluate --identity --json: %v\noutput: %s", err, out)
+		}
+		doc := evalDoc(t, out)
+		if doc["reason"] != "SPLIT; weight=50" || doc["variant"] != "treatment" {
+			t.Errorf("doc = %+v, want the identity's reason and variant", doc)
 		}
 	})
 
