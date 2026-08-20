@@ -166,6 +166,36 @@ end
 EOF
 }
 
+# same_file returns 0 when both paths name the same file. -ef is not POSIX
+# but every common sh has it; fall back to a plain string compare.
+same_file() {
+	[ "$1" = "$2" ] && return 0
+	[ "$1" -ef "$2" ] 2>/dev/null
+}
+
+# warn_conflicts reports other flagsmith binaries on PATH that may shadow
+# (or be shadowed by) the one just installed.
+warn_conflicts() {
+	_target="${INSTALL_DIR}/${BIN_NAME}"
+	_found=0
+	_seen=
+	_ifs_save=$IFS
+	IFS=:
+	for _dir in $PATH; do
+		[ -n "$_dir" ] || continue
+		case ":${_seen}:" in *:"${_dir}":*) continue ;; esac
+		_seen="${_seen}:${_dir}"
+		[ -x "${_dir}/${BIN_NAME}" ] || continue
+		same_file "${_dir}/${BIN_NAME}" "$_target" && continue
+		say "warning: another '${BIN_NAME}' is on your PATH at ${_dir}/${BIN_NAME}"
+		_found=1
+	done
+	IFS=$_ifs_save
+	if [ "$_found" = 1 ]; then
+		say "It may shadow ${_target} — uninstall it first ('npm uninstall -g flagsmith-cli' removes the old npm CLI), then run 'hash -r' or open a new shell."
+	fi
+}
+
 # add_ci_path makes the CLI available to later steps of a GitHub Actions job.
 # GITHUB_PATH does not expand variables, so write the resolved directory.
 add_ci_path() {
@@ -248,11 +278,18 @@ If ${VERSION} was released moments ago its archives may still be uploading — r
 	tar -xzf "${tmp}/${archive_name}" -C "$tmp" "$BIN_NAME"
 	mkdir -p "$INSTALL_DIR"
 	chmod 755 "${tmp}/${BIN_NAME}"
+	verb=installed
+	preposition=to
+	if [ -e "${INSTALL_DIR}/${BIN_NAME}" ]; then
+		verb=updated
+		preposition='at'
+	fi
 	mv -f "${tmp}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
 
 	installed=$("${INSTALL_DIR}/${BIN_NAME}" --version 2>/dev/null) ||
 		err "${INSTALL_DIR}/${BIN_NAME} was installed but will not run — wrong platform?"
-	say "installed ${installed} to ${INSTALL_DIR}/${BIN_NAME}"
+	say "${verb} ${installed} ${preposition} ${INSTALL_DIR}/${BIN_NAME}"
+	warn_conflicts
 
 	if [ "$NO_MODIFY_PATH" != 1 ]; then
 		modify_path
