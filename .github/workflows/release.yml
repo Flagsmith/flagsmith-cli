@@ -55,9 +55,6 @@ jobs:
         with:
           subject-checksums: ./dist/digests.txt
 
-      # Wraps the binaries GoReleaser just built into wheels. Publishing them
-      # is a separate job: nothing third-party runs while this one holds a
-      # token that can attest artifacts.
       - name: Build PyPI wheels
         run: python3 packaging/pypi/build_wheels.py --dist dist
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -66,12 +63,28 @@ jobs:
           path: dist/pypi/*.whl
           if-no-files-found: error
 
-      # During public beta the newest beta is what people
-      # should land on, so clear it.
-      - if: contains(github.ref_name, '-beta')
-        run: gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
+      # TODO: switch to goreleaser-npm-publisher-action once https://github.com/evg4b/goreleaser-npm-publisher/pull/26 is released
+      # Prebuilt dist committed on the fork branch (5e09f1e + dist/, built and
+      # smoke-tested locally). Deliberately no yarn install/build here: this job
+      # holds id-token: write, so third-party install scripts must not run in it.
+      - name: Fetch goreleaser-npm-publisher
+        run: |
+          git clone https://github.com/khvn26/goreleaser-npm-publisher "$RUNNER_TEMP/gnp"
+          git -C "$RUNNER_TEMP/gnp" checkout ad16d393106b23b6289d0569beefb8e9b3bd3159
+      - name: Publish npm packages
+        run: >-
+          node "$RUNNER_TEMP/gnp/dist/cli.cjs" publish
+          --name cli
+          --bin flagsmith
+          --prefix @flagsmith
+          --license MIT
+          --repository 'git+https://github.com/Flagsmith/flagsmith-cli.git'
+          --description 'The Flagsmith command-line interface'
+          --keywords flagsmith feature-flags cli
+          --files README.md LICENSE
 
   pypi:
     name: Publish to PyPI
