@@ -32,8 +32,6 @@ uv tool install flagsmith-cli   # installs the `flagsmith` command
 uvx --from flagsmith-cli flagsmith --help
 ```
 
-The wheels carry the binary itself, so no Python code runs at any point. (`pip install flagsmith-cli` works too; add `--pre` while the CLI is in beta. The `flagsmith` package on PyPI is the [Python SDK](https://github.com/Flagsmith/flagsmith-python-client), which is why the CLI needs `--from`.)
-
 Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.3` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
 
 On Windows:
