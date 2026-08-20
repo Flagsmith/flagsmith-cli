@@ -1,3 +1,4 @@
 /flagsmith
 /dist/
 *.test
+__pycache__/
