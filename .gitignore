@@ -1,4 +1,7 @@
 /flagsmith
 /dist/
 *.test
-__pycache__/
+# Staged by packaging/pypi/build-wheels.sh
+/packaging/pypi/bin/
+/packaging/pypi/README.md
+/packaging/pypi/LICENSE

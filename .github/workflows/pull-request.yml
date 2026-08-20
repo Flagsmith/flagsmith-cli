@@ -80,7 +80,7 @@ jobs:
         with:
           version: "~> v2"
           args: build --snapshot --clean --single-target
-      - run: python3 packaging/pypi/build_wheels.py --dist dist
+      - run: ./packaging/pypi/build-wheels.sh
       - run: uvx twine check dist/pypi/*.whl
       # The wheel ships no Python: this proves the binary lands on PATH.
       - run: uvx --from ./dist/pypi/*.whl flagsmith --version
