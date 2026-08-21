@@ -5,49 +5,19 @@ Manage Flagsmith from your terminal and your pipeline.
 ```bash
 curl -sSL https://get.flagsmith.com | sh
 flagsmith init
+```
 
 [![Release](https://img.shields.io/github/v/release/Flagsmith/flagsmith-cli)](https://github.com/Flagsmith/flagsmith-cli/releases) [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
----
-
-## Stop a release that depends on a flag that's off
-
-```bash
-flagsmith evaluate checkout-v2 --test
-```
-
-Exits non-zero when a flag your release needs isn't enabled. Drop it into any pipeline to block a bad deploy before it ships:
-
-```yaml
-- name: Verify release flags
-  run: flagsmith evaluate checkout-v2 --test
-  env:
-    FLAGSMITH_API_KEY: ${{ secrets.FLAGSMITH_API_KEY }}
-```
-
-We use this on ourselves. A 78-line GitHub Actions workflow in the Flagsmith repo is now one command.
-
-## Bind a repo once, and the whole team is in the right place
+## Repo binding for the whole team
 
 ```bash
 flagsmith init
 ```
 
-Writes a `flagsmith.json` you commit with your code, recording which project and environment this repo maps to. New teammates can clone, log in, and they're pointed at the right project. Prevents complex setup docs and changes landing in the wrong environment.
+Writes a `flagsmith.json` you commit with your code, recording which project and environment this repo maps to.  Teammates can clone, log in, and they're pointed at the right project. No setup docs, and no changes landing in the wrong environment.
 
-If you work across several projects, this is even more uesful, both for you and for LLMs interacting on your behalf.
-
-## Readable for you, parseable for machines
-
-```bash
-flagsmith flag list                                    # a table
-flagsmith flag list --json                             # JSON
-flagsmith flag list --json --jq '.[] | select(.enabled) | .name'
-```
-
-jq is compiled into the binary so your agent doesn't have to pipe the output anywhere.
-
----
+If you work across several projects, this is even more useful, both for you and for LLMs interacting on your behalf.
 
 ## Install
 
@@ -71,7 +41,7 @@ curl -sSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/<sha>/instal
 
 **Windows**
 ```powershell
-irm https://get.flagsmith.com/install.ps1 | iex
+irm https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.ps1 | iex
 ```
 
 **Docker**
@@ -108,33 +78,53 @@ Self-hosted? Point at your own instance with `--api-url` or `FLAGSMITH_API_URL`:
 flagsmith --api-url https://flagsmith.internal/api/v1 flag list
 ```
 
-## Using it with a coding agent
+## What can you do with the CLI?
 
-The CLI is a smaller context cost than a full tool catalogue: your agent gets one binary with self-documenting help, and pays for it only when it runs something.
+The CLI is designed for both humans and machines, it provides full management capabilities for daily work, and integrates natively with CI pipelines. A few notable capabilities that enable this flexibility include:
 
-## Which Flagsmith CLI is this?
+### Built-in JSON parsing and jq filtering
 
-There are two, and they do different jobs.
+```bash
+flagsmith flag list                                    # a table
+flagsmith flag list --json                             # JSON
+flagsmith flag list --json --jq '.[] | select(.enabled) | .name'
+```
 
-| | `flagsmith-cli` (npm) | `flagsmith` (this one) |
-|---|---|---|
-| **What it's for** | Fetching flag state at build time and writing it to a file | Managing your Flagsmith account, and gating pipelines |
-| **Reads / writes** | Read-only | Read and write |
-| **Installed with** | npm | curl, PowerShell, Docker, `go install` |
-| **Needs** | Node | Nothing |
+jq is compiled into the binary so your agent doesn't have to pipe the output anywhere.
 
-**Already using the npm package?** Keep using it — it still works and we'll give notice before that changes. When you want to consolidate, this CLI covers the same ground:
+### Stopping a release that depends on a flag that's off
+
+```bash
+flagsmith evaluate checkout-v2 --test
+```
+
+Exits non-zero when a flag your release needs isn't enabled. Drop it into any pipeline to block a bad deploy before it ships:
+
+```yaml
+- name: Verify release flags
+  run: flagsmith evaluate checkout-v2 --test
+  env:
+    FLAGSMITH_API_KEY: ${{ secrets.FLAGSMITH_API_KEY }}
+```
+
+### Using it with a coding agent
+
+The CLI occupies less context than a full MCP tool catalogue: your agent gets one binary with self-documenting help, and pays for it only when it runs something.
+
+## Migrating from the previous CLI.
+
+The previous version of the CLI, which could only fetch flag states at build time and write to a file, is being deprecated, and replaced by this newer version.
+
+**Already using the old package?** The new CLI provides the same functionality using the following commands:
 
 ```bash
 flagsmith evaluate --js              # the state a frontend SDK hydrates from
 flagsmith environment document       # the local-evaluation environment document
 ```
 
-This tool is version 2 because it shares a repository and a name with the older one. It is not an upgrade of it.
+We encourage you to migrate to the new version to both maintain existing functionality while enjoying the benefits of the full capabilities of the new version.
 
----
-
-## Command reference
+## Commands
 
 Every command carries worked examples in `--help`, which is always current:
 
@@ -198,8 +188,6 @@ flagsmith flag --help
 - `flagsmith api <path>` — call any Flagsmith endpoint with your credentials applied, e.g. `flagsmith api /projects/`
 
 </details>
-
----
 
 ## Docs, and getting help
 
