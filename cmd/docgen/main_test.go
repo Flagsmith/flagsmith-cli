@@ -7,61 +7,76 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/Flagsmith/flagsmith-cli/v2/internal/cmd"
 )
 
-// Links between pages are recovered from the underscore-joined filenames cobra
-// writes, so a command name containing one would produce a broken link.
 func TestCommandNamesAreURLSafe(t *testing.T) {
-	var check func(*cobra.Command)
-	check = func(c *cobra.Command) {
-		if strings.ContainsAny(c.Name(), "_ ") {
-			t.Errorf("command %q: name must not contain an underscore or space", c.CommandPath())
-		}
+	// Given
+	root := cmd.Root()
+
+	// When / Then
+	var visit func(*cobra.Command)
+	visit = func(c *cobra.Command) {
+		assert.NotContains(t, c.Name(), "_", "an underscore breaks the links between pages")
+		assert.NotContains(t, c.Name(), " ", "a space breaks the page's path")
+		assert.NotContains(t, c.Name(), "/", "a slash breaks the page's path")
+
 		for _, sub := range c.Commands() {
-			check(sub)
+			visit(sub)
 		}
 	}
-	check(cmd.Root())
+	visit(root)
 }
 
 func TestWriteMirrorsCommandTree(t *testing.T) {
+	// Given
 	dir := t.TempDir()
-	if err := write(cmd.Root(), dir); err != nil {
-		t.Fatal(err)
-	}
 
-	for _, want := range []string{"_index.md", "flag/_index.md", "flag/update.md"} {
-		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
-			t.Errorf("%s: %v", want, err)
-		}
-	}
-	// A hidden command must not be published.
-	if _, err := os.Stat(filepath.Join(dir, "flag/create.md")); err == nil {
-		t.Error("flag/create.md: hidden command should not have a page")
-	}
+	// When
+	require.NoError(t, write(cmd.Root(), dir))
 
+	// Then
+	// the root command's own page is the site's home page
+	assert.FileExists(t, filepath.Join(dir, "_index.md"))
+	// a command with subcommands has a directory
+	assert.FileExists(t, filepath.Join(dir, "flag/_index.md"))
+	// a leaf command is a page inside its parent's directory
+	assert.FileExists(t, filepath.Join(dir, "flag/update.md"))
+	// a hidden command is not published
+	assert.NoFileExists(t, filepath.Join(dir, "flag/create.md"))
+}
+
+func TestWritePage(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	require.NoError(t, write(cmd.Root(), dir))
+
+	// When
 	page, err := os.ReadFile(filepath.Join(dir, "flag/update.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	got := string(page)
-	for _, want := range []string{
-		`title: "flagsmith flag update"`, // Hextra renders the page heading from it
-		"](../)",                         // link to the parent page, not a flat filename
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("page is missing %q:\n%s", want, got)
-		}
-	}
-	for _, unwanted := range []string{
-		"Auto generated",           // non-reproducible build
-		"## flagsmith flag update", // duplicates the front matter title
-		"flagsmith_flag_update.md", // cobra's flat filenames
-	} {
-		if strings.Contains(got, unwanted) {
-			t.Errorf("page should not contain %q:\n%s", unwanted, got)
-		}
-	}
+
+	// Then
+	// the front matter titles the page with the full command path
+	assert.Contains(t, got, `title: "flagsmith flag update"`)
+	// the sidebar entry is the command's own name, unambiguous once nested.
+	assert.Contains(t, got, `linkTitle: "update"`)
+	// the description is the command's Short
+	assert.Contains(t, got, `description: "Change a flag's state in the current environment"`)
+	// the body is cobra's, taken from the command
+	assert.Contains(t, got, "flagsmith flag update <feature> [flags]")
+	// the link to the parent page is relative,
+	assert.Contains(t, got, "](../)")
+	// no link is left as cobra's flat filename
+	assert.NotContains(t, got, "flagsmith_")
+	// cobra's own heading is gone
+	assert.NotContains(t, got, "## flagsmith flag update")
+	// no generation date is stamped into the page
+	assert.NotContains(t, got, "Auto generated")
+
+	// Guard against the assertions above passing on an empty file.
+	require.NotEmpty(t, strings.TrimSpace(got))
 }
