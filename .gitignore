@@ -5,3 +5,9 @@
 /packaging/pypi/bin/
 /packaging/pypi/README.md
 /packaging/pypi/LICENSE
+
+# Generated command reference and Hugo build output
+/website/content/
+/website/public/
+/website/resources/
+/website/.hugo_build.lock

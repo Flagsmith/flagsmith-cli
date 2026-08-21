@@ -1,6 +1,6 @@
 # Flagsmith CLI
 
-The next-generation Flagsmith command-line interface (work in progress).
+The Flagsmith command-line interface helps you manage and roll out your feature flags without leaving your terminal.
 
 ## Install
 
@@ -11,34 +11,44 @@ brew install Flagsmith/tap/flagsmith
 Or:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh
+curl -fsSL https://get.flagsmith.com | sh
 ```
 
 Installs to `$HOME/.local/bin` and adds it to your `PATH`. Options:
 
+<!-- x-release-please-start-version -->
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh -s -- --version v2.0.0 --bin-dir /usr/local/bin --no-modify-path
-curl -fsSL https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.sh | sh -s -- --help
+curl -fsSL https://get.flagsmith.com | sh -s -- --version v2.0.0-beta.3 --bin-dir /usr/local/bin --no-modify-path
+curl -fsSL https://get.flagsmith.com | sh -s -- --help
 ```
+
+<!-- x-release-please-end -->
 
 `FLAGSMITH_CLI_VERSION`, `FLAGSMITH_INSTALL_DIR` and `FLAGSMITH_NO_MODIFY_PATH` do the same if exported first.
 
 To pin the installer itself, fetch it at a commit you trust: `raw.githubusercontent.com/Flagsmith/flagsmith-cli/<sha>/install.sh`.
-
-With [uv](https://docs.astral.sh/uv/):
-
-```sh
-uv tool install flagsmith-cli   # installs the `flagsmith` command
-uvx --from flagsmith-cli flagsmith --help
-```
-
-Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.3` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
 
 On Windows:
 
 ```powershell
 irm https://raw.githubusercontent.com/Flagsmith/flagsmith-cli/main/install.ps1 | iex
 ```
+
+Using npm:
+
+```sh
+npm install -g @flagsmith/cli
+```
+
+With [uv](https://docs.astral.sh/uv/):
+
+```sh
+uv tool install flagsmith-cli
+uvx --from flagsmith-cli flagsmith --help
+```
+
+Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.3` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
 
 ## Build
 
@@ -63,7 +73,9 @@ flagsmith flag list    # list the flags in the current environment
 
 ## Commands
 
-Reading works against any Flagsmith instance. Changing flags — `flag update`, `flag enable`/`disable`, `flag reorder`, `flag delete` — needs Flagsmith 2.263.0 or newer, self-hosted or SaaS.
+Full reference for every command and flag: <https://flagsmith.github.io/flagsmith-cli/>.
+
+Reading works against any Flagsmith instance. Changing flags — `flag update`, `flag enable`/`disable`, `flag reorder`, `flag delete` — needs Flagsmith 2.263.0 or newer.
 
 - `flagsmith init` — bind the current directory to a project (writes `flagsmith.json`).
 - `flagsmith flag list` — list feature flags in the current environment.

@@ -23,10 +23,18 @@ type evalView struct {
 	Feature string
 	Enabled bool
 	Value   any
+	Reason  string
+	Variant string
 }
 
 func newEvalView(f flagsmith.Flag) evalView {
-	return evalView{Feature: f.FeatureName, Enabled: f.Enabled, Value: f.Value}
+	return evalView{
+		Feature: f.FeatureName,
+		Enabled: f.Enabled,
+		Value:   f.Value,
+		Reason:  f.Reason,
+		Variant: f.Variant,
+	}
 }
 
 const evaluationResultSchema = "https://raw.githubusercontent.com/Flagsmith/flagsmith/main/sdk/evaluation-result.json"
@@ -44,10 +52,18 @@ type evalFlag struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 	Value   any    `json:"value"`
+	Reason  string `json:"reason,omitempty"`
+	Variant string `json:"variant,omitempty"`
 }
 
 func newEvalFlag(v evalView) evalFlag {
-	return evalFlag{Name: v.Feature, Enabled: v.Enabled, Value: v.Value}
+	return evalFlag{
+		Name:    v.Feature,
+		Enabled: v.Enabled,
+		Value:   v.Value,
+		Reason:  v.Reason,
+		Variant: v.Variant,
+	}
 }
 
 func newEvalResult(views []evalView) evalResult {
@@ -190,26 +206,51 @@ func renderEvaluation(cmd *cobra.Command, sdkURL string, views []evalView, singl
 				"Warning: no flags to hydrate from — an SDK given this state will wait for a fetch")
 		}
 	}
+	var anyReason, anyVariant bool
+	for _, v := range views {
+		anyReason = anyReason || v.Reason != ""
+		anyVariant = anyVariant || v.Variant != ""
+	}
 	opts := outputOpts()
 	opts.JSON = opts.JSON || evalJSFlag
 	return output.Render(cmd.OutOrStdout(), doc, opts, func(w io.Writer) error {
 		if single {
 			v := views[0]
-			return output.Detail(w, []output.Field{
+			fields := []output.Field{
 				{Label: "Feature", Value: v.Feature},
 				{Label: "Enabled", Value: boolState(v.Enabled)},
 				{Label: "Value", Value: valueDisplay(v.Value)},
-			})
+			}
+			if v.Variant != "" {
+				fields = append(fields, output.Field{Label: "Variant", Value: v.Variant})
+			}
+			if v.Reason != "" {
+				fields = append(fields, output.Field{Label: "Reason", Value: v.Reason})
+			}
+			return output.Detail(w, fields)
 		}
 		if len(views) == 0 {
 			fmt.Fprintln(w, "No flags.")
 			return nil
 		}
+		headers := []string{"FEATURE", "ENABLED", "VALUE"}
+		if anyVariant {
+			headers = append(headers, "VARIANT")
+		}
+		if anyReason {
+			headers = append(headers, "REASON")
+		}
 		rows := make([][]string, len(views))
 		for i, v := range views {
 			rows[i] = []string{v.Feature, boolState(v.Enabled), truncateValue(valueDisplay(v.Value))}
+			if anyVariant {
+				rows[i] = append(rows[i], v.Variant)
+			}
+			if anyReason {
+				rows[i] = append(rows[i], v.Reason)
+			}
 		}
-		if err := output.Table(w, []string{"FEATURE", "ENABLED", "VALUE"}, rows); err != nil {
+		if err := output.Table(w, headers, rows); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "\n%d %s\n", len(views), plural(len(views), "flag", "flags"))

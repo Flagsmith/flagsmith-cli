@@ -174,6 +174,12 @@ func nudgeInit(cmd *cobra.Command) bool {
 	return true
 }
 
+// Root returns the command tree for cmd/docgen
+func Root() *cobra.Command {
+	prepare()
+	return rootCmd
+}
+
 func Execute() {
 	prepare()
 	// ExecuteC returns the command that actually ran (or failed to parse), so a
