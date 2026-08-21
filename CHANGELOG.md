@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0...v2.0.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **ci:** Homebrew cask ships no shell completions ([#102](https://github.com/Flagsmith/flagsmith-cli/issues/102)) ([2d55665](https://github.com/Flagsmith/flagsmith-cli/commit/2d55665ea33b016708c62fd9ff53559175852c23))
+* **ci:** npm publish fails with `Cannot find module 'yargs'` ([#101](https://github.com/Flagsmith/flagsmith-cli/issues/101)) ([8bf7dfc](https://github.com/Flagsmith/flagsmith-cli/commit/8bf7dfcc201b1b32d01a9897a6036f323dda8b1f))
+
 ## [2.0.0](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.3...v2.0.0) (2026-08-21)
 
 
