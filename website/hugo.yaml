@@ -45,9 +45,6 @@ menu:
         icon: github
 
 params:
-  # The release this build documents, shown beside the navbar title and in the
-  # footer. Bumped by release-please, which is why website/hugo.yaml is one of
-  # its extra-files.
   version: "v2.0.0-beta.3" # x-release-please-version
   description: The Flagsmith command-line interface — manage flags, segments and environments from your terminal.
   navbar:

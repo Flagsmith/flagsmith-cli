@@ -18,9 +18,8 @@ Then open <http://localhost:1313>. Re-run `docgen` after changing help text.
 
 ## What is hand-written
 
-| Path                                   | Purpose                            |
-| -------------------------------------- | ---------------------------------- |
-| `hugo.yaml`                            | Site config, navigation, theme     |
-| `layouts/_partials/navbar-title.html`  | Theme override: version badge      |
-| `layouts/_partials/custom/footer.html` | Names the release being documented |
-| `layouts/home.html`                    | Theme override                     |
+| Path                                  | Purpose                        |
+| ------------------------------------- | ------------------------------ |
+| `hugo.yaml`                           | Site config, navigation, theme |
+| `layouts/_partials/navbar-title.html` | Theme override: version badge  |
+| `layouts/home.html`                   | Theme override                 |

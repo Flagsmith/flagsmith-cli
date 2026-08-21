@@ -1,15 +1,6 @@
 {{/*
-  Hextra has no hook for navbar content, so this is the theme's own
-  navbar-title.html with a version badge added beside the title. The version
-  belongs where it is seen without scrolling: a reader arriving from a search
-  result on an older CLI should not have to reach the footer to find out which
-  release the page describes.
-
-  The auto margin that pushes the menu to the right moves onto the badge when
-  there is one, so the badge sits beside the title rather than beside the menu.
-
-  Copied from hextra@v0.12.3 layouts/_partials/navbar-title.html; re-check when
-  bumping the theme.
+  Copied from hextra@v0.12.3 to add the version badge, which has no hook. The
+  auto margin moves onto the badge so it sits beside the title.
 */}}
 {{- $logoPath := .Site.Params.navbar.logo.path | default "images/logo.svg" -}}
 {{- $logoLink := .Site.Params.navbar.logo.link | default .Site.Home.RelPermalink -}}
