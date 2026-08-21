@@ -3,6 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Republishes the npm packages for a tag that has already been released, for
+  # when only the npm step failed. Dispatch it from the default branch: the
+  # tag's own copy of this workflow is the one that failed. The packages ship
+  # the binaries already published under that tag, but the provenance npm
+  # attaches names the dispatched ref rather than the tag itself.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag whose npm packages to republish, e.g. v2.0.0
+        required: true
 
 permissions:
   contents: read
@@ -10,6 +20,8 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     permissions:
       contents: write # upload release artifacts
       packages: write # push to ghcr.io
@@ -18,18 +30,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Empty on a tag push, where the triggering ref is already the tag.
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+      - if: github.event_name == 'push'
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - if: github.event_name == 'push'
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate GitHub App token
+        if: github.event_name == 'push'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -43,15 +60,44 @@ jobs:
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          args: release --clean
+          # A republish only needs dist/ populated so the npm packages can be
+          # assembled from it. Nothing is archived, uploaded, pushed or tapped
+          # a second time.
+          args: ${{ github.event_name == 'workflow_dispatch' && 'build --clean' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      # The npm packages must carry the same bytes as the release they name, and
+      # a rebuild won't reproduce them: go.mod asks for 1.26, so setup-go
+      # resolves whatever patch release is current rather than the one the tag
+      # was built with. Overwrite the freshly built binaries with the published
+      # ones, which the checksum file - itself attested - vouches for.
+      - name: Restore the published binaries
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release=$RUNNER_TEMP/release
+          gh release download "$TAG" --dir "$release"
+          (cd "$release" && sha256sum --check --ignore-missing checksums.txt)
+          version=$(jq --raw-output .version dist/metadata.json)
+          jq --raw-output '.[] | select(.type == "Binary") | [.path, .goos, .goarch, .extra.Ext] | @tsv' dist/artifacts.json |
+            while IFS=$'\t' read -r path goos goarch ext; do
+              archive=$release/flagsmith_${version}_${goos}_${goarch}
+              if [ "$goos" = windows ]; then
+                unzip -qoj "$archive.zip" "flagsmith$ext" -d "$(dirname "$path")"
+              else
+                tar --extract --gzip --file "$archive.tar.gz" --directory "$(dirname "$path")" flagsmith
+              fi
+              echo "restored $path from $(basename "$archive")"
+            done
       # Attests every file listed in the checksum file.
-      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+      - if: github.event_name == 'push'
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: ./dist/checksums.txt
-      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+      - if: github.event_name == 'push'
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: ./dist/digests.txt
 
@@ -59,13 +105,15 @@ jobs:
         with:
           node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
       # TODO: switch to goreleaser-npm-publisher-action once https://github.com/evg4b/goreleaser-npm-publisher/pull/26 is released
-      # Prebuilt dist committed on the fork branch (5e09f1e + dist/, built and
-      # smoke-tested locally). Deliberately no yarn install/build here: this job
-      # holds id-token: write, so third-party install scripts must not run in it.
+      # Prebuilt dist committed on the fork branch
       - name: Fetch goreleaser-npm-publisher
         run: |
           git clone https://github.com/khvn26/goreleaser-npm-publisher "$RUNNER_TEMP/gnp"
           git -C "$RUNNER_TEMP/gnp" checkout ad16d393106b23b6289d0569beefb8e9b3bd3159
+      - name: Install goreleaser-npm-publisher runtime dependencies
+        working-directory: ${{ runner.temp }}/gnp
+        # set --mode=skip-build to block third-party install/postinstall scripts
+        run: corepack yarn install --immutable --mode=skip-build
       - name: Publish npm packages
         run: >-
           node "$RUNNER_TEMP/gnp/dist/cli.cjs" publish
@@ -80,7 +128,7 @@ jobs:
 
       # During public beta the newest beta is what people
       # should land on, so clear it.
-      - if: contains(github.ref_name, '-beta')
+      - if: github.event_name == 'push' && contains(github.ref_name, '-beta')
         run: gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,6 +136,7 @@ jobs:
   install-script:
     name: install.sh (${{ matrix.os }})
     needs: goreleaser
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -103,6 +152,7 @@ jobs:
   install-script-windows:
     name: install.ps1
     needs: goreleaser
+    if: github.event_name == 'push'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
