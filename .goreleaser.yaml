@@ -68,11 +68,13 @@ homebrew_casks:
       - flagsmith
     generate_completions_from_executable:
       executable: flagsmith
-      args: [completion]
+      # shell_parameter_format: cobra already passes `completion <shell>`.
       shell_parameter_format: cobra
       shells: [bash, zsh, fish]
     hooks:
-      post:
+      # Runs before the completions are generated, which the quarantined
+      # binary can't survive.
+      pre:
         # Homebrew quarantines what it downloads;
         # Unqarantine manually until we start notarising the Mac binaries.
         install: |
