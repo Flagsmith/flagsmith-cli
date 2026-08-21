@@ -1,0 +1,30 @@
+{{/*
+  Copied from hextra@v0.12.3 to add the version badge, which has no hook. The
+  auto margin moves onto the badge so it sits beside the title.
+*/}}
+{{- $logoPath := .Site.Params.navbar.logo.path | default "images/logo.svg" -}}
+{{- $logoLink := .Site.Params.navbar.logo.link | default .Site.Home.RelPermalink -}}
+{{- $logoWidth := .Site.Params.navbar.logo.width | default "20" -}}
+{{- $logoHeight := .Site.Params.navbar.logo.height | default "20" -}}
+{{- $logoDarkPath := .Site.Params.navbar.logo.dark | default $logoPath -}}
+{{- $version := .Site.Params.version -}}
+{{- $push := cond (eq $version "") "hx:ltr:mr-auto hx:rtl:ml-auto" "" -}}
+
+<a class="hx:flex hx:items-center hx:hover:opacity-75 {{ $push }}" href="{{ $logoLink }}">
+  {{- $displayTitle := (.Site.Params.navbar.displayTitle | default true) }}
+  {{- if (.Site.Params.navbar.displayLogo | default true) }}
+    <img class="hx:mr-2 hx:block hx:dark:hidden" src="{{ $logoPath | relURL }}" alt="{{ cond $displayTitle `Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+    <img class="hx:mr-2 hx:hidden hx:dark:block" src="{{ $logoDarkPath | relURL }}" alt="{{ cond $displayTitle `Dark Logo` .Site.Title }}" height="{{ $logoHeight }}" width="{{ $logoWidth }}" />
+  {{- end }}
+  {{- if $displayTitle }}
+    <span class="hx:mr-2 hx:font-extrabold hx:inline hx:select-none">{{- .Site.Title -}}</span>
+  {{- end }}
+</a>
+{{- with $version }}
+  <a
+    class="hx:ltr:mr-auto hx:rtl:ml-auto hx:rounded-full hx:px-2 hx:py-0.5 hx:text-xs hx:font-medium hx:bg-gray-100 hx:text-gray-600 hx:dark:bg-neutral-800 hx:dark:text-gray-300 hx:hover:opacity-75"
+    href="https://github.com/Flagsmith/flagsmith-cli/releases/tag/{{ . }}"
+    title="Documenting the latest release"
+    >{{ . }}</a
+  >
+{{- end }}
