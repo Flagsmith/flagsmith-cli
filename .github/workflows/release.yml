@@ -3,15 +3,10 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  # Republishes the npm packages for a tag that has already been released, for
-  # when only the npm step failed. Dispatch it from the default branch: the
-  # tag's own copy of this workflow is the one that failed. The packages ship
-  # the binaries already published under that tag, but the provenance npm
-  # attaches names the dispatched ref rather than the tag itself.
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag whose npm packages to republish, e.g. v2.0.0
+        description: Source tag to release
         required: true
 
 permissions:
@@ -20,8 +15,6 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ inputs.tag || github.ref_name }}
     permissions:
       contents: write # upload release artifacts
       packages: write # push to ghcr.io
@@ -60,37 +53,15 @@ jobs:
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          # A republish only needs dist/ populated so the npm packages can be
-          # assembled from it. Nothing is archived, uploaded, pushed or tapped
-          # a second time.
+          # A dispatched run only needs dist/ populated so the npm packages can
+          # be assembled from it, so it rebuilds the tag's binaries and archives
+          # nothing. Those binaries won't be byte-identical to the ones already
+          # released - go.mod asks for Go 1.26, so setup-go resolves whatever
+          # patch is current - which is why nothing else is republished here.
           args: ${{ github.event_name == 'workflow_dispatch' && 'build --clean' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-      # The npm packages must carry the same bytes as the release they name, and
-      # a rebuild won't reproduce them: go.mod asks for 1.26, so setup-go
-      # resolves whatever patch release is current rather than the one the tag
-      # was built with. Overwrite the freshly built binaries with the published
-      # ones, which the checksum file - itself attested - vouches for.
-      - name: Restore the published binaries
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          release=$RUNNER_TEMP/release
-          gh release download "$TAG" --dir "$release"
-          (cd "$release" && sha256sum --check --ignore-missing checksums.txt)
-          version=$(jq --raw-output .version dist/metadata.json)
-          jq --raw-output '.[] | select(.type == "Binary") | [.path, .goos, .goarch, .extra.Ext] | @tsv' dist/artifacts.json |
-            while IFS=$'\t' read -r path goos goarch ext; do
-              archive=$release/flagsmith_${version}_${goos}_${goarch}
-              if [ "$goos" = windows ]; then
-                unzip -qoj "$archive.zip" "flagsmith$ext" -d "$(dirname "$path")"
-              else
-                tar --extract --gzip --file "$archive.tar.gz" --directory "$(dirname "$path")" flagsmith
-              fi
-              echo "restored $path from $(basename "$archive")"
-            done
       # Attests every file listed in the checksum file.
       - if: github.event_name == 'push'
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
@@ -125,13 +96,6 @@ jobs:
           --description 'The Flagsmith command-line interface'
           --keywords flagsmith feature-flags cli
           --files README.md LICENSE
-
-      # During public beta the newest beta is what people
-      # should land on, so clear it.
-      - if: github.event_name == 'push' && contains(github.ref_name, '-beta')
-        run: gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   install-script:
     name: install.sh (${{ matrix.os }})
