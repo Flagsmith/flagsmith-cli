@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.0.0](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.3...v2.0.0) (2026-08-21)
+
+
+### Features
+
+* Add reason, variant to `flagsmith eval` output ([#74](https://github.com/Flagsmith/flagsmith-cli/issues/74)) ([52d67c3](https://github.com/Flagsmith/flagsmith-cli/commit/52d67c3a5b93de9c45cb81a842d5d7af1a6d9cd5))
+* Migrate to the new update-flag contract, and `flag update --weight` ([#92](https://github.com/Flagsmith/flagsmith-cli/issues/92)) ([c0a5cec](https://github.com/Flagsmith/flagsmith-cli/commit/c0a5cec5a540c3b194efd60c3bb31a9210066c8a))
+
+
+### Bug Fixes
+
+* **auth:** Self-hosted instances dead-end with no usable credential ([#86](https://github.com/Flagsmith/flagsmith-cli/issues/86)) ([777b918](https://github.com/Flagsmith/flagsmith-cli/commit/777b9186fa3838a4e2a1748bad97bf41c04f5e93))
+* **install:** Warn when another flagsmith on PATH may shadow the install ([#97](https://github.com/Flagsmith/flagsmith-cli/issues/97)) ([9ad9979](https://github.com/Flagsmith/flagsmith-cli/commit/9ad9979e71127f22dfc7b76e6414ae514ad94e75))
+
+
+### CI
+
+* Add Renovate configuration ([#72](https://github.com/Flagsmith/flagsmith-cli/issues/72)) ([59772ef](https://github.com/Flagsmith/flagsmith-cli/commit/59772ef4c6146d4558d6413888c50223b61efb7f))
+* publish a Homebrew cask on release ([#83](https://github.com/Flagsmith/flagsmith-cli/issues/83)) ([86b189b](https://github.com/Flagsmith/flagsmith-cli/commit/86b189b4833cb07b5dab9403effe0ffb4412da59))
+* Publish npm packages ([#96](https://github.com/Flagsmith/flagsmith-cli/issues/96)) ([400d4ef](https://github.com/Flagsmith/flagsmith-cli/commit/400d4ef10e94036d0e9ddf6eb73279ff2cd9a4cb))
+
+
+### Docs
+
+* Publish the command reference to GitHub Pages ([#100](https://github.com/Flagsmith/flagsmith-cli/issues/100)) ([39ae3cd](https://github.com/Flagsmith/flagsmith-cli/commit/39ae3cdc148fbe7c27bf901e9e1c77a29ce0c391))
+
+
+### Dependency Updates
+
+* update module golang.org/x/net to v0.56.0 [security] ([#88](https://github.com/Flagsmith/flagsmith-cli/issues/88)) ([110158a](https://github.com/Flagsmith/flagsmith-cli/commit/110158ae584035f9d253c98d195af9b2d1e16f31))
+* update module golang.org/x/text to v0.39.0 [security] ([#89](https://github.com/Flagsmith/flagsmith-cli/issues/89)) ([0fcd1d8](https://github.com/Flagsmith/flagsmith-cli/commit/0fcd1d8b620d5401c677d2525bae2278c9c0422b))
+
+
+### Other
+
+* Graduate to a stable 2.0.0 release ([#98](https://github.com/Flagsmith/flagsmith-cli/issues/98)) ([d7fcce9](https://github.com/Flagsmith/flagsmith-cli/commit/d7fcce9a370ab7c98e71bb801620af4226c5dbc7))
+
 ## [2.0.0-beta.3](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.2...v2.0.0-beta.3) (2026-08-11)
 
 
