@@ -78,6 +78,27 @@ jobs:
       - run: ./install.ps1 -DryRun
         shell: pwsh
 
+  pypi-wheel:
+    name: PyPI wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: build --snapshot --clean --single-target
+      - run: ./packaging/pypi/build-wheels.sh
+      - run: uvx twine check dist/pypi/*.whl
+      # The wheel ships no Python: this proves the binary lands on PATH.
+      - run: uvx --from ./dist/pypi/*.whl flagsmith --version
+
   cross-compile:
     runs-on: ubuntu-latest
     steps:

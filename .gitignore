@@ -1,8 +1,12 @@
 /flagsmith
 /dist/
 *.test
+# Staged by packaging/pypi/build-wheels.sh
+/packaging/pypi/bin/
+/packaging/pypi/README.md
+/packaging/pypi/LICENSE
 
-# Generated command reference and Hugo build output (see website/README.md).
+# Generated command reference and Hugo build output
 /website/content/
 /website/public/
 /website/resources/

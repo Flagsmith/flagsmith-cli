@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flagsmith-cli"
+dynamic = ["version"]
+description = "The Flagsmith command-line interface"
+readme = "README.md"          # staged by build-wheels.sh
+license = "MIT"
+license-files = ["LICENSE"]   # staged by build-wheels.sh
+requires-python = ">=3.8"
+keywords = ["cli", "feature-flags", "flagsmith"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Go",
+  "Topic :: Software Development",
+]
+
+[project.urls]
+Homepage = "https://github.com/Flagsmith/flagsmith-cli"
+Source = "https://github.com/Flagsmith/flagsmith-cli"
+Issues = "https://github.com/Flagsmith/flagsmith-cli/issues"
+
+# The Go tag, minus its "v"; hatchling normalises it to PEP 440
+# (2.0.0-beta.3 -> 2.0.0b3).
+[tool.hatch.version]
+source = "env"
+variable = "FLAGSMITH_CLI_VERSION"
+
+# The binary ships in the wheel's .data/scripts/ directory, which every
+# installer drops straight onto PATH: `uv tool install flagsmith-cli` (and pip,
+# and pipx) hand you a working `flagsmith` with no Python shim in the way.
+# Only one of these two exists per build; hatchling skips the other.
+[tool.hatch.build.targets.wheel]
+bypass-selection = true # no Python package to ship
+shared-scripts = { "bin/flagsmith" = "flagsmith", "bin/flagsmith.exe" = "flagsmith.exe" }

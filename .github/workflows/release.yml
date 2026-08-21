@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
@@ -55,6 +56,14 @@ jobs:
         with:
           subject-checksums: ./dist/digests.txt
 
+      - name: Build PyPI wheels
+        run: ./packaging/pypi/build-wheels.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pypi-wheels
+          path: dist/pypi/*.whl
+          if-no-files-found: error
+
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
@@ -78,12 +87,21 @@ jobs:
           --keywords flagsmith feature-flags cli
           --files README.md LICENSE
 
-      # During public beta the newest beta is what people
-      # should land on, so clear it.
-      - if: contains(github.ref_name, '-beta')
-        run: gh release edit "$GITHUB_REF_NAME" --prerelease=false --latest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  pypi:
+    name: Publish to PyPI
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing + PEP 740 attestations
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pypi-wheels
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        with:
+          packages-dir: dist
 
   install-script:
     name: install.sh (${{ matrix.os }})

@@ -41,6 +41,13 @@ Using npm:
 npm install -g @flagsmith/cli
 ```
 
+With [uv](https://docs.astral.sh/uv/):
+
+```sh
+uv tool install flagsmith-cli
+uvx --from flagsmith-cli flagsmith --help
+```
+
 Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.3` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
 
 ## Build
