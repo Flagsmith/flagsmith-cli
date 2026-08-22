@@ -77,27 +77,20 @@ jobs:
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
-      # TODO: switch to goreleaser-npm-publisher-action once https://github.com/evg4b/goreleaser-npm-publisher/pull/26 is released
-      # Prebuilt dist committed on the fork branch
-      - name: Fetch goreleaser-npm-publisher
-        run: |
-          git clone https://github.com/khvn26/goreleaser-npm-publisher "$RUNNER_TEMP/gnp"
-          git -C "$RUNNER_TEMP/gnp" checkout ad16d393106b23b6289d0569beefb8e9b3bd3159
-      - name: Install goreleaser-npm-publisher runtime dependencies
-        working-directory: ${{ runner.temp }}/gnp
-        # set --mode=skip-build to block third-party install/postinstall scripts
-        run: corepack yarn install --immutable --mode=skip-build
       - name: Publish npm packages
-        run: >-
-          node "$RUNNER_TEMP/gnp/dist/cli.cjs" publish
-          --name cli
-          --bin flagsmith
-          --prefix @flagsmith
-          --license MIT
-          --repository 'git+https://github.com/Flagsmith/flagsmith-cli.git'
-          --description 'The Flagsmith command-line interface'
-          --keywords flagsmith feature-flags cli
-          --files README.md LICENSE
+        uses: evg4b/goreleaser-npm-publisher-action@16087d5aafd974ba267f861cc3723f52ea14d6e4 # v1.6.0
+        with:
+          name: cli
+          bin: flagsmith
+          prefix: "@flagsmith"
+          license: MIT
+          # npm rejects the provenance attestation unless this matches the
+          # building repository, case-sensitively. The shorthand is normalised
+          # to git+https://github.com/Flagsmith/flagsmith-cli.git on publish.
+          repository: ${{ github.repository }}
+          description: The Flagsmith command-line interface
+          keywords: flagsmith feature-flags cli
+          files: README.md LICENSE
 
   install-script:
     name: install.sh (${{ matrix.os }})
