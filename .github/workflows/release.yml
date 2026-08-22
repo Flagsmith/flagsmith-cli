@@ -89,8 +89,14 @@ jobs:
           # to git+https://github.com/Flagsmith/flagsmith-cli.git on publish.
           repository: ${{ github.repository }}
           description: The Flagsmith command-line interface
-          keywords: flagsmith feature-flags cli
-          files: README.md LICENSE
+          # stringArray inputs are split on newlines, not spaces
+          keywords: |-
+            flagsmith
+            feature-flags
+            cli
+          files: |-
+            README.md
+            LICENSE
 
   install-script:
     name: install.sh (${{ matrix.os }})
