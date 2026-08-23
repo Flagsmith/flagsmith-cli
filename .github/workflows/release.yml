@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# Never release the same tag twice at once: a dispatch while the tag push is
+# still in flight would race for the same release and artifacts.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
@@ -29,16 +34,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - if: github.event_name == 'push'
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - if: github.event_name == 'push'
-        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate GitHub App token
-        if: github.event_name == 'push'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -52,17 +54,15 @@ jobs:
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          args: ${{ github.event_name == 'workflow_dispatch' && 'build --clean' || 'release --clean' }}
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
       # Attests every file listed in the checksum file.
-      - if: github.event_name == 'push'
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: ./dist/checksums.txt
-      - if: github.event_name == 'push'
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-checksums: ./dist/digests.txt
 
@@ -70,6 +70,7 @@ jobs:
         with:
           node-version: 24 # npm >= 11.5.1 required for OIDC trusted publishing
       - name: Publish npm packages
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
         uses: evg4b/goreleaser-npm-publisher-action@16087d5aafd974ba267f861cc3723f52ea14d6e4 # v1.6.0
         with:
           name: cli
@@ -89,7 +90,6 @@ jobs:
   install-script:
     name: install.sh (${{ matrix.os }})
     needs: goreleaser
-    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -98,20 +98,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
           persist-credentials: false
-      - run: sh install.sh --version "$GITHUB_REF_NAME" --bin-dir "$RUNNER_TEMP/bin"
+      - run: sh install.sh --version "$TAG" --bin-dir "$RUNNER_TEMP/bin"
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
       - run: flagsmith --version
 
   install-script-windows:
     name: install.ps1
     needs: goreleaser
-    if: github.event_name == 'push'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
           persist-credentials: false
-      - run: ./install.ps1 -Version $env:GITHUB_REF_NAME
+      - run: ./install.ps1 -Version $env:TAG
         shell: pwsh
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
       - run: flagsmith --version
         shell: pwsh
