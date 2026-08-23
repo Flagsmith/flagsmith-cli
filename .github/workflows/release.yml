@@ -23,9 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Empty on a tag push, where the triggering ref is already the tag.
-          # Dispatched runs are privileged, so the input can only name a tag,
-          # never a branch or a pull request.
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
           fetch-depth: 0
           persist-credentials: false
@@ -55,11 +52,6 @@ jobs:
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          # A dispatched run only needs dist/ populated so the npm packages can
-          # be assembled from it, so it rebuilds the tag's binaries and archives
-          # nothing. Those binaries won't be byte-identical to the ones already
-          # released - go.mod asks for Go 1.26, so setup-go resolves whatever
-          # patch is current - which is why nothing else is republished here.
           args: ${{ github.event_name == 'workflow_dispatch' && 'build --clean' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,12 +76,8 @@ jobs:
           bin: flagsmith
           prefix: "@flagsmith"
           license: MIT
-          # npm rejects the provenance attestation unless this matches the
-          # building repository, case-sensitively. The shorthand is normalised
-          # to git+https://github.com/Flagsmith/flagsmith-cli.git on publish.
           repository: ${{ github.repository }}
           description: The Flagsmith command-line interface
-          # stringArray inputs are split on newlines, not spaces
           keywords: |-
             flagsmith
             feature-flags
