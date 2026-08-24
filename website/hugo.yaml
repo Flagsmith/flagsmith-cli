@@ -12,7 +12,7 @@ module:
     - path: github.com/imfing/hextra
 
 cascade:
-  - _target: {}
+  - target: {}
     type: docs
 
 enableRobotsTXT: true
