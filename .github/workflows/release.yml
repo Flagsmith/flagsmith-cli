@@ -16,8 +16,6 @@ on:
 permissions:
   contents: read
 
-# Never release the same tag twice at once: a dispatch while the tag push is
-# still in flight would race for the same release and artifacts.
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
 
