@@ -64,7 +64,7 @@ func write(cmd *cobra.Command, dir string) error {
 	if err := doc.GenMarkdownCustom(cmd, &body, linker(cmd)); err != nil {
 		return err
 	}
-	page.Write(dropHeading(body.Bytes()))
+	page.Write(retitleSeeAlso(dropHeading(body.Bytes())))
 
 	// A command with subcommands owns a directory, so its page is that
 	// directory's index; a leaf is a plain page beside its siblings.
@@ -110,6 +110,12 @@ func linker(from *cobra.Command) func(string) string {
 		}
 		return filepath.ToSlash(rel) + "/"
 	}
+}
+
+// retitleSeeAlso rewrites cobra's shouty "SEE ALSO" heading to match the
+// sentence case of the headings around it.
+func retitleSeeAlso(md []byte) []byte {
+	return bytes.ReplaceAll(md, []byte("### SEE ALSO"), []byte("### See also"))
 }
 
 // dropHeading removes the "## <command path>" line cobra opens with, and the

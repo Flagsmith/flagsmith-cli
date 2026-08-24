@@ -11,6 +11,15 @@ module:
   imports:
     - path: github.com/imfing/hextra
 
+# Every page in the site is part of the command reference, so give the whole of
+# content/ the theme's "docs" type. Without it the generated leaf pages (e.g.
+# organisation/delete) fall back to the theme's plain single-page layout, which
+# hides the sidebar, and the sidebar tree is rooted at the current top-level
+# section rather than at the whole command tree.
+cascade:
+  - _target: {}
+    type: docs
+
 enableRobotsTXT: true
 # Generated pages have no git history of their own, so there is no
 # "last modified" worth showing.
