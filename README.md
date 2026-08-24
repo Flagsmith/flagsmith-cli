@@ -19,7 +19,7 @@ Installs to `$HOME/.local/bin` and adds it to your `PATH`. Options:
 <!-- x-release-please-start-version -->
 
 ```sh
-curl -fsSL https://get.flagsmith.com | sh -s -- --version v2.0.0-beta.3 --bin-dir /usr/local/bin --no-modify-path
+curl -fsSL https://get.flagsmith.com | sh -s -- --version v2.0.0 --bin-dir /usr/local/bin --no-modify-path
 curl -fsSL https://get.flagsmith.com | sh -s -- --help
 ```
 
@@ -48,7 +48,7 @@ uv tool install flagsmith-cli
 uvx --from flagsmith-cli flagsmith --help
 ```
 
-Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0-beta.3` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
+Alternatively, `go install github.com/Flagsmith/flagsmith-cli/v2@v2.0.0` (installs as `flagsmith-cli`), or grab an archive from [Releases](https://github.com/Flagsmith/flagsmith-cli/releases). <!-- x-release-please-version -->
 
 ## Build
 
