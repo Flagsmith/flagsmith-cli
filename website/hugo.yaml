@@ -11,18 +11,11 @@ module:
   imports:
     - path: github.com/imfing/hextra
 
-# Every page in the site is part of the command reference, so give the whole of
-# content/ the theme's "docs" type. Without it the generated leaf pages (e.g.
-# organisation/delete) fall back to the theme's plain single-page layout, which
-# hides the sidebar, and the sidebar tree is rooted at the current top-level
-# section rather than at the whole command tree.
 cascade:
   - _target: {}
     type: docs
 
 enableRobotsTXT: true
-# Generated pages have no git history of their own, so there is no
-# "last modified" worth showing.
 enableGitInfo: false
 
 markup:
@@ -35,8 +28,6 @@ markup:
 
 menu:
   main:
-    # Installing is documented in the README and on docs.flagsmith.com. Link to
-    # one of them rather than keeping a third copy in step.
     - name: Install
       url: https://github.com/Flagsmith/flagsmith-cli#install
       weight: 1
@@ -62,13 +53,9 @@ params:
   footer:
     displayCopyright: false
     displayPoweredBy: false
-  # The reference is generated, so "edit this page" would point at a file that
-  # does not exist in the repository.
   editURL:
     enable: false
   page:
     width: normal
-  # Every page is a command, so the sidebar is the command tree and should be
-  # visible from the home page down.
   sidebar:
     displayTitle: false
