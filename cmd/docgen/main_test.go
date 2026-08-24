@@ -76,7 +76,29 @@ func TestWritePage(t *testing.T) {
 	assert.NotContains(t, got, "## flagsmith flag update")
 	// no generation date is stamped into the page
 	assert.NotContains(t, got, "Auto generated")
+	// cobra's shouty heading is sentence case, like the headings around it
+	assert.Contains(t, got, "### See also")
+	assert.NotContains(t, got, "SEE ALSO")
 
 	// Guard against the assertions above passing on an empty file.
 	require.NotEmpty(t, strings.TrimSpace(got))
+}
+
+func TestWriteCollapsesSidebarGroups(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	require.NoError(t, write(cmd.Root(), dir))
+
+	// When / Then
+	// the root of the tree is always expanded, so the top-level commands show
+	root, err := os.ReadFile(filepath.Join(dir, "_index.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(root), "sidebar:\n  open: true")
+
+	// everything below it is collapsed until the reader expands it
+	for _, page := range []string{"flag/_index.md", "environment/key/_index.md", "flag/update.md"} {
+		body, err := os.ReadFile(filepath.Join(dir, page))
+		require.NoError(t, err)
+		assert.NotContains(t, string(body), "sidebar:", page)
+	}
 }
