@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.1](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0...v2.0.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** Homebrew cask ships no shell completions ([#102](https://github.com/Flagsmith/flagsmith-cli/issues/102)) ([2d55665](https://github.com/Flagsmith/flagsmith-cli/commit/2d55665ea33b016708c62fd9ff53559175852c23))
+* **ci:** npm publish fails with `Cannot find module 'yargs'` ([#101](https://github.com/Flagsmith/flagsmith-cli/issues/101)) ([8bf7dfc](https://github.com/Flagsmith/flagsmith-cli/commit/8bf7dfcc201b1b32d01a9897a6036f323dda8b1f))
+* **docs:** Command reference hides the sidebar on leaf pages ([#105](https://github.com/Flagsmith/flagsmith-cli/issues/105)) ([a5e139c](https://github.com/Flagsmith/flagsmith-cli/commit/a5e139c8be83acae8ea441fe17bd2c3d53824281))
+
+
+### CI
+
+* Use goreleaser-npm-publisher-action v1.6.0 ([#104](https://github.com/Flagsmith/flagsmith-cli/issues/104)) ([3aea696](https://github.com/Flagsmith/flagsmith-cli/commit/3aea696a9c7fa17dd88dcd5f6d1abc62b9d745f5))
+
+
+### Other
+
+* Add `CODEOWNERS` ([#32](https://github.com/Flagsmith/flagsmith-cli/issues/32)) ([bad3dbe](https://github.com/Flagsmith/flagsmith-cli/commit/bad3dbe30e23e78e816d31ab7095b77553253332))
+
 ## [2.0.0](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.3...v2.0.0) (2026-08-21)
 
 
