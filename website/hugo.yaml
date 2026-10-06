@@ -45,7 +45,7 @@ menu:
         icon: github
 
 params:
-  version: "v2.0.0" # x-release-please-version
+  version: "v2.0.1" # x-release-please-version
   description: The Flagsmith command-line interface — manage flags, segments and environments from your terminal.
   navbar:
     displayTitle: true
