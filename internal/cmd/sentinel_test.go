@@ -31,6 +31,7 @@ func TestEverySentinelHasAHintDecision(t *testing.T) {
 		"auth.ErrNoDiscovery":          auth.ErrNoDiscovery,
 		"auth.ErrKeychainUnavailable":  auth.ErrKeychainUnavailable,
 		"auth.ErrRefreshFailed":        auth.ErrRefreshFailed,
+		"auth.ErrSessionExpired":       auth.ErrSessionExpired,
 		"auth.ErrServerSideKey":        auth.ErrServerSideKey,
 		"auth.ErrLegacyAuthtoken":      auth.ErrLegacyAuthtoken,
 		"auth.ErrNotMasterKey":         auth.ErrNotMasterKey,

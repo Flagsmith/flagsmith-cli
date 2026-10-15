@@ -170,6 +170,7 @@ type fakeInstance struct {
 	projGetCalls   int                         // count of GET /projects/{id}/ (retrieve)
 	orgListCalls   int                         // count of GET /organisations/ list calls
 	tokenPosts     int                         // count of POST /o/token/ (refresh) calls
+	refreshRevoked bool                        // refresh-token grants answer invalid_grant
 	updateCalls    int                         // count of update-flag calls
 	lastUpdate     map[string]any              // last update-flag request body
 	lastUpdateVerb string                      // method of the last update-flag call
@@ -338,7 +339,13 @@ func newFakeInstance(t *testing.T) *fakeInstance {
 	mux.HandleFunc("POST /o/token/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.tokenPosts++
+		revoked := f.refreshRevoked
 		f.mu.Unlock()
+		if revoked && r.FormValue("grant_type") == "refresh_token" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  oauthAccess,
 			"refresh_token": "cmd-refresh",
@@ -2710,6 +2717,102 @@ func TestInitNoCredentials(t *testing.T) {
 		if !strings.Contains(hintFor(err), want) {
 			t.Errorf("err = %v (hint %q), want the hint to mention %q", err, hintFor(err), want)
 		}
+	}
+}
+
+// saveExpiredSession stores a session for url whose access token has expired,
+// so the next credential lookup must refresh it.
+func saveExpiredSession(t *testing.T, url string) {
+	t.Helper()
+	if err := auth.Save(&auth.Credentials{
+		APIURL:       url,
+		AccessToken:  "stale",
+		RefreshToken: "cmd-refresh",
+		ExpiresAt:    time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resetCredentialCache()
+}
+
+func TestInitLogsInWhenSessionExpired(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.refreshRevoked = true
+	saveExpiredSession(t, f.srv.URL)
+	root := tempRepo(t)
+	fakeTTY(t)
+
+	// When
+	resetFlags()
+	noBrowser = true // never open a real browser from a test
+	out := &syncBuffer{}
+	rootCmd.SetOut(out)
+	rootCmd.SetErr(out)
+	rootCmd.SetIn(strings.NewReader("1\n1\n"))
+	rootCmd.SetArgs([]string{"init", "--api-url", f.srv.URL})
+	done := make(chan error, 1)
+	go func() { done <- rootCmd.Execute() }()
+
+	authURLPattern := regexp.MustCompile(`https?://\S+/oauth/authorize/\?\S+`)
+	var q url.Values
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && q == nil {
+		if m := authURLPattern.FindString(out.String()); m != "" {
+			u, err := url.Parse(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q = u.Query()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if q == nil {
+		t.Fatalf("init never offered a login; output: %q", out.String())
+	}
+	if _, err := http.Get(q.Get("redirect_uri") + "?code=c&state=" + url.QueryEscape(q.Get("state"))); err != nil {
+		t.Fatal(err)
+	}
+
+	// Then
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("init: %v\noutput: %s", err, out.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("init did not return")
+	}
+	if written := loadWritten(t, root); refID(written.Project) != 101 {
+		t.Errorf("written = %+v, want project 101", written)
+	}
+	creds, err := auth.Load(f.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creds.AccessToken != oauthAccess {
+		t.Errorf("stored access token = %q, want the new session", creds.AccessToken)
+	}
+}
+
+func TestExpiredSessionHintsLogin(t *testing.T) {
+	// Given
+	isolateStorage(t)
+	f := newFakeInstance(t)
+	f.refreshRevoked = true
+	saveExpiredSession(t, f.srv.URL)
+
+	// When
+	_, err := run("", "auth", "status", "--api-url", f.srv.URL)
+
+	// Then
+	if !errors.Is(err, auth.ErrSessionExpired) {
+		t.Fatalf("err = %v, want ErrSessionExpired", err)
+	}
+	if hint := hintFor(err); !strings.Contains(hint, "flagsmith login") {
+		t.Errorf("hint = %q, want it to point at `flagsmith login`", hint)
 	}
 }
 
