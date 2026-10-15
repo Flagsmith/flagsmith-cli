@@ -660,7 +660,7 @@ func TestEnsureFresh(t *testing.T) {
 		}
 	})
 
-	t.Run("revoked refresh token is a recognisable refresh failure", func(t *testing.T) {
+	t.Run("rejected refresh token means logged out", func(t *testing.T) {
 		// Given
 		f := newFakeAuthServer(t)
 		f.tokenHandler = func(url.Values) (int, any) {
@@ -672,8 +672,28 @@ func TestEnsureFresh(t *testing.T) {
 		_, _, err := EnsureFresh(context.Background(), http.DefaultClient, c)
 
 		// Then
-		if !errors.Is(err, ErrRefreshFailed) {
-			t.Errorf("err = %v, want ErrRefreshFailed", err)
+		if !errors.Is(err, ErrSessionExpired) || !errors.Is(err, ErrNotLoggedIn) {
+			t.Errorf("err = %v, want ErrSessionExpired matching ErrNotLoggedIn", err)
+		}
+		if errors.Is(err, bug.ErrUnexpected) {
+			t.Errorf("err = %v, want an expired session not to be reported as a bug", err)
+		}
+	})
+
+	t.Run("failing token endpoint is a refresh failure", func(t *testing.T) {
+		// Given
+		f := newFakeAuthServer(t)
+		f.tokenHandler = func(url.Values) (int, any) {
+			return http.StatusInternalServerError, map[string]string{"error": "server_error"}
+		}
+		c := &Credentials{APIURL: f.srv.URL, RefreshToken: "refresh-1", ExpiresAt: time.Now().Add(-time.Minute)}
+
+		// When
+		_, _, err := EnsureFresh(context.Background(), http.DefaultClient, c)
+
+		// Then
+		if !errors.Is(err, ErrRefreshFailed) || errors.Is(err, ErrNotLoggedIn) {
+			t.Errorf("err = %v, want ErrRefreshFailed, not ErrNotLoggedIn", err)
 		}
 	})
 }

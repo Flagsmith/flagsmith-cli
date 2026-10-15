@@ -191,10 +191,7 @@ func postToken(ctx context.Context, httpClient *http.Client, endpoint string, fo
 			Description string `json:"error_description"`
 		}
 		if json.Unmarshal(body, &oauthErr) == nil && oauthErr.Error != "" {
-			if oauthErr.Description != "" {
-				return nil, bug.Mark(fmt.Errorf("%s: %s", oauthErr.Error, oauthErr.Description))
-			}
-			return nil, bug.Mark(errors.New(oauthErr.Error))
+			return nil, bug.Mark(&tokenError{Code: oauthErr.Error, Description: oauthErr.Description})
 		}
 		return nil, bug.Mark(fmt.Errorf("token endpoint returned %s", resp.Status))
 	}
@@ -203,6 +200,20 @@ func postToken(ctx context.Context, httpClient *http.Client, endpoint string, fo
 		return nil, bug.Mark(fmt.Errorf("decoding token response: %w", err))
 	}
 	return &tok, nil
+}
+
+// tokenError is an OAuth error response from the token endpoint (RFC 6749
+// §5.2).
+type tokenError struct {
+	Code        string
+	Description string
+}
+
+func (e *tokenError) Error() string {
+	if e.Description != "" {
+		return e.Code + ": " + e.Description
+	}
+	return e.Code
 }
 
 func randomURLSafe(n int) string {
@@ -331,6 +342,11 @@ func credentialsFromToken(apiURL string, tok *tokenResponse) *Credentials {
 // the stored session is unusable.
 var ErrRefreshFailed = errors.New("refreshing session failed")
 
+// ErrSessionExpired means the server rejected the stored session's refresh
+// token — it has expired or been revoked. The instance is then as good as
+// logged out, so this matches ErrNotLoggedIn.
+var ErrSessionExpired = fmt.Errorf("session expired: %w", ErrNotLoggedIn)
+
 // EnsureFresh refreshes the access token if it is expired or about to expire.
 // The server rotates refresh tokens (120s grace), so refreshed credentials
 // must be saved by the caller.
@@ -350,6 +366,10 @@ func EnsureFresh(ctx context.Context, httpClient *http.Client, c *Credentials) (
 		"refresh_token": {c.RefreshToken},
 		"client_id":     {ClientID},
 	})
+	var tokErr *tokenError
+	if errors.As(err, &tokErr) && tokErr.Code == "invalid_grant" {
+		return nil, false, ErrSessionExpired
+	}
 	if err != nil {
 		return nil, false, fmt.Errorf("%w: %w", ErrRefreshFailed, err)
 	}
