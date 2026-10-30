@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.0.1](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0...v2.0.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* `flagsmith init` fails with `invalid_grant` on an expired session ([#110](https://github.com/Flagsmith/flagsmith-cli/issues/110)) ([1bef28c](https://github.com/Flagsmith/flagsmith-cli/commit/1bef28ccb92d06bd7ddc94eed6fcf2cf6e3ba343))
+* **ci:** Homebrew cask ships no shell completions ([#102](https://github.com/Flagsmith/flagsmith-cli/issues/102)) ([2d55665](https://github.com/Flagsmith/flagsmith-cli/commit/2d55665ea33b016708c62fd9ff53559175852c23))
+* **ci:** npm publish fails with `Cannot find module 'yargs'` ([#101](https://github.com/Flagsmith/flagsmith-cli/issues/101)) ([8bf7dfc](https://github.com/Flagsmith/flagsmith-cli/commit/8bf7dfcc201b1b32d01a9897a6036f323dda8b1f))
+* **docs:** Command reference hides the sidebar on leaf pages ([#105](https://github.com/Flagsmith/flagsmith-cli/issues/105)) ([a5e139c](https://github.com/Flagsmith/flagsmith-cli/commit/a5e139c8be83acae8ea441fe17bd2c3d53824281))
+
+
+### CI
+
+* Use goreleaser-npm-publisher-action v1.6.0 ([#104](https://github.com/Flagsmith/flagsmith-cli/issues/104)) ([3aea696](https://github.com/Flagsmith/flagsmith-cli/commit/3aea696a9c7fa17dd88dcd5f6d1abc62b9d745f5))
+
+
+### Dependency Updates
+
+* update module github.com/flagsmith/flagsmith-go-client/v5 to v5.3.0 ([#108](https://github.com/Flagsmith/flagsmith-cli/issues/108)) ([476ba5d](https://github.com/Flagsmith/flagsmith-cli/commit/476ba5d86a22bbbb89f5a20d20968373e8faf0c5))
+* update module golang.org/x/net to v0.60.0 [security] ([#109](https://github.com/Flagsmith/flagsmith-cli/issues/109)) ([2fac549](https://github.com/Flagsmith/flagsmith-cli/commit/2fac549dce08d7458f7c5bf03e33d46d61340157))
+* update module golang.org/x/net to v0.62.0 [security] ([#111](https://github.com/Flagsmith/flagsmith-cli/issues/111)) ([3a0acfc](https://github.com/Flagsmith/flagsmith-cli/commit/3a0acfcef3f90a961966b097abc6215dfc304e36))
+
+
+### Other
+
+* Add `CODEOWNERS` ([#32](https://github.com/Flagsmith/flagsmith-cli/issues/32)) ([bad3dbe](https://github.com/Flagsmith/flagsmith-cli/commit/bad3dbe30e23e78e816d31ab7095b77553253332))
+
 ## [2.0.0](https://github.com/Flagsmith/flagsmith-cli/compare/v2.0.0-beta.3...v2.0.0) (2026-08-21)
 
 
