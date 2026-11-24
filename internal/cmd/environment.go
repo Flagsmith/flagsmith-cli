@@ -89,27 +89,29 @@ var environmentListCmd = &cobra.Command{
 	},
 }
 
+func environmentScopedContext(cmd *cobra.Command, ref string, full bool) (*activeCredential, *api.Environment, error) {
+	pc, err := applyContext(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
+	cred, err := resolveCredential(cmd.Context())
+	if err != nil {
+		return nil, nil, err
+	}
+	env, err := resolveEnvironmentWithProject(cmd, pc, cred, ref, full)
+	return cred, env, err
+}
+
 var environmentGetCmd = &cobra.Command{
 	Use:     "get <environment>",
 	Short:   "Show an environment",
 	Example: "  flagsmith environment get Production",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := projectScopedContext(cmd)
+		// Machine output needs the full retrieve payload.
+		_, env, err := environmentScopedContext(cmd, args[0], jsonOutput())
 		if err != nil {
 			return err
-		}
-		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
-		if err != nil {
-			return err
-		}
-		// The human detail's fields are all in the resolved list row. The
-		// retrieve payload is richer, so machine output re-fetches for fidelity.
-		env := ref
-		if jsonOutput() {
-			if env, err = cred.client().GetEnvironment(cmd.Context(), ref.APIKey); err != nil {
-				return err
-			}
 		}
 		return renderEnvironment(cmd, env)
 	},
@@ -149,11 +151,7 @@ var environmentUpdateCmd = &cobra.Command{
 		if len(body) == 0 {
 			return usageErrorf("nothing to update — pass --name, --description, or a setting flag")
 		}
-		cred, projectID, err := projectScopedContext(cmd)
-		if err != nil {
-			return err
-		}
-		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+		cred, ref, err := environmentScopedContext(cmd, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -172,11 +170,7 @@ var environmentDeleteCmd = &cobra.Command{
 	Example: "  flagsmith environment delete Staging --yes",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := projectScopedContext(cmd)
-		if err != nil {
-			return err
-		}
-		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+		cred, ref, err := environmentScopedContext(cmd, args[0], false)
 		if err != nil {
 			return err
 		}
@@ -198,11 +192,7 @@ var environmentCloneCmd = &cobra.Command{
 	Example: `  flagsmith environment clone Production "Production Copy"`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cred, projectID, err := projectScopedContext(cmd)
-		if err != nil {
-			return err
-		}
-		ref, err := resolveEnvironmentRef(cmd, cred, projectID, args[0])
+		cred, ref, err := environmentScopedContext(cmd, args[0], false)
 		if err != nil {
 			return err
 		}

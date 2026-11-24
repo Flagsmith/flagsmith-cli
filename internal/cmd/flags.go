@@ -288,6 +288,17 @@ func flagContext(cmd *cobra.Command) (*projectContext, *activeCredential, int, a
 	if err != nil {
 		return nil, nil, 0, api.Environment{}, err
 	}
+	if pc.Project.Value == nil {
+		ref, err := environmentReference(pc)
+		if err != nil {
+			return nil, nil, 0, api.Environment{}, err
+		}
+		env, err := resolveEnvironmentWithProject(cmd, pc, cred, ref, false)
+		if err != nil {
+			return nil, nil, 0, api.Environment{}, err
+		}
+		return pc, cred, env.Project, *env, nil
+	}
 	projectID, err := resolveProjectID(cmd, pc, cred)
 	if err != nil {
 		return nil, nil, 0, api.Environment{}, err
