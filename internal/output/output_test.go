@@ -131,6 +131,20 @@ func TestRenderJQImpliesJSONAndFilters(t *testing.T) {
 		}
 	})
 
+	t.Run("pretty output indents objects and keeps strings raw", func(t *testing.T) {
+		var b bytes.Buffer
+		err := Render(&b, sample{7, "beta"}, Options{
+			JQ: "{n: [.id]}, .name", JQPretty: true,
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "{\n  \"n\": [\n    7\n  ]\n}\nbeta\n"
+		if got := b.String(); got != want {
+			t.Errorf("output = %q, want %q", got, want)
+		}
+	})
+
 	t.Run("invalid expression errors", func(t *testing.T) {
 		// Given
 		var b bytes.Buffer

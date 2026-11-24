@@ -15,8 +15,9 @@ import (
 
 // Options selects the output format for a single command invocation.
 type Options struct {
-	JSON bool   // emit JSON instead of a human view
-	JQ   string // filter JSON through this jq expression (implies JSON)
+	JSON     bool   // emit JSON instead of a human view
+	JQ       string // filter JSON through this jq expression (implies JSON)
+	JQPretty bool   // indent structured jq results
 }
 
 func (o Options) jsonMode() bool { return o.JSON || o.JQ != "" }
@@ -66,7 +67,7 @@ func Render(w io.Writer, data any, opts Options, human func(io.Writer) error) er
 		return human(w)
 	}
 	if opts.JQ != "" {
-		return renderJQ(w, data, opts.JQ)
+		return renderJQ(w, data, opts.JQ, opts.JQPretty)
 	}
 	encoded, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -77,8 +78,8 @@ func Render(w io.Writer, data any, opts Options, human func(io.Writer) error) er
 }
 
 // renderJQ runs a jq expression over data and prints each result: raw for
-// strings, compact JSON otherwise (matching `gh --jq`).
-func renderJQ(w io.Writer, data any, expr string) error {
+// strings, JSON otherwise. JSON is compact by default (matching `gh --jq`).
+func renderJQ(w io.Writer, data any, expr string, pretty bool) error {
 	query, err := gojq.Parse(expr)
 	if err != nil {
 		return fmt.Errorf("invalid jq expression: %w", err)
@@ -93,6 +94,10 @@ func renderJQ(w io.Writer, data any, expr string) error {
 		return err
 	}
 	iter := query.Run(input)
+	encoder := json.NewEncoder(w)
+	if pretty {
+		encoder.SetIndent("", "  ")
+	}
 	for {
 		v, ok := iter.Next()
 		if !ok {
@@ -102,14 +107,14 @@ func renderJQ(w io.Writer, data any, expr string) error {
 			return err
 		}
 		if s, ok := v.(string); ok {
-			fmt.Fprintln(w, s)
+			if _, err := fmt.Fprintln(w, s); err != nil {
+				return err
+			}
 			continue
 		}
-		encoded, err := json.Marshal(v)
-		if err != nil {
+		if err := encoder.Encode(v); err != nil {
 			return err
 		}
-		fmt.Fprintln(w, string(encoded))
 	}
 	return nil
 }

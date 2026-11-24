@@ -90,7 +90,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	if apiIncludeFlag {
 		writeStatusLine(out, resp)
 	}
-	return writeBody(out, respBody, jqFlag)
+	return writeBody(out, respBody, outputOpts())
 }
 
 // apiTarget resolves the base URL and the auth applier for the chosen surface.
@@ -266,8 +266,8 @@ func writeStatusLine(w io.Writer, resp *http.Response) {
 
 // writeBody writes the response verbatim, or filters it through jq. Raw
 // passthrough preserves the API's own formatting; --jq requires JSON.
-func writeBody(w io.Writer, body []byte, jqExpr string) error {
-	if jqExpr == "" {
+func writeBody(w io.Writer, body []byte, opts output.Options) error {
+	if opts.JQ == "" {
 		_, err := w.Write(body)
 		return err
 	}
@@ -275,7 +275,7 @@ func writeBody(w io.Writer, body []byte, jqExpr string) error {
 	if err := json.Unmarshal(body, &v); err != nil {
 		return fmt.Errorf("response is not JSON, cannot apply --jq: %w", err)
 	}
-	return output.Render(w, v, output.Options{JQ: jqExpr}, nil)
+	return output.Render(w, v, opts, nil)
 }
 
 func init() {
