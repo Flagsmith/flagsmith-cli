@@ -8272,20 +8272,36 @@ func TestAPI(t *testing.T) {
 }
 
 func TestFlagCreateIsNudge(t *testing.T) {
-	// Given / When
-	f := flagUpdateEnv(t)
-	out, err := run("", "flag", "create", "brand-new")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"with a feature name", []string{"flag", "create", "brand-new"}, "brand-new"},
+		{"without a feature name", []string{"flag", "create"}, "<feature>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given
+			flagUpdateEnv(t)
 
-	// Then
-	var ue *usageError
-	if !errors.As(err, &ue) || !strings.Contains(hintFor(err), "feature create brand-new") {
-		t.Errorf("err = %v (hint %q), want a hint nudging toward `feature create`", err, hintFor(err))
+			// When
+			out, err := run("", tc.args...)
+
+			// Then
+			var ue *usageError
+			if !errors.As(err, &ue) {
+				t.Fatalf("err = %v, want a usage error", err)
+			}
+			for _, want := range []string{"flags can only be changed, not created", "flagsmith feature create " + tc.want, "flagsmith flag update " + tc.want} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output = %q, want %q", out, want)
+				}
+			}
+			if strings.Contains(out, "Usage:") {
+				t.Errorf("hidden redirect should not print a usage block:\n%s", out)
+			}
+		})
 	}
-	// ...but no usage block: `flag create` is a hidden redirect, not a real command.
-	if strings.Contains(out, "Usage:") {
-		t.Errorf("hidden redirect should not print a usage block:\n%s", out)
-	}
-	_ = f
 }
 
 func TestAuthStatusHonoursConfigAPIURL(t *testing.T) {

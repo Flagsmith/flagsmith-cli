@@ -462,7 +462,7 @@ func runFlagToggle(cmd *cobra.Command, name string, enable bool) error {
 // environment).
 var flagCreateCmd = &cobra.Command{
 	Use:    "create <feature>",
-	Short:  "Not applicable — flags exist per environment (see `feature create`)",
+	Short:  "Use feature create or flag update",
 	Hidden: true,
 	Args:   cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -471,8 +471,8 @@ var flagCreateCmd = &cobra.Command{
 			name = args[0]
 		}
 		return hintf(
-			usageErrorf("flags exist per environment, so there is nothing to create"),
-			"To create the feature itself, run `flagsmith feature create %s`.", name)
+			usageErrorf("flags can only be changed, not created"),
+			"To create a feature, run `flagsmith feature create %s`.\nTo change a flag, run `flagsmith flag update %s`.", name, name)
 	},
 }
 
