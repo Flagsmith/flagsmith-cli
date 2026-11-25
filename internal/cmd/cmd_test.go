@@ -8173,6 +8173,23 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("--jq-pretty indents filtered API output", func(t *testing.T) {
+		// Given
+		flagUpdateEnv(t)
+
+		// When
+		out, err := run("", "api", "api/v1/organisations/", "--jq", "{names: [.results[].name]}", "--jq-pretty")
+
+		// Then
+		if err != nil {
+			t.Fatalf("api: %v", err)
+		}
+		want := "{\n  \"names\": [\n    \"Acme\"\n  ]\n}\n"
+		if out != want {
+			t.Errorf("out = %q, want %q", out, want)
+		}
+	})
+
 	t.Run("a field implies POST with a typed JSON body", func(t *testing.T) {
 		flagUpdateEnv(t)
 		e := echoJSON(t, "", "-F", "n=3", "-f", "s=3")

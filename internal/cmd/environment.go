@@ -258,7 +258,9 @@ var environmentDocumentCmd = &cobra.Command{
 			return err
 		}
 		// A document is always JSON; --jq composes.
-		return output.Render(cmd.OutOrStdout(), parsed, output.Options{JSON: true, JQ: jqFlag}, nil)
+		opts := outputOpts()
+		opts.JSON = true
+		return output.Render(cmd.OutOrStdout(), parsed, opts, nil)
 	},
 }
 

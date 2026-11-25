@@ -94,6 +94,7 @@ var (
 	noInputFlag      bool
 	jsonFlag         bool
 	jqFlag           string
+	jqPrettyFlag     bool
 )
 
 // jsonOutput reports whether machine-readable output was requested.
@@ -103,7 +104,7 @@ func jsonOutput() bool {
 
 // outputOpts is the render format for the current invocation.
 func outputOpts() output.Options {
-	return output.Options{JSON: jsonOutput(), JQ: jqFlag}
+	return output.Options{JSON: jsonOutput(), JQ: jqFlag, JQPretty: jqPrettyFlag}
 }
 
 // usageError is a missing/invalid input a prompt would have collected
@@ -264,6 +265,8 @@ func init() {
 		"output JSON instead of human-readable text (env: FLAGSMITH_JSON_OUTPUT)")
 	flags.StringVar(&jqFlag, "jq", "",
 		"filter JSON output through a jq expression (implies --json)")
+	flags.BoolVar(&jqPrettyFlag, "jq-pretty", false,
+		"indent JSON results from --jq")
 
 	rootCmd.SetUsageTemplate(singleLineUsage(rootCmd.UsageTemplate()))
 

@@ -101,6 +101,6 @@ Reading works against any Flagsmith instance. Changing flags — `flag update`, 
 
 ## Conventions
 
-- `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
+- `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it. Add `--jq-pretty` to indent filtered JSON when reading or saving it.
 - Static credentials: `FLAGSMITH_API_KEY` (Admin API), `FLAGSMITH_ENVIRONMENT_KEY` (SDK). When self-hosting Flagsmith, append the host and port, doubling `-` and writing `.` and `:` as `_`: `https://flagsmith-staging.com:8000` reads `FLAGSMITH_API_KEY_flagsmith__staging_com_8000`.
 - Self-hosted: `--api-url` or `FLAGSMITH_API_URL`.
