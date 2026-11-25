@@ -74,8 +74,8 @@ func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []
 	return candidates[idx], nil
 }
 
-// resolveEnvironment turns the environment context reference (a client-side key
-// or a name) into the full environment within a project, over the Admin API.
+// environmentReference returns the configured environment name or client-side key,
+// falling back to the SDK credential when no reference is configured.
 func environmentReference(pc *projectContext) (string, error) {
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
@@ -96,6 +96,7 @@ func environmentReference(pc *projectContext) (string, error) {
 	return ref, nil
 }
 
+// resolveEnvironment looks up the configured environment within a project.
 func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCredential, projectID int) (api.Environment, error) {
 	ref, err := environmentReference(pc)
 	if err != nil {
