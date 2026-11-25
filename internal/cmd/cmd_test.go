@@ -4966,6 +4966,7 @@ func TestFlagUpdateWeight(t *testing.T) {
 		{"over 100 in total", "hero=40", ""}, // filled in below
 		{"not a pair", "hero", "is not <key|id>=<percentage>"},
 		{"not a percentage", "hero=lots", "is not a percentage"},
+		{"not a number", "hero=NaN", "is not a percentage"},
 		{"over 100 on its own", "hero=140", "is not a percentage"},
 		{"negative", "hero=-1", "is not a percentage"},
 		{"the same variant twice", "hero=10,hero=20", "given twice"},

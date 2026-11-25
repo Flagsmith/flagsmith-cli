@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -104,7 +105,7 @@ func parseWeights(args []string) ([]weightRef, error) {
 				return nil, usageErrorf("--weight %q is not <key|id>=<percentage>", pair)
 			}
 			weight, err := strconv.ParseFloat(raw, 64)
-			if err != nil || weight < 0 || weight > 100 {
+			if err != nil || math.IsNaN(weight) || weight < 0 || weight > 100 {
 				return nil, usageErrorf("--weight %s: %q is not a percentage between 0 and 100", ref, raw)
 			}
 			if ref == controlVariantKey {
