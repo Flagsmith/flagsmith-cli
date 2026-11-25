@@ -6546,6 +6546,63 @@ func withEnvironments(f *fakeInstance) {
 	}
 }
 
+func TestEnvironmentKeyWithoutProject(t *testing.T) {
+	const key = "K2mVsGdXhZ8kQqZ9pJmNbJ"
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		envKey   string
+		want     string
+		wantGets int
+		wantList int
+		wantErr  string
+	}{
+		{name: "flag list by key", args: []string{"flag", "list", "-e", key}, wantGets: 1},
+		{name: "flag list by SDK key", args: []string{"flag", "list"}, envKey: key, wantGets: 1},
+		{name: "get JSON by key", args: []string{"environment", "get", key, "--jq", ".project"}, want: "101", wantGets: 1},
+		{name: "name requires project", args: []string{"environment", "get", "Production"}, wantErr: "no project"},
+		{name: "unknown key requires project", args: []string{"environment", "get", strings.Repeat("a", 22)}, wantErr: "no project", wantGets: 1},
+		{name: "wrong explicit project", args: []string{"flag", "list", "-e", key, "--project", "999"}, wantErr: "not found in project 999", wantList: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given
+			isolateStorage(t)
+			f := newFakeInstance(t)
+			withEnvironments(f)
+			f.envs["999"] = []map[string]any{}
+			tempRepo(t)
+			setMasterKey(t, f.srv.URL)
+			t.Setenv("FLAGSMITH_API_URL", f.srv.URL)
+			setEnvCred(t, envEnvironmentKey, f.srv.URL, tc.envKey)
+			t.Setenv("FLAGSMITH_SDK_API_URL", f.srv.URL)
+
+			// When
+			out, err := run("", tc.args...)
+
+			// Then
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want %q", err, tc.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("command: %v\noutput: %s", err, out)
+			}
+			if tc.want != "" && strings.TrimSpace(out) != tc.want {
+				t.Errorf("output = %q, want %q", out, tc.want)
+			}
+			if tc.wantErr == "" && tc.args[0] == "flag" && f.featuresEnv() != "2" {
+				t.Errorf("features environment = %q, want 2", f.featuresEnv())
+			}
+			if got := f.environmentGets(); got != tc.wantGets {
+				t.Errorf("environment retrieves = %d, want %d", got, tc.wantGets)
+			}
+			if got := f.environmentLists(); got != tc.wantList {
+				t.Errorf("environment lists = %d, want %d", got, tc.wantList)
+			}
+		})
+	}
+}
+
 func TestEnvironment(t *testing.T) {
 	t.Run("list", func(t *testing.T) {
 		f := flagUpdateEnv(t)

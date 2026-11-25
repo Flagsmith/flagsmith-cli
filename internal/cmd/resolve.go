@@ -74,9 +74,9 @@ func pickCandidate(cmd *cobra.Command, entity, idKind, ref string, candidates []
 	return candidates[idx], nil
 }
 
-// resolveEnvironment turns the environment context reference (a client-side key
-// or a name) into the full environment within a project, over the Admin API.
-func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCredential, projectID int) (api.Environment, error) {
+// environmentReference returns the configured environment name or client-side key,
+// falling back to the SDK credential when no reference is configured.
+func environmentReference(pc *projectContext) (string, error) {
 	ref, _ := pc.Environment.Value.(string)
 	if ref == "" {
 		// The SDK credential doubles as an environment reference, host-scoped
@@ -88,10 +88,19 @@ func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCred
 		// environment over the Admin API. Name the variable, never its value:
 		// it is a secret and must stay out of stderr and CI logs.
 		if strings.HasPrefix(ref, "ser.") {
-			return api.Environment{}, withHint(
+			return "", withHint(
 				fmt.Errorf("%s holds a server-side key, which cannot identify an environment for Admin commands", name),
 				"Pass -e, set FLAGSMITH_ENVIRONMENT, or run `flagsmith init`.")
 		}
+	}
+	return ref, nil
+}
+
+// resolveEnvironment looks up the configured environment within a project.
+func resolveEnvironment(cmd *cobra.Command, pc *projectContext, cred *activeCredential, projectID int) (api.Environment, error) {
+	ref, err := environmentReference(pc)
+	if err != nil {
+		return api.Environment{}, err
 	}
 	if ref == "" {
 		return api.Environment{}, withHint(errors.New("no environment"),
@@ -201,6 +210,43 @@ func resolveEnvironmentRef(cmd *cobra.Command, cred *activeCredential, projectID
 		return e, nil
 	}
 	return nil, notFound
+}
+
+// resolveEnvironmentWithProject keeps explicit project scoping and otherwise
+// looks up the project directly from a client-side environment key.
+func resolveEnvironmentWithProject(cmd *cobra.Command, pc *projectContext, cred *activeCredential, ref string, full bool) (*api.Environment, error) {
+	if pc.Project.Value != nil {
+		projectID, err := resolveProjectID(cmd, pc, cred)
+		if err != nil {
+			return nil, err
+		}
+		env, err := resolveEnvironmentRef(cmd, cred, projectID, ref)
+		if err != nil || !full {
+			return env, err
+		}
+		return cred.client().GetEnvironment(cmd.Context(), env.APIKey)
+	}
+
+	noProject := withHint(errors.New("no project"),
+		"Pass a client-side environment key, set --project, or set `project` in flagsmith.json. Environment names require a project.")
+	if strings.HasPrefix(ref, "ser.") {
+		return nil, withHint(
+			errors.New("the environment reference takes a client-side key, not a server-side one"),
+			hintServerSideKey())
+	}
+	if !environmentKeyShape.MatchString(ref) {
+		return nil, noProject
+	}
+
+	env, err := cred.client().GetEnvironment(cmd.Context(), ref)
+	if api.IsNotFound(err) {
+		return nil, noProject
+	}
+	if err != nil {
+		return nil, err
+	}
+	_ = cache.Merge(apiURL, &cache.Names{Environments: map[string]string{env.APIKey: env.Name}})
+	return env, nil
 }
 
 // resolveProjectID turns the project reference (an id or a name) into an id.

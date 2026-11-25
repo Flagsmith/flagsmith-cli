@@ -345,6 +345,11 @@ func statusOf(err error) int {
 	return 0
 }
 
+// IsNotFound reports whether the API returned HTTP 404.
+func IsNotFound(err error) bool {
+	return statusOf(err) == http.StatusNotFound
+}
+
 // apiDetailOf returns the API's own message for an error, or "" — which is what
 // a response that no API rendered looks like.
 func apiDetailOf(err error) string {
