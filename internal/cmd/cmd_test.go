@@ -8292,7 +8292,7 @@ func TestFlagCreateIsNudge(t *testing.T) {
 			if !errors.As(err, &ue) {
 				t.Fatalf("err = %v, want a usage error", err)
 			}
-			for _, want := range []string{"flags can only be changed, not created", "flagsmith feature create " + tc.want, "flagsmith flag update " + tc.want} {
+			for _, want := range []string{"flags can only be changed, not created", "flagsmith feature create " + tc.want, "flagsmith flag update " + tc.want + " --enable"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("output = %q, want %q", out, want)
 				}

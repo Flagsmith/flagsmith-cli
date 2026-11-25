@@ -472,7 +472,7 @@ var flagCreateCmd = &cobra.Command{
 		}
 		return hintf(
 			usageErrorf("flags can only be changed, not created"),
-			"To create a feature, run `flagsmith feature create %s`.\nTo change a flag, run `flagsmith flag update %s`.", name, name)
+			"To create a feature, run `flagsmith feature create %s`.\nTo enable an existing flag, run `flagsmith flag update %s --enable`.", name, name)
 	},
 }
 
