@@ -29,6 +29,9 @@ jobs:
           go-version-file: go.mod
       - run: go build ./...
       - run: go test -race ./...
+      - name: Test the rollback rehearsal skill
+        if: runner.os == 'Linux'
+        run: python3 -m unittest discover -s tests/skills
 
   lint:
     runs-on: ubuntu-latest
