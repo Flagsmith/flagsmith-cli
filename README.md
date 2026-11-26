@@ -99,6 +99,10 @@ Reading works against any Flagsmith instance. Changing flags — `flag update`, 
 - `flagsmith auth token` — print the active Admin API credential for curl/scripts.
 - `flagsmith api <path>` — call any Flagsmith endpoint with the CLI's credentials applied (curl-like; `--sdk` for the SDK API, `-F`/`-f` fields).
 
+## Agent skills
+
+[Rehearse a flag rollback](skills/rehearse-flag-rollback/SKILL.md) compares how different retirement policies affect new and in-flight work in a disposable environment.
+
 ## Conventions
 
 - `--json` (or `FLAGSMITH_JSON_OUTPUT`) for machine-readable output; `--jq <expr>` to filter it.
