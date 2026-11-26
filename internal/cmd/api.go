@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -176,7 +177,7 @@ func parseFields() (map[string]any, error) {
 	return fields, nil
 }
 
-// typedFieldValue infers a JSON type for a -F value: bool, null, number, else
+// typedFieldValue infers a JSON type for a -F value: bool, null, finite number, else
 // string.
 func typedFieldValue(raw string) any {
 	switch raw {
@@ -190,7 +191,7 @@ func typedFieldValue(raw string) any {
 	if n, err := strconv.Atoi(raw); err == nil {
 		return n
 	}
-	if f, err := strconv.ParseFloat(raw, 64); err == nil {
+	if f, err := strconv.ParseFloat(raw, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
 		return f
 	}
 	return raw

@@ -8193,6 +8193,29 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("JSON body keeps non-finite typed fields as strings", func(t *testing.T) {
+		// Given
+		flagUpdateEnv(t)
+
+		// When
+		e := echoJSON(t, "", "-F", "nan=NaN", "-F", "positive=+Inf",
+			"-F", "negative=-Infinity", "-F", "decimal=1.25")
+
+		// Then
+		body, _ := e["body"].(string)
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(body), &fields); err != nil {
+			t.Fatalf("parse body %q: %v", body, err)
+		}
+		for key, want := range map[string]any{
+			"nan": "NaN", "positive": "+Inf", "negative": "-Infinity", "decimal": 1.25,
+		} {
+			if got := fields[key]; got != want {
+				t.Errorf("field %s = %#v, want %#v", key, got, want)
+			}
+		}
+	})
+
 	t.Run("fields join a path that already has a query string", func(t *testing.T) {
 		// Given
 		flagUpdateEnv(t)
