@@ -52,10 +52,12 @@ go build -o flagsmith .
 ## Docker
 
 ```sh
-docker run --rm -v "$PWD:/work" -e FLAGSMITH_API_KEY ghcr.io/flagsmith/flagsmith-cli flag list
+docker run --rm -v "$PWD:/work:ro" -e FLAGSMITH_API_KEY ghcr.io/flagsmith/flagsmith-cli flag list
 ```
 
 A container has no keyring, so `flagsmith login` cannot store credentials there — pass `FLAGSMITH_API_KEY` or `FLAGSMITH_ENVIRONMENT_KEY`.
+
+The image runs as an unprivileged user. For a command that writes to `/work`, such as `flagsmith init`, mount the directory read-write and add `--user "$(id -u):$(id -g)" -e HOME=/tmp` to use your host account's permissions.
 
 ## Quickstart
 
