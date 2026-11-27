@@ -1256,6 +1256,20 @@ type SegmentCondition struct {
 	Value    any    `json:"value"`
 }
 
+// MarshalJSON always sends `property`, as null when empty: the Admin API rejects
+// a PERCENTAGE_SPLIT condition that omits the key, and stores no property as null.
+func (c SegmentCondition) MarshalJSON() ([]byte, error) {
+	var property any
+	if c.Property != "" {
+		property = c.Property
+	}
+	return json.Marshal(struct {
+		Property any    `json:"property"`
+		Operator string `json:"operator"`
+		Value    any    `json:"value"`
+	}{property, c.Operator, c.Value})
+}
+
 // SegmentRule is a node in a segment's rule tree (ALL/ANY/NONE over conditions
 // and sub-rules).
 type SegmentRule struct {

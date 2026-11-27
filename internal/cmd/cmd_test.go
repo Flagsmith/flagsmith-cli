@@ -5976,6 +5976,23 @@ func TestSegmentCreate(t *testing.T) {
 		}
 	})
 
+	t.Run("sends a null property for a percentage split", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		rule := `{"type":"ALL","rules":[{"type":"ANY","conditions":[{"operator":"PERCENTAGE_SPLIT","value":"25"}]}]}`
+		if out, err := run("", "segment", "create", "rollout", "--rules", rule); err != nil {
+			t.Fatalf("segment create: %v\noutput: %s", err, out)
+		}
+		top := f.lastSegmentBody["rules"].([]any)[0].(map[string]any)
+		cond := top["rules"].([]any)[0].(map[string]any)["conditions"].([]any)[0].(map[string]any)
+		property, present := cond["property"]
+		if !present || property != nil {
+			t.Errorf("property = %v (present %v), want null on the wire", property, present)
+		}
+		if cond["operator"] != "PERCENTAGE_SPLIT" || cond["value"] != "25" {
+			t.Errorf("condition = %v", cond)
+		}
+	})
+
 	t.Run("requires --rules", func(t *testing.T) {
 		flagUpdateEnv(t)
 		_, err := run("", "segment", "create", "x")
