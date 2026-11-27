@@ -57,7 +57,10 @@ docker run --rm -v "$PWD:/work:ro" -e FLAGSMITH_API_KEY ghcr.io/flagsmith/flagsm
 
 A container has no keyring, so `flagsmith login` cannot store credentials there — pass `FLAGSMITH_API_KEY` or `FLAGSMITH_ENVIRONMENT_KEY`.
 
-The image runs as an unprivileged user. For a command that writes to `/work`, such as `flagsmith init`, mount the directory read-write and add `--user "$(id -u):$(id -g)" -e HOME=/tmp` to use your host account's permissions.
+The image runs as an unprivileged user. For a command that writes to `/work`, such as `flagsmith init`, mount the directory read-write and select the user that owns it:
+
+- With rootful Docker and default UID mapping, add `--user "$(id -u):$(id -g)" -e HOME=/tmp` to use your host account.
+- With rootless Docker and a directory owned by the daemon user, add `--user 0:0 -e HOME=/tmp`. Container UID and GID 0 map to the host account running the daemon. See [Docker's UID/GID mapping guide](https://docs.docker.com/engine/security/rootless/uid-gid-mapping/).
 
 ## Quickstart
 
