@@ -294,6 +294,9 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 		return err
 	}
 
+	// Worked out from the state before the write, printed once it succeeds.
+	undo, undoOK := undoFlagMutation(cmd, name, segmentID, target, meta.priority, m)
+
 	resp, err := cred.client().UpdateFlag(cmd.Context(), env.APIKey, feature.ID, req)
 	if err != nil {
 		return err
@@ -314,6 +317,7 @@ func applyFlagMutation(cmd *cobra.Command, name string, m flagMutation) error {
 	if m.setPriority {
 		output.Success(errOut, "Set %s priority to %d %s", name, m.priority, scope)
 	}
+	printUndo(cmd, undo, undoOK)
 
 	// Result model: an update also prints the resulting resource to stdout. The
 	// response carries the flag's whole state in the environment, so the detail

@@ -8770,3 +8770,132 @@ func TestRefreshPersistsToKeychain(t *testing.T) {
 		t.Errorf("AccessToken = %q, want the refreshed token persisted", creds.AccessToken)
 	}
 }
+
+func TestFlagUpdateUndoHint(t *testing.T) {
+	undoLine := func(out string) string {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "Undo: ") {
+				return strings.TrimPrefix(strings.TrimSpace(line), "Undo: ")
+			}
+		}
+		return ""
+	}
+	cases := []struct {
+		name  string
+		setup func(f *fakeInstance)
+		args  []string
+		want  string // "" = no hint
+	}{
+		{
+			name: "enable restores the previous enabled state",
+			args: []string{"flag", "enable", "max_items"},
+			want: "flagsmith flag update max_items --disable",
+		},
+		{
+			name: "a value change restores the previous value",
+			args: []string{"flag", "update", "max_items", "--value", "30"},
+			want: "flagsmith flag update max_items --value 25",
+		},
+		{
+			name: "an explicit environment is repeated",
+			args: []string{"flag", "update", "max_items", "--enable", "--environment", "WqXhZk8sVY3dGgTqZ9pJmN"},
+			want: "flagsmith flag update max_items --environment WqXhZk8sVY3dGgTqZ9pJmN --disable",
+		},
+		{
+			name: "no hint when the previous value was unset",
+			args: []string{"flag", "update", "onboarding_banner", "--value", "hi"},
+			want: "",
+		},
+		{
+			name: "no hint when nothing changed",
+			args: []string{"flag", "enable", "onboarding_banner"},
+			want: "",
+		},
+		{
+			name: "a segment override restores its previous value",
+			setup: func(f *fakeInstance) {
+				withSegmentOverride(f, true)
+				withFeatureSegments(f, 2, map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1})
+			},
+			args: []string{"flag", "update", "max_items", "--segment", "12", "--value", "new"},
+			want: "flagsmith flag update max_items --segment 12 --value special",
+		},
+		{
+			name: "a priority move restores the previous priority",
+			setup: func(f *fakeInstance) {
+				withSegmentOverride(f, true)
+				f.features["101"][0]["num_segment_overrides"] = 2
+				withFeatureSegments(f, 2,
+					map[string]any{"id": 1199, "segment": 9, "segment_name": "beta", "priority": 0, "environment": 1},
+					map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 1, "environment": 1},
+				)
+			},
+			args: []string{"flag", "update", "max_items", "--segment", "12", "--priority", "0"},
+			want: "flagsmith flag update max_items --segment 12 --priority 1",
+		},
+		{
+			name: "a new segment override is undone by deleting it",
+			setup: func(f *fakeInstance) {
+				withSegmentOverride(f, false)
+				withFeatureSegments(f, 2, map[string]any{"id": 1200, "segment": 12, "segment_name": "powerusers", "priority": 0})
+			},
+			args: []string{"flag", "update", "max_items", "--segment", "7", "--enable"},
+			want: "flagsmith flag delete max_items --segment 7",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given
+			f := flagUpdateEnv(t)
+			if tc.setup != nil {
+				tc.setup(f)
+			}
+
+			// When
+			out, err := run("", append(tc.args, "--yes")...)
+
+			// Then
+			if err != nil {
+				t.Fatalf("%v: %v\noutput: %s", tc.args, err, out)
+			}
+			if got := undoLine(out); got != tc.want {
+				t.Errorf("undo = %q, want %q\noutput: %s", got, tc.want, out)
+			}
+		})
+	}
+
+	t.Run("no hint when the update fails", func(t *testing.T) {
+		flagUpdateEnv(t)
+		out, err := run("", "flag", "update", "no_such_feature", "--enable", "--yes")
+		if err == nil {
+			t.Fatalf("want an error, got output %s", out)
+		}
+		if got := undoLine(out); got != "" {
+			t.Errorf("undo = %q after a failed update, want none", got)
+		}
+	})
+}
+
+func TestUndoValueArgs(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+		ok   bool
+	}{
+		{true, "--value true", true},
+		{float64(25), "--value 25", true},
+		{float64(2.5), "", false},
+		{"hello", "--value hello", true},
+		{"42", "--value 42 --type string", true},
+		{"false", "--value false --type string", true},
+		{"two words", "--value 'two words'", true},
+		{"it's", `--value 'it'\''s'`, true},
+		{nil, "", false},
+	}
+	for _, tc := range cases {
+		args, ok := valueArgs(tc.in)
+		if got := strings.Join(args, " "); ok != tc.ok || got != tc.want {
+			t.Errorf("valueArgs(%#v) = %q, %v; want %q, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
