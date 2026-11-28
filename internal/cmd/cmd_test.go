@@ -6375,10 +6375,13 @@ func TestFeatureCreate(t *testing.T) {
 		if _, err := run("", "feature", "create", "pricing-layout", "--value", "monthly_first", "--variants", variants); err != nil {
 			t.Fatalf("feature create --variants: %v", err)
 		}
-		// The API drops `key` on nested variants, so keyed ones go to mv-options,
-		// once each.
-		if opts, _ := f.lastFeatureBody["multivariate_options"].([]any); len(opts) != 1 {
-			t.Errorf("options = %+v, want the keyed variant created exactly once", opts)
+		// The API drops `key` on nested variants, so keyed ones go to mv-options.
+		// The fake keeps the create body as the stored feature and appends each
+		// mv-options POST to it, so exactly one stored option, carrying its key,
+		// means the create sent none nested and mv-options got it once.
+		opts, _ := f.lastFeatureBody["multivariate_options"].([]any)
+		if len(opts) != 1 || opts[0].(map[string]any)["key"] != "annual_first" {
+			t.Errorf("stored options = %+v, want only the keyed variant, added once through mv-options", opts)
 		}
 		o := f.lastMVBody
 		if o["key"] != "annual_first" || o["string_value"] != "annual_first" || o["default_percentage_allocation"] != float64(50) {
