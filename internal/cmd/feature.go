@@ -224,16 +224,42 @@ var featureCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("enabled") {
 			in.DefaultEnabled = &featureEnabledFlag
 		}
+		// The API ignores `key` on variants nested in a feature create; it is
+		// only writable through the mv-options endpoint. Keyed variants are
+		// added there once the feature exists.
+		var keyed []api.MultivariateOption
 		if cmd.Flags().Changed("variants") {
-			if in.MultivariateOptions, err = variantsForWrite(cmd, featureVariantsFlag); err != nil {
+			opts, err := variantsForWrite(cmd, featureVariantsFlag)
+			if err != nil {
 				return err
 			}
+			for _, o := range opts {
+				if o.Key != "" {
+					keyed = append(keyed, o)
+				} else {
+					in.MultivariateOptions = append(in.MultivariateOptions, o)
+				}
+			}
 		}
-		feat, err := cred.client().CreateFeature(cmd.Context(), projectID, in)
+		client := cred.client()
+		feat, err := client.CreateFeature(cmd.Context(), projectID, in)
 		if err != nil {
 			return err
 		}
 		output.Success(cmd.ErrOrStderr(), "Created feature %s", label(feat.Name, feat.ID))
+		if len(keyed) == 0 {
+			return renderFeature(cmd, feat)
+		}
+		for _, o := range keyed {
+			if _, err := client.CreateMVOption(cmd.Context(), projectID, feat.ID, o); err != nil {
+				return hintf(
+					fmt.Errorf("feature %s was created, but adding variant %q failed: %w", feat.Name, o.Key, err),
+					"Add the remaining variants with `flagsmith feature variant add %s --key <key> --value <value> --weight <weight>`.", feat.Name)
+			}
+		}
+		if feat, err = client.GetFeature(cmd.Context(), projectID, feat.ID); err != nil {
+			return err
+		}
 		return renderFeature(cmd, feat)
 	},
 }
@@ -319,6 +345,7 @@ var featureDeleteCmd = &cobra.Command{
 type variantInput struct {
 	Value  any     `json:"value"`
 	Weight float64 `json:"weight"`
+	Key    string  `json:"key"`
 }
 
 // mvOptionFromJSON types a variant from its JSON value: bool → boolean,
@@ -352,6 +379,7 @@ func variantsForWrite(cmd *cobra.Command, arg string) ([]api.MultivariateOption,
 	opts := make([]api.MultivariateOption, len(inputs))
 	for i, in := range inputs {
 		opts[i] = mvOptionFromJSON(in.Value, in.Weight)
+		opts[i].Key = in.Key
 	}
 	return opts, nil
 }
@@ -507,11 +535,15 @@ var featureVariantUpdateCmd = &cobra.Command{
 				fmt.Errorf("variant %q not found on %s", args[1], args[0]),
 				"Run `flagsmith feature variant list %s` to see its variants.", args[0])
 		}
-		o := api.MultivariateOption{}
+		// Send the whole option, not just the changed fields: the API's
+		// serializer rejects a partial PATCH of a multivariate option (500).
+		o := *variant
 		if cmd.Flags().Changed("value") {
-			if o, err = mvOptionFromFlag(featureVariantValueFlag, featureVariantTypeFlag); err != nil {
+			v, err := mvOptionFromFlag(featureVariantValueFlag, featureVariantTypeFlag)
+			if err != nil {
 				return err
 			}
+			o.Type, o.StringValue, o.IntegerValue, o.BooleanValue = v.Type, v.StringValue, v.IntegerValue, v.BooleanValue
 		}
 		if cmd.Flags().Changed("weight") {
 			w := featureVariantWeightFlag
@@ -571,7 +603,7 @@ func init() {
 	_ = featureCreateCmd.Flags().MarkHidden("default-value")
 	featureCreateCmd.Flags().BoolVar(&featureEnabledFlag, "enabled", false, "enable the feature by default")
 	featureCreateCmd.Flags().StringVar(&featureDescriptionFlag, "description", "", "feature description")
-	featureCreateCmd.Flags().StringVar(&featureVariantsFlag, "variants", "", "multivariate variants: @file, -, or inline JSON")
+	featureCreateCmd.Flags().StringVar(&featureVariantsFlag, "variants", "", "multivariate variants as a JSON array of {value, weight, key}: @file, -, or inline JSON")
 	featureUpdateCmd.Flags().StringVar(&featureDescriptionFlag, "description", "", "feature description")
 	featureUpdateCmd.Flags().BoolVar(&featureArchiveFlag, "archive", false, "archive the feature")
 	featureUpdateCmd.Flags().BoolVar(&featureUnarchiveFlag, "unarchive", false, "unarchive the feature")
