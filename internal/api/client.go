@@ -663,6 +663,7 @@ func mvOptionsPath(projectID, featureID int) string {
 
 // CreateMVOption adds a multivariate option (variant) to a feature.
 func (c *Client) CreateMVOption(ctx context.Context, projectID, featureID int, in MultivariateOption) (*MultivariateOption, error) {
+	in.Feature = featureID // the mv-options serializer requires it in the body
 	return send[MultivariateOption](ctx, c, http.MethodPost, mvOptionsPath(projectID, featureID), in)
 }
 

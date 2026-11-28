@@ -6363,6 +6363,30 @@ func TestFeatureCreate(t *testing.T) {
 		if o1["type"] != "int" || o1["integer_value"] != float64(42) || o1["default_percentage_allocation"] != float64(70) {
 			t.Errorf("variant 1 = %+v", o1)
 		}
+		if _, ok := o0["key"]; ok {
+			t.Errorf("variant 0 = %+v, want no key when none is given", o0)
+		}
+	})
+
+	t.Run("multivariate inline variants keep their keys", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		variants := `[{"key":"annual_first","value":"annual_first","weight":50}]`
+		if _, err := run("", "feature", "create", "pricing-layout", "--value", "monthly_first", "--variants", variants); err != nil {
+			t.Fatalf("feature create --variants: %v", err)
+		}
+		// The API drops `key` on nested variants, so keyed ones go to mv-options.
+		// The fake keeps the create body as the stored feature and appends each
+		// mv-options POST to it, so exactly one stored option, carrying its key,
+		// means the create sent none nested and mv-options got it once.
+		opts, _ := f.lastFeatureBody["multivariate_options"].([]any)
+		if len(opts) != 1 || opts[0].(map[string]any)["key"] != "annual_first" {
+			t.Errorf("stored options = %+v, want only the keyed variant, added once through mv-options", opts)
+		}
+		o := f.lastMVBody
+		if o["key"] != "annual_first" || o["string_value"] != "annual_first" || o["default_percentage_allocation"] != float64(50) {
+			t.Errorf("mv body = %+v, want the keyed variant posted to mv-options", o)
+		}
 	})
 }
 
@@ -6503,12 +6527,40 @@ func TestFeatureVariant(t *testing.T) {
 		if _, err := run("", "feature", "variant", "update", "banner-copy", "hero", "--weight", "40"); err != nil {
 			t.Fatalf("variant update: %v", err)
 		}
-		if f.lastMVBody["default_percentage_allocation"] != float64(40) {
-			t.Errorf("mv body = %+v", f.lastMVBody)
+		// The API rejects a partial PATCH of a multivariate option, so the whole
+		// option goes out: the new weight plus everything it already had.
+		b := f.lastMVBody
+		if b["default_percentage_allocation"] != float64(40) || b["feature"] != float64(91) ||
+			b["type"] != "unicode" || b["string_value"] != "headline" || b["key"] != "hero" {
+			t.Errorf("mv body = %+v, want the full option with the new weight", b)
 		}
-		// value untouched (only weight sent)
-		if _, ok := f.lastMVBody["string_value"]; ok {
-			t.Errorf("mv body = %+v, want only the weight sent", f.lastMVBody)
+	})
+
+	t.Run("update only the key keeps the value and weight", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "variant", "update", "banner-copy", "201", "--key", "headline_a"); err != nil {
+			t.Fatalf("variant update: %v", err)
+		}
+		b := f.lastMVBody
+		if b["key"] != "headline_a" || b["string_value"] != "headline" ||
+			b["default_percentage_allocation"] != float64(30) || b["feature"] != float64(91) {
+			t.Errorf("mv body = %+v, want the full option with the new key", b)
+		}
+	})
+
+	t.Run("update the value replaces the old value fields", func(t *testing.T) {
+		f := flagUpdateEnv(t)
+		withFeatures(f)
+		if _, err := run("", "feature", "variant", "update", "banner-copy", "hero", "--value", "7"); err != nil {
+			t.Fatalf("variant update: %v", err)
+		}
+		b := f.lastMVBody
+		if b["type"] != "int" || b["integer_value"] != float64(7) || b["key"] != "hero" {
+			t.Errorf("mv body = %+v", b)
+		}
+		if _, ok := b["string_value"]; ok {
+			t.Errorf("mv body = %+v, want the old string value dropped", b)
 		}
 	})
 
